@@ -7,7 +7,7 @@
 - 长 frame title 会自动缩小并增高，不会被固定高度裁切。
 - 数学公式默认使用扩展内置的固定版本 KaTeX，断网打开也能完整渲染；根号等可伸缩符号采用矢量路径，规则线会随字号统一缩放。
 - 拉丁字符使用扩展内置的 Libertinus Sans，避免不同系统因缺少字体而产生版式漂移；中文继续使用各平台原生 CJK 字体回退。
-- 默认关闭 Reveal.js 菜单、控制按钮、进度条和画布外边距；均可通过格式配置覆盖。
+- 默认关闭 Reveal.js 菜单、控制按钮、进度条和画布外边距；菜单与控制按钮可通过格式配置开启，原生进度会自动转换为 footline 顶部的 Beamer 细进度线。
 
 ## 本地预览
 
@@ -48,7 +48,9 @@ beamer-variant: madrid
 |:---|:---|:---|
 | `beamer-variant` | `madrid` | 可选 `madrid` 或 `cambridgeus` |
 | `beamer-secheader` | 按变体决定 | Madrid 默认关闭，CambridgeUS 默认开启；设置 `true` / `false` 可覆盖 |
-| `beamer-progress` | `false` | 在 footline 顶部显示细进度条 |
+| `beamer-progress` | `false` | 在 footline 顶部显示细进度条；格式中的 `progress: true` 也会启用同一条进度线 |
+
+页码由三段式 footline 统一显示为“当前页 / 总页数”，因此 Reveal.js 自带的浮动 `slide-number` 会被主题替代，通常无需另行开启。标记为 `visibility="uncounted"` 的页面不显示页码，也不会进入总页数或推进进度。开启 Reveal.js 菜单时，按钮会自动避开 headline、frame title、logo 和 footline。
 
 页脚会优先读取短元数据。作者与机构会合并显示为“作者（机构）”：
 

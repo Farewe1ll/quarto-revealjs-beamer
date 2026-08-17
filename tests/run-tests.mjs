@@ -186,6 +186,22 @@ const renderFixture = (name) => {
   }
 };
 
+const renderTemplate = () => {
+  run(quartoCommand, [
+    "render",
+    "template.qmd",
+    "--output",
+    "template-smoke.html",
+    "--output-dir",
+    "tests/_output",
+    "--no-clean",
+  ]);
+  assert(
+    existsSync(join(outputDir, "template-smoke.html")),
+    "The root template did not produce an HTML presentation."
+  );
+};
+
 const findChrome = () => {
   const candidates = [
     process.env.CHROME_BIN,
@@ -1620,6 +1636,186 @@ const testOptions = async (connection, origin) => {
   await page.close();
 };
 
+const testCentering = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/centering.html#/global-center`
+  );
+  const state = await page.evaluate(`(() => {
+    const slide = document.getElementById("global-center");
+    const headingRect = slide
+      .querySelector(":scope > h2")
+      .getBoundingClientRect();
+    const paragraphRect = slide
+      .querySelector(":scope > p")
+      .getBoundingClientRect();
+    const footerRect = slide
+      .querySelector(":scope > .beamer-footline")
+      .getBoundingClientRect();
+    return {
+      originalCenterClass: slide.classList.contains("center"),
+      beamerCenterClass: slide.classList.contains("beamer-center-slide"),
+      display: getComputedStyle(slide).display,
+      verticalCenterDelta:
+        (paragraphRect.top + paragraphRect.bottom) / 2 -
+        (headingRect.bottom + footerRect.top) / 2
+    };
+  })()`);
+  assert.equal(state.originalCenterClass, true);
+  assert.equal(state.beamerCenterClass, true);
+  assert.equal(state.display, "flex");
+  assert(Math.abs(state.verticalCenterDelta) < 12, JSON.stringify(state));
+  await page.close();
+};
+
+const testBehavior = async (connection, origin) => {
+  const titlePage = await BrowserPage.create(connection, `${origin}/behavior.html`);
+  const titleState = await titlePage.evaluate(`(() => {
+    const slide = document.getElementById("title-slide");
+    return {
+      originalCenterClass: slide.classList.contains("center"),
+      beamerCenterClass: slide.classList.contains("beamer-center-slide"),
+      display: getComputedStyle(slide).display
+    };
+  })()`);
+  assert.equal(titleState.originalCenterClass, false);
+  assert.equal(titleState.beamerCenterClass, false);
+  assert.equal(titleState.display, "block");
+  await titlePage.close();
+
+  const topPage = await BrowserPage.create(
+    connection,
+    `${origin}/behavior.html#/top-aligned`
+  );
+  const topState = await topPage.evaluate(`(() => {
+    const overlaps = (first, second) =>
+      first.left < second.right &&
+      first.right > second.left &&
+      first.top < second.bottom &&
+      first.bottom > second.top;
+    const slide = document.getElementById("top-aligned");
+    const slideRect = slide.getBoundingClientRect();
+    const headingRect = slide.querySelector(":scope > h2").getBoundingClientRect();
+    const paragraphRect = slide.querySelector(":scope > p").getBoundingClientRect();
+    const headlineRect = slide
+      .querySelector(":scope > .beamer-headline")
+      ?.getBoundingClientRect();
+    const footer = slide.querySelector(":scope > .beamer-footline");
+    const footerRect = footer.getBoundingClientRect();
+    const logoRect = document.querySelector(".slide-logo")?.getBoundingClientRect();
+    const menu = document.querySelector(".slide-menu-button");
+    const menuRect = menu.getBoundingClientRect();
+    const nativeProgress = document.querySelector(".reveal > .progress");
+    const nativeNumber = document.querySelector(".reveal > .slide-number");
+    return {
+      beamerCenterClass: slide.classList.contains("beamer-center-slide"),
+      display: getComputedStyle(slide).display,
+      bodyNearTop: paragraphRect.top < (headingRect.bottom + footerRect.top) / 2,
+      menuVisible: menuRect.width > 0 && menuRect.height > 0,
+      menuInsideSlide:
+        menuRect.left >= slideRect.left - 1 && menuRect.right <= slideRect.right + 1,
+      menuOverlapsHeading: overlaps(menuRect, headingRect),
+      menuOverlapsHeadline: headlineRect ? overlaps(menuRect, headlineRect) : false,
+      menuOverlapsFooter: overlaps(menuRect, footerRect),
+      menuOverlapsLogo:
+        logoRect && logoRect.width > 0 ? overlaps(menuRect, logoRect) : false,
+      nativeProgressDisplay: getComputedStyle(nativeProgress).display,
+      nativeNumberDisplay: getComputedStyle(nativeNumber).display,
+      customProgressCount: footer.querySelectorAll(".beamer-footline-progress").length,
+      customNumber: footer.querySelector(".beamer-footline-number").textContent
+    };
+  })()`);
+  assert.equal(topState.beamerCenterClass, false);
+  assert.equal(topState.display, "block");
+  assert.equal(topState.bodyNearTop, true);
+  assert.equal(topState.menuVisible, true);
+  assert.equal(topState.menuInsideSlide, true);
+  assert.equal(topState.menuOverlapsHeading, false);
+  assert.equal(topState.menuOverlapsHeadline, false);
+  assert.equal(topState.menuOverlapsFooter, false);
+  assert.equal(topState.menuOverlapsLogo, false);
+  assert.equal(topState.nativeProgressDisplay, "none");
+  assert.equal(topState.nativeNumberDisplay, "none");
+  assert.equal(topState.customProgressCount, 1);
+  assert.equal(topState.customNumber, "3 / 5");
+  await topPage.close();
+
+  const centeredPage = await BrowserPage.create(
+    connection,
+    `${origin}/behavior.html#/per-page-center`
+  );
+  const centeredState = await centeredPage.evaluate(`(() => {
+    const slide = document.getElementById("per-page-center");
+    const headingRect = slide.querySelector(":scope > h2").getBoundingClientRect();
+    const paragraphRect = slide.querySelector(":scope > p").getBoundingClientRect();
+    const footer = slide.querySelector(":scope > .beamer-footline");
+    const footerRect = footer.getBoundingClientRect();
+    return {
+      originalCenterClass: slide.classList.contains("center"),
+      beamerCenterClass: slide.classList.contains("beamer-center-slide"),
+      display: getComputedStyle(slide).display,
+      verticalCenterDelta:
+        (paragraphRect.top + paragraphRect.bottom) / 2 -
+        (headingRect.bottom + footerRect.top) / 2,
+      progressWidth: footer
+        .querySelector(".beamer-footline-progress")
+        .getBoundingClientRect().width
+    };
+  })()`);
+  assert.equal(centeredState.originalCenterClass, true);
+  assert.equal(centeredState.beamerCenterClass, true);
+  assert.equal(centeredState.display, "flex");
+  assert(
+    Math.abs(centeredState.verticalCenterDelta) < 12,
+    JSON.stringify(centeredState)
+  );
+  await centeredPage.close();
+
+  const optionalPage = await BrowserPage.create(
+    connection,
+    `${origin}/behavior.html#/optional-material`
+  );
+  const optionalState = await optionalPage.evaluate(`(() => {
+    const slide = document.getElementById("optional-material");
+    const footer = slide.querySelector(":scope > .beamer-footline");
+    return {
+      visibility: slide.dataset.visibility,
+      uncountedClass: slide.classList.contains("beamer-uncounted-slide"),
+      numberCount: footer.querySelectorAll(".beamer-footline-number").length,
+      progressWidth: footer
+        .querySelector(".beamer-footline-progress")
+        .getBoundingClientRect().width
+    };
+  })()`);
+  assert.equal(optionalState.visibility, "uncounted");
+  assert.equal(optionalState.uncountedClass, true);
+  assert.equal(optionalState.numberCount, 0);
+  assert(
+    Math.abs(optionalState.progressWidth - centeredState.progressWidth) < 1,
+    JSON.stringify({ centeredState, optionalState })
+  );
+  await optionalPage.close();
+
+  const finalPage = await BrowserPage.create(
+    connection,
+    `${origin}/behavior.html#/final-counted`
+  );
+  const finalState = await finalPage.evaluate(`(() => {
+    const slide = document.getElementById("final-counted");
+    const footer = slide.querySelector(":scope > .beamer-footline");
+    return {
+      number: footer.querySelector(".beamer-footline-number").textContent,
+      progressWidth: footer
+        .querySelector(".beamer-footline-progress")
+        .getBoundingClientRect().width,
+      footerWidth: footer.getBoundingClientRect().width
+    };
+  })()`);
+  assert.equal(finalState.number, "5 / 5");
+  assert(Math.abs(finalState.progressWidth - finalState.footerWidth) < 1);
+  await finalPage.close();
+};
+
 const testFourThreeViewport = async (connection, origin) => {
   const listsPage = await BrowserPage.create(
     connection,
@@ -1748,7 +1944,15 @@ try {
   resetDirectory(outputDir);
   resetDirectory(artifactsDir);
   run("node", ["--check", "_extensions/beamerslides/beamer.js"]);
-  for (const fixture of ["madrid", "cambridgeus", "options", "offline"]) {
+  renderTemplate();
+  for (const fixture of [
+    "madrid",
+    "cambridgeus",
+    "options",
+    "offline",
+    "centering",
+    "behavior",
+  ]) {
     renderFixture(fixture);
   }
   assert.doesNotMatch(
@@ -1764,6 +1968,8 @@ try {
   await testCambridgeUs(chrome.connection, local.origin);
   await testOptions(chrome.connection, local.origin);
   await testOffline(chrome.connection, local.origin);
+  await testCentering(chrome.connection, local.origin);
+  await testBehavior(chrome.connection, local.origin);
   await testFourThreeViewport(chrome.connection, local.origin);
   assertNoBrowserErrors(chrome.connection);
 

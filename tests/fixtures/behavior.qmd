@@ -1,0 +1,31 @@
+---
+title: "Behavior regression"
+author: "Behavior Author"
+date: "2026"
+format:
+  beamerslides-revealjs:
+    center: false
+    center-title-slide: false
+    controls: true
+    menu: true
+    progress: true
+    slide-number: true
+---
+
+# Behavior
+
+## Top aligned {#top-aligned}
+
+This short paragraph should remain near the top of the content area.
+
+## Per-page center {#per-page-center .center}
+
+This short paragraph should be centered in the content area.
+
+## Optional material {#optional-material visibility="uncounted"}
+
+This optional slide must not advance the Beamer counter or progress rule.
+
+## Final counted page {#final-counted}
+
+This is the final counted page.

@@ -1,0 +1,14 @@
+---
+title: "Global centering regression"
+author: "Center Author"
+date: "2026"
+format:
+  beamerslides-revealjs:
+    center: true
+---
+
+# Centering
+
+## Global center {#global-center}
+
+A short paragraph should be centered between the frame title and footline.

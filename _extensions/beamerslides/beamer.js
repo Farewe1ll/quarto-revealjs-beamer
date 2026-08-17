@@ -339,7 +339,7 @@
     return info.author || info.institute || "";
   };
 
-  const addChrome = (slide, context, info, index, total, options) => {
+  const addChrome = (slide, context, info, count, options) => {
     if (slide.querySelector(":scope > .beamer-footline")) {
       return;
     }
@@ -361,16 +361,48 @@
 
     const dateBox = appendSpan(footer, "beamer-footline-date", "");
     appendSpan(dateBox, "beamer-footline-date-text", info.date);
-    appendSpan(dateBox, "beamer-footline-number", `${index + 1} / ${total}`);
+    if (count.current !== null) {
+      appendSpan(
+        dateBox,
+        "beamer-footline-number",
+        `${count.current} / ${count.total}`
+      );
+    }
 
     if (options.showProgress) {
       const progress = document.createElement("i");
       progress.className = "beamer-footline-progress";
-      progress.style.width = `${((index + 1) / total) * 100}%`;
+      progress.style.width = `${
+        count.total > 0 ? (count.progress / count.total) * 100 : 0
+      }%`;
       footer.appendChild(progress);
     }
 
     slide.appendChild(footer);
+  };
+
+  const slideCounts = (slides) => {
+    const total = slides.filter(
+      (slide) => slide.dataset.visibility !== "uncounted"
+    ).length;
+    let current = 0;
+
+    return new Map(
+      slides.map((slide) => {
+        const uncounted = slide.dataset.visibility === "uncounted";
+        if (!uncounted) {
+          current += 1;
+        }
+        return [
+          slide,
+          {
+            current: uncounted ? null : current,
+            progress: current,
+            total,
+          },
+        ];
+      })
+    );
   };
 
   const arrangeTitleSlide = () => {
@@ -472,6 +504,57 @@
     }
   };
 
+  const positionNativeUi = (reveal, requestedSlide) => {
+    const slide =
+      requestedSlide ||
+      (typeof window.Reveal.getCurrentSlide === "function"
+        ? window.Reveal.getCurrentSlide()
+        : null);
+    if (!slide) {
+      return;
+    }
+
+    const slideRect = slide.getBoundingClientRect();
+    const revealRect = reveal.getBoundingClientRect();
+    const scale = Math.max(
+      0.0001,
+      typeof window.Reveal.getScale === "function"
+        ? window.Reveal.getScale()
+        : 1
+    );
+    const headline = slide.querySelector(":scope > .beamer-headline");
+    const frameTitle = directHeading(slide, "h2");
+    const logo = reveal.querySelector(".slide-logo");
+    const headlineRect = headline?.getBoundingClientRect();
+    const frameTitleRect = frameTitle?.getBoundingClientRect();
+    const logoRect = logo?.getBoundingClientRect();
+    const footerRect = slide
+      .querySelector(":scope > .beamer-footline")
+      ?.getBoundingClientRect();
+    const spacing = 8 * scale;
+    const chromeBottom =
+      frameTitleRect?.bottom ?? headlineRect?.bottom ?? slideRect.top;
+    const logoBottom =
+      logoRect && logoRect.width > 0 && logoRect.height > 0
+        ? logoRect.bottom
+        : slideRect.top;
+
+    reveal.style.setProperty(
+      "--beamer-menu-top",
+      `${Math.max(chromeBottom, logoBottom) + spacing}px`
+    );
+    reveal.style.setProperty(
+      "--beamer-menu-right",
+      `${Math.max(spacing, window.innerWidth - slideRect.right + spacing)}px`
+    );
+    if (footerRect) {
+      reveal.style.setProperty(
+        "--beamer-native-footline-offset",
+        `${Math.max(spacing, revealRect.bottom - footerRect.top + spacing)}px`
+      );
+    }
+  };
+
   const decorate = () => {
     const reveal = document.querySelector(".reveal");
     if (!reveal || reveal.dataset.beamerDecorated === "true") {
@@ -501,8 +584,16 @@
       "beamer-secheader",
       variant === "cambridgeus"
     );
-    const showProgress = metaBoolean("beamer-progress", false);
+    const revealConfig =
+      typeof window.Reveal.getConfig === "function"
+        ? window.Reveal.getConfig()
+        : {};
+    const showProgress = metaBoolean(
+      "beamer-progress",
+      revealConfig.progress === true
+    );
     const options = { showHeadline, showProgress };
+    const centerAllSlides = revealConfig.center === true;
 
     document.documentElement.classList.add(`beamer-${variant}`);
     document.body.classList.add(`beamer-${variant}`);
@@ -512,15 +603,25 @@
     reveal.classList.toggle("beamer-has-progress", showProgress);
 
     const info = titleMetadata();
+    const counts = slideCounts(slides);
     let section = info.title;
 
-    slides.forEach((slide, index) => {
+    slides.forEach((slide) => {
       const h1 = directHeading(slide, "h1");
       const h2 = directHeading(slide, "h2");
 
       slide.classList.add("beamer-leaf-slide");
-      slide.classList.remove("center");
+      slide.classList.toggle(
+        "beamer-center-slide",
+        centerAllSlides || slide.classList.contains("center")
+      );
+      // Reveal measures the slide before Beamer's full-height layout is added.
+      // Its earlier top offset is stale once flex centering owns the content area.
       slide.style.removeProperty("top");
+      slide.classList.toggle(
+        "beamer-uncounted-slide",
+        slide.dataset.visibility === "uncounted"
+      );
 
       if (slide.id === "title-slide") {
         slide.classList.add("beamer-title-slide");
@@ -537,7 +638,7 @@
         section: slide.dataset.section || section,
         subsection: slide.dataset.subsection || (h2 ? text(h2) : ""),
       };
-      addChrome(slide, context, info, index, slides.length, options);
+      addChrome(slide, context, info, counts.get(slide), options);
     });
 
     replaceOrcidIcons();
@@ -546,6 +647,7 @@
     alignOrderedMarkers();
     fitFrameTitles(slides);
     watchFrameTitles(slides);
+    positionNativeUi(reveal);
 
     const realignOpticalLabels = () => {
       window.requestAnimationFrame(alignInlineLabels);
@@ -556,17 +658,32 @@
       alignOrderedMarkers();
       slides.forEach(measureFrameTitle);
     };
+    const repositionNativeUi = (event) => {
+      const currentSlide =
+        event?.currentSlide ||
+        (typeof window.Reveal.getCurrentSlide === "function"
+          ? window.Reveal.getCurrentSlide()
+          : null);
+      const reposition = () => positionNativeUi(reveal, currentSlide);
+      window.requestAnimationFrame(reposition);
+      window.setTimeout(reposition, 80);
+    };
     window.addEventListener("resize", realignOpticalLabels, { passive: true });
+    window.addEventListener("resize", repositionNativeUi, { passive: true });
     window.addEventListener("beforeprint", realignForPrint);
     window.addEventListener("afterprint", realignOpticalLabels);
     if (window.Reveal && typeof window.Reveal.on === "function") {
       window.Reveal.on("resize", realignOpticalLabels);
       window.Reveal.on("slidechanged", realignOpticalLabels);
+      window.Reveal.on("resize", repositionNativeUi);
+      window.Reveal.on("slidechanged", repositionNativeUi);
     }
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(realignOpticalLabels);
+      document.fonts.ready.then(repositionNativeUi);
     }
     window.setTimeout(realignOpticalLabels, 100);
+    window.setTimeout(repositionNativeUi, 100);
   };
 
   const connect = () => {

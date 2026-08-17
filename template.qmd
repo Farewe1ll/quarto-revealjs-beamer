@@ -17,6 +17,7 @@ lang: zh
 format:
   beamerslides-revealjs:
     incremental: false
+    embed-resources: true
 ---
 
 # 设计语言

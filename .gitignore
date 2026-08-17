@@ -2,7 +2,7 @@
 .reasonix/
 
 # Quarto cache and generated output
-.quarto/
+/.quarto/
 /_site/
 /*_files/
 /*.html
