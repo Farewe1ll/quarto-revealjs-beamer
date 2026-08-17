@@ -1,0 +1,85 @@
+:root,
+html.beamer-madrid,
+body.beamer-madrid,
+.reveal.beamer-madrid {
+  --beamer-primary: #3333b3;
+  --beamer-primary-2: #262686;
+  --beamer-primary-3: #1a1a59;
+  --beamer-frame-bg: #3333b3;
+  --beamer-frame-fg: #ffffff;
+  --beamer-soft: #eaeaf4;
+  --beamer-line: #b8b8d8;
+  --beamer-alert: #b22b31;
+  --beamer-example: #2c7550;
+  --beamer-ink: #202124;
+  --beamer-muted: #5f6670;
+
+  --beamer-title-bg: #3333b3;
+  --beamer-title-fg: #ffffff;
+  --beamer-title-subtitle-fg: rgba(255, 255, 255, 0.9);
+  --beamer-section-title-bg: #3333b3;
+  --beamer-section-title-fg: #ffffff;
+
+  --beamer-headline-section-bg: #1a1a59;
+  --beamer-headline-section-fg: #ffffff;
+  --beamer-headline-subsection-bg: #3333b3;
+  --beamer-headline-subsection-fg: #ffffff;
+
+  --beamer-footline-author-bg: #1a1a59;
+  --beamer-footline-author-fg: #ffffff;
+  --beamer-footline-title-bg: #262686;
+  --beamer-footline-title-fg: #ffffff;
+  --beamer-footline-date-bg: #3333b3;
+  --beamer-footline-date-fg: #ffffff;
+  --beamer-progress: rgba(255, 255, 255, 0.8);
+
+  --beamer-block-title-bg: #262686;
+  --beamer-block-title-fg: #ffffff;
+  --beamer-block-body-bg: #eaeaf4;
+
+  --beamer-headline-height: 32px;
+  --beamer-active-headline-height: var(--beamer-headline-height);
+  --beamer-frame-height: 58px;
+  --beamer-footline-height: 30px;
+}
+
+html.beamer-cambridgeus,
+body.beamer-cambridgeus,
+.reveal.beamer-cambridgeus {
+  --beamer-primary: #a30000;
+  --beamer-primary-2: #8f0000;
+  --beamer-primary-3: #7a0000;
+  --beamer-frame-bg: #f2f2f2;
+  --beamer-frame-fg: #cc0000;
+  --beamer-soft: #f8f2f2;
+  --beamer-line: #d7b9bc;
+  --beamer-alert: #a30000;
+  --beamer-example: #316e50;
+
+  --beamer-title-bg: #ffffff;
+  --beamer-title-fg: #cc0000;
+  --beamer-title-subtitle-fg: #7a0000;
+  --beamer-section-title-bg: #ffffff;
+  --beamer-section-title-fg: #cc0000;
+
+  --beamer-headline-section-bg: #a30000;
+  --beamer-headline-section-fg: #f2f2f2;
+  --beamer-headline-subsection-bg: #d9d9d9;
+  --beamer-headline-subsection-fg: #7a0000;
+
+  --beamer-footline-author-bg: #a30000;
+  --beamer-footline-author-fg: #f2f2f2;
+  --beamer-footline-title-bg: #ececec;
+  --beamer-footline-title-fg: #8f0000;
+  --beamer-footline-date-bg: #d9d9d9;
+  --beamer-footline-date-fg: #7a0000;
+  --beamer-progress: #cc0000;
+
+  --beamer-block-title-bg: #a30000;
+  --beamer-block-title-fg: #f2f2f2;
+  --beamer-block-body-bg: #f8f2f2;
+}
+
+.reveal.beamer-no-headline {
+  --beamer-active-headline-height: 0px;
+}

@@ -1,0 +1,10 @@
+/.quarto/
+/_site/
+/*_files/
+/*.html
+/*.pdf
+/beamer.js
+/tests/_output/
+/tests/_artifacts/
+
+**/*.quarto_ipynb

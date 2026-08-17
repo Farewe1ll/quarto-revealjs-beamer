@@ -1,0 +1,35 @@
+title: Beamer for Reveal.js
+author: quarto-revealjs-beamer contributors
+version: 0.2.4
+quarto-required: ">=1.4.0"
+contributes:
+  formats:
+    revealjs:
+      theme: [default, beamer.scss]
+      filters:
+        - beamer.lua
+      include-after-body:
+        - beamer-after-body.html
+      format-resources:
+        - beamer.js
+      width: 1280
+      height: 720
+      margin: 0
+      center: false
+      controls: false
+      menu: false
+      progress: false
+      slide-number: false
+      transition: none
+      background-transition: none
+      navigation-mode: linear
+      hash: true
+      history: false
+      minimal: true
+      preview-links: auto
+      date-format: long
+      html-math-method:
+        method: katex
+        url: https://cdn.jsdelivr.net/npm/katex@0.18.1/dist/
+      code-overflow: wrap
+      highlight-style: github

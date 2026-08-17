@@ -1,0 +1,33 @@
+---
+title: "CambridgeUS regression"
+subtitle: "Official beaver palette roles"
+author: "Test Author"
+date: "August 17, 2026"
+short-title: "CambridgeUS regression"
+short-author: "Test Author"
+short-institute: "Test Institute"
+beamer-variant: cambridgeus
+format: beamerslides-revealjs
+---
+
+# Theme palette
+
+## CambridgeUS roles {#cambridge-roles data-subsection="Colors"}
+
+- The headline uses tertiary and primary palette roles.
+- The footline uses three equal information boxes.
+
+::: {.alertblock title="Alert"}
+The title page remains white with dark red title text.
+:::
+
+## CambridgeUS content formats {#cambridge-formats data-subsection="Content"}
+
+[关键假设]{.bg style="--col: #f5dfe1"} [[Return]{.button}](#cambridge-roles)
+
+| Role | Value |
+|:---|:---|
+| Primary | Dark red |
+| Surface | White |
+
+: CambridgeUS palette roles

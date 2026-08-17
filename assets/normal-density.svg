@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="400" viewBox="0 0 720 400" role="img" aria-labelledby="title desc">
+  <title id="title">Standard normal density curve</title>
+  <desc id="desc">A normal density curve with shaded central and tail regions.</desc>
+  <rect width="720" height="400" fill="#ffffff"/>
+  <g stroke="#d7dce2" stroke-width="1">
+    <path d="M72 72H676M72 132H676M72 192H676M72 252H676M72 312H676"/>
+    <path d="M173 52V312M274 52V312M374 52V312M475 52V312M576 52V312"/>
+  </g>
+  <path d="M72 312H676" stroke="#202124" stroke-width="2"/>
+  <path d="M72 52V312" stroke="#202124" stroke-width="2"/>
+  <path d="M72 312 C144 311 204 302 254 270 C302 239 329 152 374 92 C419 152 446 239 494 270 C544 302 604 311 676 312 L676 312 L72 312Z" fill="#dfe8f4"/>
+  <path d="M72 312 C144 311 204 302 254 270 C302 239 329 152 374 92 C419 152 446 239 494 270 C544 302 604 311 676 312" fill="none" stroke="#285a94" stroke-width="5" stroke-linecap="round"/>
+  <path d="M274 312 C303 238 330 151 374 92 C418 151 445 238 475 312Z" fill="#8fc5aa" fill-opacity="0.72"/>
+  <path d="M72 312 C143 311 204 302 254 270 C263 264 270 254 274 247 L274 312Z" fill="#d99498" fill-opacity="0.78"/>
+  <path d="M475 247 C479 254 486 264 494 270 C544 302 605 311 676 312 L475 312Z" fill="#d99498" fill-opacity="0.78"/>
+  <g fill="#5f6670" font-family="Arial, sans-serif" font-size="17" text-anchor="middle">
+    <text x="173" y="342">-2</text>
+    <text x="274" y="342">-1</text>
+    <text x="374" y="342">0</text>
+    <text x="475" y="342">1</text>
+    <text x="576" y="342">2</text>
+  </g>
+  <text x="374" y="376" fill="#202124" font-family="Arial, sans-serif" font-size="19" text-anchor="middle">standardized value</text>
+</svg>

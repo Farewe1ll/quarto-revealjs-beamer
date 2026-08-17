@@ -1,0 +1,799 @@
+/*-- scss:defaults --*/
+
+$body-bg: #fdfdfd !default;
+$body-color: #202124 !default;
+$link-color: #285a94 !default;
+$selection-bg: #c9d9ea !default;
+$selection-color: #111827 !default;
+
+$font-family-sans-serif: "Latin Modern Sans", "Libertinus Sans", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", Arial, sans-serif !default;
+$font-family-monospace: "Iosevka", "SFMono-Regular", Consolas, "Liberation Mono", monospace !default;
+$presentation-font-size-root: 30px !default;
+$presentation-line-height: 1.28 !default;
+$presentation-heading-font: $font-family-sans-serif !default;
+$presentation-heading-color: #1b3761 !default;
+$presentation-heading-font-weight: 600 !default;
+$presentation-heading-line-height: 1.15 !default;
+$presentation-heading-letter-spacing: 0 !default;
+$presentation-heading-text-transform: none !default;
+$presentation-h1-font-size: 1.75em !default;
+$presentation-h2-font-size: 1.08em !default;
+$presentation-h3-font-size: 0.92em !default;
+$presentation-h4-font-size: 0.78em !default;
+$presentation-slide-text-align: left !default;
+$presentation-title-slide-text-align: center !default;
+$presentation-block-margin: 0.55em !default;
+
+$code-block-bg: #f4f6f8 !default;
+$code-block-border-color: #cbd2da !default;
+$code-block-font-size: 0.56em !default;
+$code-color: #7c2d12 !default;
+$code-bg: #f2f3f5 !default;
+$border-radius: 4px !default;
+
+/*-- scss:rules --*/
+
+@import "palette";
+
+.reveal {
+  color: var(--beamer-ink);
+}
+
+.reveal .slides {
+  text-align: left;
+}
+
+.reveal .slides section.beamer-leaf-slide {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 100%;
+  padding: calc(var(--beamer-active-headline-height) + 34px) 58px calc(var(--beamer-footline-height) + 18px);
+  overflow: hidden;
+}
+
+.reveal .slides section.beamer-leaf-slide.beamer-frame-slide {
+  padding-top: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) + 22px);
+}
+
+.reveal .slides section.beamer-leaf-slide.scrollable,
+.reveal .slides section.beamer-leaf-slide.smaller,
+.reveal .slides section.beamer-leaf-slide.beamer-long-frame-title {
+  overflow: auto;
+}
+
+.reveal p {
+  margin: 0.48em 0;
+}
+
+.reveal strong,
+.reveal b {
+  font-weight: 650;
+}
+
+.reveal em {
+  color: var(--beamer-primary);
+}
+
+.reveal a {
+  color: var(--beamer-primary);
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.12em;
+}
+
+.reveal a:hover {
+  color: var(--beamer-primary-2);
+}
+
+/* Headline and footline */
+
+.beamer-headline,
+.beamer-footline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0;
+  user-select: none;
+}
+
+.beamer-headline {
+  top: 0;
+  height: var(--beamer-headline-height);
+  box-shadow: 0 1px 0 var(--beamer-line);
+}
+
+.beamer-headline > span,
+.beamer-footline > span {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.beamer-headline-section {
+  width: 50%;
+  justify-content: flex-end;
+  padding: 0 30px 0 18px;
+  color: var(--beamer-headline-section-fg);
+  background: var(--beamer-headline-section-bg);
+  font-weight: 650;
+}
+
+.beamer-headline-subsection {
+  width: 50%;
+  padding: 0 18px 0 30px;
+  color: var(--beamer-headline-subsection-fg);
+  background: var(--beamer-headline-subsection-bg);
+}
+
+.beamer-footline {
+  bottom: 0;
+  height: var(--beamer-footline-height);
+  font-size: 12px;
+}
+
+.beamer-footline-author {
+  width: 33.333333%;
+  justify-content: center;
+  padding: 0 17px;
+  color: var(--beamer-footline-author-fg);
+  background: var(--beamer-footline-author-bg);
+}
+
+.beamer-footline-title {
+  width: 33.333333%;
+  justify-content: center;
+  padding: 0 17px;
+  color: var(--beamer-footline-title-fg);
+  background: var(--beamer-footline-title-bg);
+}
+
+.beamer-footline-date {
+  width: 33.333334%;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 22px;
+  color: var(--beamer-footline-date-fg);
+  background: var(--beamer-footline-date-bg);
+}
+
+.beamer-footline-date-text,
+.beamer-footline-number {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.beamer-footline-number {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.beamer-footline-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: var(--beamer-progress);
+}
+
+#title-slide > .beamer-headline,
+.beamer-title-slide > .beamer-headline {
+  display: none;
+}
+
+/* Frame and section titles */
+
+.reveal .slides section > h2:first-of-type {
+  position: absolute;
+  top: var(--beamer-active-headline-height);
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--beamer-frame-height);
+  margin: 0;
+  padding: 10px 58px;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  color: var(--beamer-frame-fg);
+  background: var(--beamer-frame-bg);
+  border-bottom: 1px solid var(--beamer-line);
+  font-size: 1.08em;
+  font-weight: 650;
+  line-height: 1.16;
+  letter-spacing: 0;
+  text-shadow: none;
+}
+
+.reveal .slides section > h2.beamer-frame-title-compact {
+  font-size: 0.98em;
+  line-height: 1.12;
+}
+
+.reveal .slides section > h2.beamer-frame-title-tight {
+  font-size: 0.86em;
+  line-height: 1.1;
+}
+
+.reveal .slides section > h3 {
+  margin: 0.1em 0 0.55em;
+  color: var(--beamer-primary);
+  font-size: 0.91em;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.reveal .slides section > h4 {
+  margin: 0.8em 0 0.25em;
+  color: var(--beamer-alert);
+  font-size: 0.78em;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.reveal .slides section.beamer-section-slide {
+  padding: 212px 12% calc(var(--beamer-footline-height) + 30px);
+}
+
+.reveal .slides section.beamer-section-slide > h1:first-of-type {
+  margin: 0;
+  padding: 0.52em 0.8em 0.58em;
+  color: var(--beamer-section-title-fg);
+  background: var(--beamer-section-title-bg);
+  border-radius: 5px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.12);
+  font-size: 1.62em;
+  font-weight: 650;
+  line-height: 1.15;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.reveal .slides section.beamer-section-slide > p {
+  color: var(--beamer-muted);
+  text-align: center;
+}
+
+/* Title page */
+
+.reveal .slides #title-slide {
+  padding: 122px 10% calc(var(--beamer-footline-height) + 36px);
+  text-align: center;
+}
+
+.beamer-title-box {
+  margin: 0 auto 1.25em;
+  overflow: hidden;
+  color: var(--beamer-title-fg);
+  background: var(--beamer-title-bg);
+  border-radius: 6px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.14);
+}
+
+#title-slide .beamer-title-box .title {
+  margin: 0;
+  padding: 0.48em 0.75em 0.18em;
+  color: var(--beamer-title-fg);
+  font-size: 1.54em;
+  font-weight: 650;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+#title-slide .beamer-title-box .subtitle {
+  margin: 0;
+  padding: 0 1em 0.72em;
+  color: var(--beamer-title-subtitle-fg);
+  font-size: 0.84em;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+#title-slide .quarto-title-authors {
+  display: flex;
+  justify-content: center;
+  gap: 1.8em;
+  margin-top: 0;
+}
+
+#title-slide .quarto-title-author {
+  padding: 0;
+}
+
+#title-slide .quarto-title-author-name,
+#title-slide .author {
+  margin: 0.25em 0;
+  color: var(--beamer-primary);
+  font-size: 0.94em;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+#title-slide .institute,
+#title-slide .quarto-title-affiliation,
+#title-slide .date {
+  margin: 0.28em 0;
+  color: var(--beamer-ink);
+  font-size: 0.73em;
+  font-style: normal;
+}
+
+#title-slide .quarto-title-author-email {
+  display: block;
+  margin: 0.12em 0 0.18em;
+  font-size: 0.62em;
+  font-style: italic;
+  line-height: 1.25;
+}
+
+#title-slide .quarto-title-author-email a {
+  color: var(--beamer-muted);
+  text-decoration: none;
+}
+
+#title-slide .quarto-title-author-email a:hover {
+  color: var(--beamer-primary);
+  text-decoration: underline;
+}
+
+#title-slide .quarto-title-author-orcid {
+  display: inline-flex;
+  width: 0.44em;
+  height: 0.44em;
+  margin-left: 0.09em;
+  line-height: 0;
+  vertical-align: super;
+}
+
+#title-slide .quarto-title-author-orcid img,
+#title-slide .quarto-title-author-orcid svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+}
+
+.reveal.beamer-cambridgeus .beamer-title-box,
+.reveal.beamer-cambridgeus .slides section.beamer-section-slide > h1:first-of-type {
+  border: 0;
+  box-shadow: none;
+}
+
+/* Flat lists */
+
+.reveal .slides section ul,
+.reveal .slides section ol {
+  display: block;
+  width: auto;
+  margin: 0.42em 0 0.58em;
+}
+
+.reveal .slides section ul {
+  padding-left: 1.05em;
+  list-style: none;
+}
+
+.reveal .slides section ul > li {
+  position: relative;
+  margin: 0.3em 0;
+}
+
+.reveal .slides section ul > li::before {
+  content: "";
+  position: absolute;
+  top: 0.55em;
+  left: -0.86em;
+  width: 0.34em;
+  height: 0.34em;
+  background: var(--beamer-primary);
+  border-radius: 1px;
+}
+
+.reveal .slides section ul ul > li::before {
+  top: 0.66em;
+  width: 0.46em;
+  height: 0.12em;
+  background: var(--beamer-primary-2);
+}
+
+.reveal .slides section ul ul ul > li::before {
+  top: 0.53em;
+  width: 0.28em;
+  height: 0.28em;
+  background: transparent;
+  border: 2px solid var(--beamer-primary-3);
+}
+
+.reveal .slides section ul.task-list > li::before {
+  content: none;
+}
+
+.reveal .slides section ol {
+  padding-left: 1.55em;
+  list-style: none;
+  counter-reset: beamer-item;
+}
+
+.reveal .slides section ol > li {
+  position: relative;
+  margin: 0.32em 0;
+  counter-increment: beamer-item;
+}
+
+.reveal .slides section ol > li::before {
+  content: counter(beamer-item);
+  position: absolute;
+  top: 0.18em;
+  left: -1.9em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 1.35em;
+  height: 1.35em;
+  padding: 0 0 var(--beamer-marker-padding-bottom, 0.1em);
+  color: #fff;
+  background: var(--beamer-primary);
+  border-radius: 2px;
+  font-size: 0.7em;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.reveal .slides section ol ol > li::before {
+  color: var(--beamer-primary);
+  background: transparent;
+  border-left: 3px solid var(--beamer-primary-2);
+  border-radius: 0;
+}
+
+.reveal .slides section li > p {
+  margin: 0;
+}
+
+/* Beamer blocks and callouts */
+
+.beamer-block {
+  margin: 0.7em 0;
+  padding: 0.62em 0.76em 0.68em;
+  overflow: hidden;
+  background: var(--beamer-block-body-bg);
+  border: 1px solid var(--beamer-line);
+  border-radius: 5px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.07);
+}
+
+.beamer-block[data-title]::before {
+  content: attr(data-title);
+  display: block;
+  margin: -0.62em -0.76em 0.5em;
+  padding: 0.28em 0.76em 0.32em;
+  color: var(--beamer-block-title-fg);
+  background: var(--beamer-block-title-bg);
+  font-size: 0.82em;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.beamer-block.beamer-example[data-title]::before {
+  background: var(--beamer-example);
+}
+
+.beamer-block.beamer-alert[data-title]::before {
+  background: var(--beamer-alert);
+}
+
+.beamer-block > :first-child {
+  margin-top: 0;
+}
+
+.beamer-block > :last-child {
+  margin-bottom: 0;
+}
+
+.reveal .callout {
+  margin: 0.7em 0;
+  border: 1px solid var(--beamer-line);
+  border-left-width: 5px;
+  border-radius: 4px;
+  box-shadow: none;
+  font-size: 0.84em;
+}
+
+.reveal .callout .callout-header {
+  background: var(--beamer-frame-bg);
+}
+
+.reveal blockquote {
+  width: auto;
+  margin: 0.8em 0;
+  padding: 0.38em 0.72em;
+  color: var(--beamer-muted);
+  background: var(--beamer-soft);
+  border: 0;
+  border-left: 5px solid var(--beamer-primary-2);
+  box-shadow: none;
+  font-size: 0.88em;
+  font-style: normal;
+}
+
+.reveal .math.inline {
+  font-size: 1.02em;
+}
+
+.reveal .math.display {
+  font-size: 1.06em;
+}
+
+.alert {
+  color: var(--beamer-alert);
+  font-weight: 650;
+}
+
+.fg {
+  color: var(--col, var(--beamer-primary));
+}
+
+.bg {
+  display: inline-block;
+  padding: 0.1em 0.22em;
+  color: var(--beamer-ink);
+  background: var(--col, var(--beamer-frame-bg));
+  border-radius: 2px;
+  line-height: inherit;
+  vertical-align: baseline;
+}
+
+.button {
+  display: inline-block;
+  padding: 0.3em 0.62em;
+  color: #fff !important;
+  background: var(--beamer-primary);
+  border: 1px solid var(--beamer-primary);
+  border-radius: 3px;
+  font-size: 0.68em;
+  font-weight: 650;
+  line-height: 1.1;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.button:hover {
+  color: #fff !important;
+  background: var(--beamer-primary-2);
+  border-color: var(--beamer-primary-2);
+}
+
+.button::before {
+  content: "\25b8";
+  display: inline-block;
+  margin-right: 0.35em;
+  position: relative;
+  top: var(--beamer-inline-label-shift, 0px);
+  line-height: 1;
+}
+
+.beamer-inline-label-text {
+  display: inline-block;
+  position: relative;
+  line-height: inherit;
+}
+
+/* Tables, code, and media */
+
+.reveal table {
+  width: auto;
+  max-width: 100%;
+  margin: 0.65em auto;
+  border-collapse: collapse;
+  border-bottom: 2px solid var(--beamer-primary);
+  border-spacing: 0;
+  font-size: 0.76em;
+}
+
+.reveal table th,
+.reveal table td {
+  padding: 0.3em 0.52em;
+  border: 0;
+  text-align: left;
+}
+
+.reveal table thead th {
+  color: var(--beamer-primary);
+  background: transparent;
+  border-bottom: 2px solid var(--beamer-primary);
+  font-weight: 700;
+}
+
+.reveal table caption {
+  padding-bottom: 0.35em;
+  color: var(--beamer-muted);
+  font-size: 0.88em;
+  font-variant: small-caps;
+  text-align: center;
+}
+
+.reveal div.sourceCode,
+.reveal pre:not(.sourceCode) {
+  width: 100%;
+  margin: 0.6em 0;
+  overflow: hidden;
+  background: $code-block-bg;
+  border: 1px solid $code-block-border-color;
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.reveal div.sourceCode > pre.sourceCode {
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.reveal div.sourceCode pre code,
+.reveal pre:not(.sourceCode) code {
+  max-height: 360px;
+  padding: 0.75em 0.9em;
+  line-height: 1.35;
+}
+
+.reveal .code-with-filename .code-with-filename-file {
+  padding: 0.28em 0.72em 0.32em;
+  color: var(--beamer-frame-fg);
+  background: var(--beamer-frame-bg);
+  border: 1px solid var(--beamer-primary);
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  font-family: $font-family-monospace;
+  font-size: 0.52em;
+  line-height: 1.25;
+}
+
+.reveal .code-with-filename .code-with-filename-file pre {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font: inherit;
+}
+
+.reveal .code-with-filename div.sourceCode {
+  margin-top: 0;
+  border-radius: 0 0 4px 4px;
+}
+
+.reveal code:not(pre code) {
+  padding: 0.06em 0.22em 0.1em;
+  background: $code-bg;
+  border: 1px solid #d9dde2;
+  border-radius: 2px;
+}
+
+.reveal .columns {
+  align-items: stretch;
+  gap: 1.1em;
+}
+
+.reveal img,
+.reveal video {
+  max-width: 100%;
+  max-height: 490px;
+  object-fit: contain;
+}
+
+.reveal .quarto-figure,
+.reveal figure {
+  max-width: 100%;
+  margin: 0.55em auto;
+  text-align: center;
+}
+
+.reveal .quarto-figure > figure {
+  margin: 0;
+}
+
+.reveal figure > p {
+  margin: 0;
+}
+
+.reveal figure img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 430px;
+  margin: 0 auto;
+}
+
+.reveal figcaption {
+  margin-top: 0.25em;
+  color: var(--beamer-muted);
+  font-size: 0.65em;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.reveal .citation a {
+  color: var(--beamer-primary);
+  text-decoration: none;
+}
+
+.reveal .citation a:hover {
+  color: var(--beamer-primary-2);
+  text-decoration: underline;
+}
+
+.reveal #refs {
+  font-size: 0.9em;
+  line-height: 1.3;
+}
+
+.reveal #refs .csl-entry {
+  margin-bottom: 0.55em;
+}
+
+.reveal .slide-logo {
+  top: calc(var(--beamer-active-headline-height) + 7px) !important;
+  right: 22px !important;
+  bottom: auto !important;
+  left: auto !important;
+  z-index: 30 !important;
+  max-width: 150px !important;
+  max-height: 28px !important;
+}
+
+.reveal.has-logo .slides section > h2:first-of-type {
+  padding-right: 225px;
+}
+
+.reveal .slide-number {
+  display: none !important;
+}
+
+.reveal .r-stack > * {
+  margin: auto;
+}
+
+@media (max-aspect-ratio: 4 / 3) {
+  .beamer-headline,
+  .beamer-footline {
+    font-size: 11px;
+  }
+
+  .beamer-footline-date {
+    gap: 8px;
+    padding: 0 14px;
+  }
+}
+
+@media print {
+  .beamer-headline,
+  .beamer-footline {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

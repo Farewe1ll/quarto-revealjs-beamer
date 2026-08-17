@@ -1,0 +1,83 @@
+---
+title: "Madrid regression"
+subtitle: "Theme and layout checks"
+author:
+  - name: "Augusta Ada King"
+    email: "ada@example.org"
+    orcid: "0000-0002-1825-0097"
+    affiliations: "Analytical Society"
+date: "December 10, 1843"
+bibliography: tests/fixtures/references.bib
+link-citations: true
+short-title: "Madrid regression"
+short-author: "Ada Lovelace"
+short-institute: "Analytical Society"
+short-date: "1843"
+beamer-variant: madrid
+format:
+  beamerslides-revealjs:
+    incremental: false
+---
+
+# Foundations
+
+## Lists and metadata {#lists data-subsection="Layout"}
+
+- First unordered item
+  - Nested unordered item
+- Second unordered item
+
+1. First ordered item
+2. Second ordered item
+
+::: {.block title="Definition"}
+Blocks must survive the Lua normalization pass.
+:::
+
+# Edge cases
+
+## This intentionally long frame title verifies that a title wrapping across several lines remains fully visible and moves the body below its measured height without clipping {#long-title}
+
+The body must begin below the complete frame title.
+
+## Mathematics {#mathematics}
+
+Inline math $\sqrt{x}$ and display math must use the same scalable renderer.
+
+$$
+\sqrt{n}\left(\bar X_n-\mu\right)
+\xrightarrow{d} \mathcal{N}(0,\sigma^2).
+$$
+
+## Content formats {#content-formats}
+
+[关键假设]{.bg style="--col: #f5dfe1"} and [[Summary]{.button}](#mathematics) must be vertically centered.
+
+| Theme | Accent |
+|:---|:---|
+| Madrid | Blue |
+| CambridgeUS | Red |
+
+: Theme accents
+
+```{.js filename="example.js"}
+const format = "beamerslides-revealjs";
+```
+
+## Figures and citations {#figures-citations}
+
+:::: {.columns}
+::: {.column width="54%"}
+![Standard normal density](assets/normal-density.svg){#fig-test-density width="92%"}
+:::
+::: {.column width="42%"}
+The theme keeps native Quarto citations [@clean-theme].
+
+> A compact quotation remains visually distinct from the surrounding text.
+:::
+::::
+
+## References {#references}
+
+::: {#refs}
+:::

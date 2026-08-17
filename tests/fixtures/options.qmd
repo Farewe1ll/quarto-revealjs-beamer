@@ -1,0 +1,19 @@
+---
+title: "Option regression"
+author: "Option Author"
+date: "August 17, 2026"
+short-title: "Options"
+short-author: "Option Author"
+short-institute: "Option Institute"
+short-date: "Short date"
+beamer-variant: madrid
+beamer-secheader: true
+beamer-progress: true
+format: beamerslides-revealjs
+---
+
+# Option controls
+
+## Explicit options {#option-frame data-subsection="Enabled"}
+
+The Madrid headline and progress rule are explicitly enabled.
