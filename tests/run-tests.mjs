@@ -164,11 +164,15 @@ const run = (command, args) => {
   return result.stdout;
 };
 
-const renderFixture = (name) => {
-  const fixture = join(testsDir, "fixtures", `${name}.qmd`);
+const renderFixture = (name, options = {}) => {
+  const source = options.source || name;
+  const fixture = join(testsDir, "fixtures", `${source}.qmd`);
   const temporaryInput = join(rootDir, `.beamerslides-test-${name}.qmd`);
   temporaryInputs.push(temporaryInput);
   copyFileSync(fixture, temporaryInput);
+  const metadataArgs = Object.entries(options.metadata || {}).flatMap(
+    ([key, value]) => ["-M", `${key}:${value}`]
+  );
   try {
     run(quartoCommand, [
       "render",
@@ -178,6 +182,7 @@ const renderFixture = (name) => {
       "--output-dir",
       "tests/_output",
       "--no-clean",
+      ...metadataArgs,
     ]);
   } finally {
     if (existsSync(temporaryInput)) {
@@ -849,6 +854,17 @@ const assertPrintLayout = async (page) => {
   );
 };
 
+const showSlide = (page, id) =>
+  page.evaluate(`(async () => {
+    const slide = document.getElementById(${JSON.stringify(id)});
+    const indices = window.Reveal.getIndices(slide);
+    window.Reveal.slide(indices.h, indices.v);
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve))
+    );
+    return true;
+  })()`);
+
 const testMadrid = async (connection, origin) => {
   const listsPage = await BrowserPage.create(
     connection,
@@ -986,14 +1002,24 @@ const testMadrid = async (connection, origin) => {
       ((headlineRect?.bottom ?? slideRect.top) + footerRect.top) / 2;
     const name = document.querySelector("#title-slide .quarto-title-author-name");
     const email = document.querySelector("#title-slide .quarto-title-author-email");
+    const affiliation = document.querySelector("#title-slide .quarto-title-affiliation");
+    const date = document.querySelector("#title-slide .date");
     const emailLink = email.querySelector("a");
     const orcid = document.querySelector("#title-slide .quarto-title-author-orcid");
     const icon = orcid.querySelector("svg");
     const nameRect = name.getBoundingClientRect();
+    const emailRect = email.getBoundingClientRect();
+    const affiliationRect = affiliation.getBoundingClientRect();
+    const dateRect = date.getBoundingClientRect();
     const iconRect = icon.getBoundingClientRect();
+    const revealScale = Math.max(0.0001, window.Reveal.getScale());
     return {
       emailDisplay: getComputedStyle(email).display,
       emailHref: emailLink.getAttribute("href"),
+      affiliationGapAbove:
+        (affiliationRect.top - emailRect.bottom) / revealScale,
+      affiliationGapBelow:
+        (dateRect.top - affiliationRect.bottom) / revealScale,
       orcidDisplay: getComputedStyle(orcid).display,
       orcidVerticalAlign: getComputedStyle(orcid).verticalAlign,
       iconViewBox: icon.getAttribute("viewBox"),
@@ -1011,6 +1037,12 @@ const testMadrid = async (connection, origin) => {
   })()`);
   assert.notEqual(titleState.emailDisplay, "none");
   assert.equal(titleState.emailHref, "mailto:ada@example.org");
+  assert(
+    Math.abs(
+      titleState.affiliationGapAbove - titleState.affiliationGapBelow
+    ) < 1,
+    JSON.stringify(titleState)
+  );
   assert.equal(titleState.orcidDisplay, "inline-flex");
   assert.equal(titleState.orcidVerticalAlign, "super");
   assert.equal(titleState.iconViewBox, "0 0 256 256");
@@ -1324,17 +1356,42 @@ const testMadrid = async (connection, origin) => {
       Array.from(document.querySelectorAll(selector + " > li")).map(
         (item) => item.dataset.beamerMarkerValue
       );
+    const marker = (selector) => {
+      const item = document.querySelector(selector);
+      const style = getComputedStyle(item, "::before");
+      return {
+        backgroundColor: style.backgroundColor,
+        borderLeftStyle: style.borderLeftStyle,
+        borderLeftWidth: parseFloat(style.borderLeftWidth),
+        borderRadius: style.borderRadius
+      };
+    };
     return {
       start: values("#ordered-start"),
       nested: values("#ordered-nested"),
       explicitValue: values("#ordered-value"),
-      reversed: values("#ordered-reversed")
+      reversed: values("#ordered-reversed"),
+      topMarker: marker("#ordered-start > li"),
+      nestedMarker: marker("#ordered-nested > li")
     };
   })()`);
   assert.deepEqual(orderedState.start, ["3", "4"]);
   assert.deepEqual(orderedState.nested, ["12"]);
   assert.deepEqual(orderedState.explicitValue, ["7", "8"]);
   assert.deepEqual(orderedState.reversed, ["3", "2"]);
+  assert.notEqual(
+    orderedState.topMarker.backgroundColor,
+    "rgba(0, 0, 0, 0)",
+    JSON.stringify(orderedState)
+  );
+  assert.equal(
+    orderedState.nestedMarker.backgroundColor,
+    "rgba(0, 0, 0, 0)",
+    JSON.stringify(orderedState)
+  );
+  assert.equal(orderedState.nestedMarker.borderLeftStyle, "solid");
+  assert(orderedState.nestedMarker.borderLeftWidth >= 2.5);
+  assert.equal(orderedState.nestedMarker.borderRadius, "0px");
   await orderedPage.screenshot("madrid-ordered-semantics");
   await orderedPage.close();
 
@@ -1938,6 +1995,291 @@ const testFourThreeViewport = async (connection, origin) => {
   await formatsPage.close();
 };
 
+const testSpacingVariant = async (connection, origin, variant) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/spacing-${variant}.html`
+  );
+  const state = await page.evaluate(`(async () => {
+    const frame = () => new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve))
+    );
+    const show = async (id) => {
+      const slide = document.getElementById(id);
+      const indices = window.Reveal.getIndices(slide);
+      window.Reveal.slide(indices.h, indices.v);
+      await frame();
+      return slide;
+    };
+    const number = (value) => Number.parseFloat(value) || 0;
+    const scale = () => Math.max(0.0001, window.Reveal.getScale());
+    const frameGap = (slide, element) => {
+      const heading = slide.querySelector(":scope > h2");
+      return (
+        element.getBoundingClientRect().top - heading.getBoundingClientRect().bottom
+      ) / scale();
+    };
+    const firstGap = async (id, selector) => {
+      const slide = await show(id);
+      return frameGap(slide, slide.querySelector(selector));
+    };
+    const columnState = async (id) => {
+      const slide = await show(id);
+      const columns = slide.querySelector(":scope > .columns");
+      const items = Array.from(columns.children);
+      const columnsRect = columns.getBoundingClientRect();
+      const itemRects = items.map((item) => item.getBoundingClientRect());
+      return {
+        display: getComputedStyle(columns).display,
+        computedGap: number(getComputedStyle(columns).gap),
+        actualGap: (itemRects[1].left - itemRects[0].right) / scale(),
+        widths: itemRects.map((rect) => rect.width / scale()),
+        contained:
+          itemRects[0].left >= columnsRect.left - 0.5 &&
+          itemRects.at(-1).right <= columnsRect.right + 0.5
+      };
+    };
+
+    const firstContentGaps = {
+      paragraph: await firstGap("paragraph-first", ":scope > p"),
+      list: await firstGap("list-first", ":scope > ul"),
+      code: await firstGap("code-first", ":scope > .code-copy-outer-scaffold"),
+      callout: await firstGap("callout-first", ":scope > .callout"),
+      columns: await firstGap("equal-columns", ":scope > .columns")
+    };
+
+    let slide = await show("list-first");
+    const unordered = slide.querySelector(":scope > ul");
+    const unorderedItems = [
+      unordered.querySelector(":scope > li"),
+      unordered.querySelector(":scope > li > ul > li"),
+      unordered.querySelector(":scope > li > ul > li > ul > li")
+    ];
+    const unorderedMarkers = unorderedItems.map((item) => {
+      const style = getComputedStyle(item, "::before");
+      return {
+        width: number(style.width),
+        height: number(style.height),
+        backgroundColor: style.backgroundColor,
+        borderTopStyle: style.borderTopStyle,
+        borderTopWidth: number(style.borderTopWidth)
+      };
+    });
+
+    slide = await show("list-columns");
+    const taskItem = slide.querySelector("ul.task-list > li");
+    const taskMarker = getComputedStyle(taskItem, "::before");
+    const taskList = {
+      checkboxPresent: Boolean(taskItem.querySelector("input[type='checkbox']")),
+      markerContent: taskMarker.content
+    };
+
+    slide = await show("panel-tabset");
+    const tabList = slide.querySelector(".panel-tabset-tabby");
+    const tabItem = tabList.querySelector("li");
+    const tabListStyle = getComputedStyle(tabList);
+    const tabItemStyle = getComputedStyle(tabItem);
+    const tabMarkerStyle = getComputedStyle(tabItem, "::before");
+    const tabset = {
+      paddingLeft: number(tabListStyle.paddingLeft),
+      marginTop: number(tabListStyle.marginTop),
+      marginBottom: number(tabListStyle.marginBottom),
+      itemMarginTop: number(tabItemStyle.marginTop),
+      itemMarginBottom: number(tabItemStyle.marginBottom),
+      markerContent: tabMarkerStyle.content,
+      markerDisplay: tabMarkerStyle.display
+    };
+
+    slide = await show("footnote");
+    const footnoteList = slide.querySelector(".aside-footnotes");
+    const footnoteItem = footnoteList.querySelector("li");
+    const footline = slide.querySelector(":scope > .beamer-footline");
+    const footnoteMarker = getComputedStyle(footnoteItem, "::before");
+    const footnote = {
+      gapAboveFootline:
+        (footline.getBoundingClientRect().top -
+          footnoteList.getBoundingClientRect().bottom) /
+        scale(),
+      markerContent: footnoteMarker.content,
+      markerDisplay: footnoteMarker.display
+    };
+
+    const equalColumns = await columnState("equal-columns");
+    const listColumns = await columnState("list-columns");
+    const proportionalColumns = await columnState("proportional-columns");
+
+    slide = await show("code-first");
+    const sourceCode = slide.querySelector("div.sourceCode");
+    const sourceStyle = getComputedStyle(sourceCode);
+    const codeWrapper = slide.querySelector(".code-copy-outer-scaffold");
+    const slideStyle = getComputedStyle(slide);
+    const availableWidth =
+      slide.offsetWidth -
+      number(slideStyle.paddingLeft) -
+      number(slideStyle.paddingRight);
+    const code = {
+      boxSizing: sourceStyle.boxSizing,
+      overflow:
+        sourceCode.getBoundingClientRect().width / scale() - availableWidth,
+      wrapperMarginBottom: number(getComputedStyle(codeWrapper).marginBottom)
+    };
+
+    slide = await show("callout-first");
+    const callout = slide.querySelector(":scope > .callout");
+    const calloutStyle = getComputedStyle(callout);
+    const calloutState = {
+      fontSize: number(calloutStyle.fontSize),
+      marginBottom: number(calloutStyle.marginBottom)
+    };
+
+    slide = await show("title-slide");
+    const title = slide.querySelector(".beamer-title-box .title");
+    const titleStyle = getComputedStyle(title);
+    const authors = slide.querySelector(".quarto-title-authors");
+    const authorRects = Array.from(authors.children).map((author) =>
+      author.getBoundingClientRect()
+    );
+    const slideRect = slide.getBoundingClientRect();
+    const authorRows = new Set(
+      authorRects.map((rect) => Math.round(rect.top / scale()))
+    ).size;
+    const titleState = {
+      hasSubtitle: Boolean(slide.querySelector(".subtitle")),
+      paddingTop: number(titleStyle.paddingTop),
+      paddingBottom: number(titleStyle.paddingBottom),
+      authorRows,
+      authorsContained:
+        Math.min(...authorRects.map((rect) => rect.left)) >= slideRect.left - 0.5 &&
+        Math.max(...authorRects.map((rect) => rect.right)) <= slideRect.right + 0.5
+    };
+
+    return {
+      revealClasses: document.querySelector(".reveal").className,
+      firstContentGaps,
+      unorderedMarkers,
+      taskList,
+      tabset,
+      footnote,
+      equalColumns,
+      listColumns,
+      proportionalColumns,
+      code,
+      callout: calloutState,
+      title: titleState
+    };
+  })()`);
+
+  assert.match(state.revealClasses, new RegExp(`beamer-${variant}`));
+  const [firstMarker, secondMarker, thirdMarker] = state.unorderedMarkers;
+  assert(
+    Math.abs(firstMarker.width - firstMarker.height) < 0.5,
+    JSON.stringify(state.unorderedMarkers)
+  );
+  assert.notEqual(firstMarker.backgroundColor, "rgba(0, 0, 0, 0)");
+  assert(
+    secondMarker.width > secondMarker.height * 3,
+    JSON.stringify(state.unorderedMarkers)
+  );
+  assert.notEqual(secondMarker.backgroundColor, "rgba(0, 0, 0, 0)");
+  assert(
+    Math.abs(thirdMarker.width - thirdMarker.height) < 0.5,
+    JSON.stringify(state.unorderedMarkers)
+  );
+  assert.equal(thirdMarker.backgroundColor, "rgba(0, 0, 0, 0)");
+  assert.equal(thirdMarker.borderTopStyle, "solid");
+  assert(thirdMarker.borderTopWidth >= 1.5);
+  assert.equal(state.taskList.checkboxPresent, true);
+  assert.equal(state.taskList.markerContent, "none", JSON.stringify(state.taskList));
+
+  assert.equal(state.tabset.paddingLeft, 0, JSON.stringify(state.tabset));
+  assert.equal(state.tabset.marginTop, 0, JSON.stringify(state.tabset));
+  assert.equal(state.tabset.marginBottom, 0, JSON.stringify(state.tabset));
+  assert.equal(state.tabset.itemMarginTop, 0, JSON.stringify(state.tabset));
+  assert.equal(state.tabset.itemMarginBottom, 0, JSON.stringify(state.tabset));
+  assert.equal(state.tabset.markerContent, "none", JSON.stringify(state.tabset));
+  assert.notEqual(state.tabset.markerDisplay, "block", JSON.stringify(state.tabset));
+
+  assert(state.footnote.gapAboveFootline >= 8, JSON.stringify(state.footnote));
+  assert.notEqual(state.footnote.markerContent, '"1"', JSON.stringify(state.footnote));
+  assert.notEqual(state.footnote.markerDisplay, "flex", JSON.stringify(state.footnote));
+
+  for (const columns of [
+    state.equalColumns,
+    state.listColumns,
+    state.proportionalColumns,
+  ]) {
+    assert.equal(columns.display, "flex", JSON.stringify(columns));
+    assert(Math.abs(columns.computedGap - 33) < 0.5, JSON.stringify(columns));
+    assert(Math.abs(columns.actualGap - 33) < 1, JSON.stringify(columns));
+    assert.equal(columns.contained, true, JSON.stringify(columns));
+  }
+  assert(
+    Math.abs(state.equalColumns.widths[0] - state.equalColumns.widths[1]) < 1,
+    JSON.stringify(state.equalColumns)
+  );
+  const proportionalRatio =
+    state.proportionalColumns.widths[0] / state.proportionalColumns.widths[1];
+  assert(proportionalRatio > 1.25 && proportionalRatio < 1.32, proportionalRatio);
+
+  assert.equal(state.code.boxSizing, "border-box", JSON.stringify(state.code));
+  assert(state.code.overflow <= 0.5, JSON.stringify(state.code));
+  assert(state.code.wrapperMarginBottom >= 17, JSON.stringify(state.code));
+
+  assert(Math.abs(state.callout.fontSize - 25.2) < 0.2, JSON.stringify(state.callout));
+  assert(state.callout.marginBottom >= 17, JSON.stringify(state.callout));
+
+  const gaps = Object.values(state.firstContentGaps);
+  assert(Math.max(...gaps) - Math.min(...gaps) < 3, JSON.stringify(gaps));
+  for (const gap of gaps) {
+    assert(Math.abs(gap - 22) < 2, JSON.stringify(gaps));
+  }
+
+  assert.equal(state.title.hasSubtitle, false);
+  assert(
+    state.title.paddingBottom >= state.title.paddingTop * 0.75,
+    JSON.stringify(state.title)
+  );
+  assert(state.title.authorRows >= 2, JSON.stringify(state.title));
+  assert.equal(state.title.authorsContained, true, JSON.stringify(state.title));
+
+  if (variant === "madrid") {
+    for (const [id, name] of [
+      ["title-slide", "spacing-madrid-title"],
+      ["panel-tabset", "spacing-madrid-tabset"],
+      ["footnote", "spacing-madrid-footnote"],
+      ["equal-columns", "spacing-madrid-columns"],
+      ["list-columns", "spacing-madrid-list-columns"],
+    ]) {
+      await showSlide(page, id);
+      await page.screenshot(name);
+    }
+  }
+  await page.close();
+
+  const printPage = await BrowserPage.create(
+    connection,
+    `${origin}/spacing-${variant}.html?print-pdf`
+  );
+  await printPage.emulateMedia("print");
+  const printFootnoteGap = await printPage.evaluate(`(() => {
+    const slide = document.getElementById("footnote");
+    const footnote = slide.querySelector(".aside-footnotes").getBoundingClientRect();
+    const footline = slide
+      .querySelector(":scope > .beamer-footline")
+      .getBoundingClientRect();
+    const scale = Math.max(0.0001, window.Reveal.getScale());
+    return (footline.top - footnote.bottom) / scale;
+  })()`);
+  assert(printFootnoteGap >= 8, printFootnoteGap);
+  await assertPrintLayout(printPage);
+  await printPage.close();
+};
+
+const testSpacing = async (connection, origin) => {
+  await testSpacingVariant(connection, origin, "madrid");
+  await testSpacingVariant(connection, origin, "cambridgeus");
+};
+
 let server;
 let chrome;
 try {
@@ -1955,6 +2297,14 @@ try {
   ]) {
     renderFixture(fixture);
   }
+  renderFixture("spacing-madrid", {
+    source: "spacing",
+    metadata: { "beamer-variant": "madrid" },
+  });
+  renderFixture("spacing-cambridgeus", {
+    source: "spacing",
+    metadata: { "beamer-variant": "cambridgeus" },
+  });
   assert.doesNotMatch(
     readFileSync(join(outputDir, "offline.html"), "utf8"),
     /https:\/\/cdn\.jsdelivr\.net\/npm\/katex/
@@ -1971,6 +2321,7 @@ try {
   await testCentering(chrome.connection, local.origin);
   await testBehavior(chrome.connection, local.origin);
   await testFourThreeViewport(chrome.connection, local.origin);
+  await testSpacing(chrome.connection, local.origin);
   assertNoBrowserErrors(chrome.connection);
 
   console.log("All beamerslides regression tests passed.");

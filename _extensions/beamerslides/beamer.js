@@ -206,6 +206,9 @@
   const alignOrderedMarkers = () => {
     const lists = Array.from(
       document.querySelectorAll(".reveal .slides section ol")
+    ).filter(
+      (list) =>
+        !list.matches(".aside-footnotes") && !list.closest(".footnotes")
     );
     lists.forEach((list) => {
       const directItems = Array.from(list.children).filter((node) =>

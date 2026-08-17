@@ -327,15 +327,27 @@ $border-radius: 4px !default;
   letter-spacing: 0;
 }
 
+#title-slide .beamer-title-box .title:last-child {
+  padding-bottom: 0.42em;
+}
+
 #title-slide .quarto-title-authors {
   display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   justify-content: center;
-  gap: 1.8em;
+  width: 100%;
+  column-gap: 1.8em;
+  row-gap: 0.72em;
   margin-top: 0;
 }
 
 #title-slide .quarto-title-author {
+  flex: 1 1 9.5em;
+  min-width: min(9.5em, 100%);
+  max-width: 20em;
   padding: 0;
+  overflow-wrap: anywhere;
 }
 
 #title-slide .quarto-title-author-name,
@@ -356,9 +368,13 @@ $border-radius: 4px !default;
   font-style: normal;
 }
 
+#title-slide .quarto-title-affiliation {
+  margin-bottom: 0;
+}
+
 #title-slide .quarto-title-author-email {
   display: block;
-  margin: 0.12em 0 0.18em;
+  margin: 0.12em 0 0;
   font-size: 0.62em;
   font-style: italic;
   line-height: 1.25;
@@ -367,6 +383,7 @@ $border-radius: 4px !default;
 #title-slide .quarto-title-author-email a {
   color: var(--beamer-muted);
   text-decoration: none;
+  overflow-wrap: anywhere;
 }
 
 #title-slide .quarto-title-author-email a:hover {
@@ -401,24 +418,32 @@ $border-radius: 4px !default;
 
 /* Flat lists */
 
-.reveal .slides section ul,
-.reveal .slides section ol {
+.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])),
+.reveal .slides section ol:where(:not(.aside-footnotes)) {
   display: block;
   width: auto;
   margin: 0.42em 0 0.58em;
 }
 
-.reveal .slides section ul {
+.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) {
   padding-left: 1.05em;
   list-style: none;
 }
 
-.reveal .slides section ul > li {
+.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li {
   position: relative;
   margin: 0.3em 0;
 }
 
-.reveal .slides section ul > li::before {
+.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li:first-child {
+  margin-top: 0;
+}
+
+.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li:last-child {
+  margin-bottom: 0;
+}
+
+.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li::before {
   content: "";
   position: absolute;
   top: 0.64em;
@@ -447,17 +472,25 @@ $border-radius: 4px !default;
   content: none;
 }
 
-.reveal .slides section ol {
+.reveal .slides section ol:where(:not(.aside-footnotes)) {
   padding-left: 1.55em;
   list-style: none;
 }
 
-.reveal .slides section ol > li {
+.reveal .slides section ol:where(:not(.aside-footnotes)) > li {
   position: relative;
   margin: 0.32em 0;
 }
 
-.reveal .slides section ol > li::before {
+.reveal .slides section ol:where(:not(.aside-footnotes)) > li:first-child {
+  margin-top: 0;
+}
+
+.reveal .slides section ol:where(:not(.aside-footnotes)) > li:last-child {
+  margin-bottom: 0;
+}
+
+.reveal .slides section ol:where(:not(.aside-footnotes)) > li::before {
   content: attr(data-beamer-marker-value);
   position: absolute;
   top: 0.18em;
@@ -478,7 +511,7 @@ $border-radius: 4px !default;
   font-variant-numeric: tabular-nums;
 }
 
-.reveal .slides section ol ol > li::before {
+.reveal .slides section ol:where(:not(.aside-footnotes)) ol:where(:not(.aside-footnotes)) > li::before {
   color: var(--beamer-primary);
   background: transparent;
   border-left: 3px solid var(--beamer-primary-2);
@@ -487,6 +520,44 @@ $border-radius: 4px !default;
 
 .reveal .slides section li > p {
   margin: 0;
+}
+
+.reveal .slides section .panel-tabset > ul.panel-tabset-tabby,
+.reveal .slides section .panel-tabset > ul[role="tablist"] {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reveal .slides section .panel-tabset > ul.panel-tabset-tabby > li,
+.reveal .slides section .panel-tabset > ul[role="tablist"] > li {
+  position: static;
+  margin: 0;
+}
+
+.reveal .slides section .panel-tabset > ul.panel-tabset-tabby > li::before,
+.reveal .slides section .panel-tabset > ul[role="tablist"] > li::before {
+  content: none;
+}
+
+.reveal .slides section ol.aside-footnotes {
+  margin: 0;
+  padding-left: 1.3em;
+  list-style: decimal;
+}
+
+.reveal .slides section ol.aside-footnotes > li {
+  position: static;
+  margin: 0;
+}
+
+.reveal .slides section ol.aside-footnotes > li::before {
+  content: none;
+}
+
+.reveal .slides section.beamer-leaf-slide:not(.scrollable) > aside:not(.notes),
+.reveal .slides section.beamer-leaf-slide:not(.scrollable) > div.aside {
+  bottom: calc(var(--beamer-footline-height) + 8px);
 }
 
 /* Beamer blocks and callouts */
@@ -529,7 +600,7 @@ $border-radius: 4px !default;
   margin-bottom: 0;
 }
 
-.reveal .callout {
+.reveal .slides section div.callout {
   margin: 0.7em 0;
   border: 1px solid var(--beamer-line);
   border-left-width: 5px;
@@ -657,6 +728,7 @@ $border-radius: 4px !default;
 
 .reveal div.sourceCode,
 .reveal pre:not(.sourceCode) {
+  box-sizing: border-box;
   width: 100%;
   margin: 0.6em 0;
   overflow: hidden;
@@ -664,6 +736,20 @@ $border-radius: 4px !default;
   border: 1px solid $code-block-border-color;
   border-radius: 4px;
   box-shadow: none;
+}
+
+.reveal .code-copy-outer-scaffold,
+.reveal .code-with-filename {
+  margin: 0.6em 0;
+}
+
+.reveal .code-copy-outer-scaffold div.sourceCode,
+.reveal .code-with-filename .code-copy-outer-scaffold {
+  margin: 0;
+}
+
+.reveal .slides section > div.sourceCode {
+  margin: 0.6em 0;
 }
 
 .reveal div.sourceCode > pre.sourceCode {
@@ -720,8 +806,20 @@ $border-radius: 4px !default;
 }
 
 .reveal .columns {
+  display: flex;
   align-items: stretch;
   gap: 1.1em;
+}
+
+.reveal .columns > .column {
+  min-width: 0;
+}
+
+.reveal .columns > .column > :not(ul, ol),
+.reveal .columns > .column:first-child > :not(ul, ol),
+.reveal .columns > .column:last-child > :not(ul, ol) {
+  margin-right: 0;
+  margin-left: 0;
 }
 
 .reveal img,
@@ -802,6 +900,10 @@ $border-radius: 4px !default;
 
 .reveal .r-stack > * {
   margin: auto;
+}
+
+.reveal .slides section.beamer-frame-slide > h2:first-of-type + * {
+  margin-block-start: 0;
 }
 
 @media (max-aspect-ratio: 4 / 3) {

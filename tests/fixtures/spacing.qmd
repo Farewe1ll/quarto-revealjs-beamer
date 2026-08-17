@@ -1,0 +1,102 @@
+---
+title: "Spacing regression"
+author:
+  - name: "Alexandria Montgomery One"
+    email: "alexandria.montgomery.1@exampleuniversity.edu"
+    affiliations: "Institute for Advanced Interdisciplinary Studies"
+  - name: "Alexandria Montgomery Two"
+    email: "alexandria.montgomery.2@exampleuniversity.edu"
+    affiliations: "Institute for Advanced Interdisciplinary Studies"
+  - name: "Alexandria Montgomery Three"
+    email: "alexandria.montgomery.3@exampleuniversity.edu"
+    affiliations: "Institute for Advanced Interdisciplinary Studies"
+  - name: "Alexandria Montgomery Four"
+    email: "alexandria.montgomery.4@exampleuniversity.edu"
+    affiliations: "Institute for Advanced Interdisciplinary Studies"
+date: "August 17, 2026"
+short-title: "Spacing regression"
+short-author: "Audit authors"
+short-institute: "Audit institute"
+short-date: "2026"
+format:
+  beamerslides-revealjs:
+    incremental: false
+---
+
+# Components
+
+## Paragraph first {#paragraph-first}
+
+The first element is a paragraph.
+
+## List first {#list-first}
+
+- First list item
+  - Nested list item
+    - Third-level list item
+- Second list item
+
+## Code first {#code-first}
+
+```{.js}
+const spacing = true;
+```
+
+## Callout first {#callout-first}
+
+::: {.callout-note}
+This is a note.
+:::
+
+## Panel tabset {#panel-tabset}
+
+::: {.panel-tabset}
+### Overview
+
+Overview content.
+
+### Details
+
+Details content.
+:::
+
+## Footnote {#footnote}
+
+Text with a footnote.[^audit]
+
+[^audit]: Footnote content with descenders: paging.
+
+## Equal columns {#equal-columns}
+
+:::: {.columns}
+::: {.column width="50%"}
+Left column.
+:::
+::: {.column width="50%"}
+Right column.
+:::
+::::
+
+## List columns {#list-columns}
+
+:::: {.columns}
+::: {.column width="50%"}
+- Left list item
+- Another left item
+:::
+::: {.column width="50%"}
+- [x] Completed task
+- [ ] Open task
+:::
+::::
+
+## Proportional columns {#proportional-columns}
+
+:::: {.columns}
+::: {.column width="54%"}
+Wider column.
+:::
+::: {.column width="42%"}
+Narrower column.
+:::
+::::
