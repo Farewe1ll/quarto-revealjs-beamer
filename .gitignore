@@ -1,3 +1,5 @@
+.DS_Store
+
 /.quarto/
 /_site/
 /*_files/
@@ -6,5 +8,7 @@
 /beamer.js
 /tests/_output/
 /tests/_artifacts/
+
+/tmp/
 
 **/*.quarto_ipynb
