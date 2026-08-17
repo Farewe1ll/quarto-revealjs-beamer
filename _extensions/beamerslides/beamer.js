@@ -204,6 +204,31 @@
   };
 
   const alignOrderedMarkers = () => {
+    const lists = Array.from(
+      document.querySelectorAll(".reveal .slides section ol")
+    );
+    lists.forEach((list) => {
+      const directItems = Array.from(list.children).filter((node) =>
+        node.matches("li")
+      );
+      const reversed = list.hasAttribute("reversed");
+      const parsedStart = Number.parseInt(list.getAttribute("start"), 10);
+      let value = Number.isFinite(parsedStart)
+        ? parsedStart
+        : reversed
+          ? directItems.length
+          : 1;
+
+      directItems.forEach((item) => {
+        const explicitValue = Number.parseInt(item.getAttribute("value"), 10);
+        if (Number.isFinite(explicitValue)) {
+          value = explicitValue;
+        }
+        item.dataset.beamerMarkerValue = String(value);
+        value += reversed ? -1 : 1;
+      });
+    });
+
     const items = Array.from(
       document.querySelectorAll(".reveal .slides section ol > li")
     );
@@ -224,13 +249,7 @@
         return;
       }
 
-      let value = content.replace(/^"|"$/g, "");
-      if (value.includes("counter(")) {
-        const siblings = Array.from(item.parentElement.children).filter(
-          (node) => node.matches && node.matches(":scope > li")
-        );
-        value = String(siblings.indexOf(item) + 1);
-      }
+      const value = item.dataset.beamerMarkerValue;
       const fontSize = Number.parseFloat(style.fontSize);
       const lineHeight = Number.parseFloat(style.lineHeight);
       const boxHeight = Number.parseFloat(style.height);
@@ -325,7 +344,7 @@
       return;
     }
 
-    if (options.showHeadline && slide.id !== "title-slide") {
+    if (options.showHeadline) {
       const header = document.createElement("div");
       header.className = "beamer-headline";
       header.setAttribute("aria-hidden", "true");
@@ -377,7 +396,7 @@
 
   const measureFrameTitle = (slide) => {
     const heading = directHeading(slide, "h2");
-    if (!heading) {
+    if (!heading || heading.getBoundingClientRect().width <= 0) {
       return;
     }
 
@@ -427,9 +446,29 @@
     window.addEventListener("resize", refit, { passive: true });
     if (window.Reveal && typeof window.Reveal.on === "function") {
       window.Reveal.on("resize", refit);
+      window.Reveal.on("slidechanged", (event) => {
+        const currentSlide = event?.currentSlide || window.Reveal.getCurrentSlide();
+        if (currentSlide) {
+          fitFrameTitles([currentSlide]);
+        }
+      });
     }
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(refit);
+    }
+    if (typeof window.ResizeObserver === "function") {
+      const observer = new window.ResizeObserver((entries) => {
+        const visibleSlides = entries
+          .map((entry) => entry.target)
+          .filter(
+            (slide) =>
+              slide && slide.getBoundingClientRect().width > 0
+          );
+        if (visibleSlides.length > 0) {
+          fitFrameTitles(visibleSlides);
+        }
+      });
+      slides.forEach((slide) => observer.observe(slide));
     }
   };
 
@@ -480,6 +519,8 @@
       const h2 = directHeading(slide, "h2");
 
       slide.classList.add("beamer-leaf-slide");
+      slide.classList.remove("center");
+      slide.style.removeProperty("top");
 
       if (slide.id === "title-slide") {
         slide.classList.add("beamer-title-slide");
@@ -510,7 +551,14 @@
       window.requestAnimationFrame(alignInlineLabels);
       window.requestAnimationFrame(alignOrderedMarkers);
     };
+    const realignForPrint = () => {
+      alignInlineLabels();
+      alignOrderedMarkers();
+      slides.forEach(measureFrameTitle);
+    };
     window.addEventListener("resize", realignOpticalLabels, { passive: true });
+    window.addEventListener("beforeprint", realignForPrint);
+    window.addEventListener("afterprint", realignOpticalLabels);
     if (window.Reveal && typeof window.Reveal.on === "function") {
       window.Reveal.on("resize", realignOpticalLabels);
       window.Reveal.on("slidechanged", realignOpticalLabels);

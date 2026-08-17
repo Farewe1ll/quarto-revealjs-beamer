@@ -8,10 +8,6 @@ contributes:
       theme: [default, beamer.scss]
       filters:
         - beamer.lua
-      include-after-body:
-        - beamer-after-body.html
-      format-resources:
-        - beamer.js
       width: 1280
       height: 720
       margin: 0
@@ -30,6 +26,6 @@ contributes:
       date-format: long
       html-math-method:
         method: katex
-        url: https://cdn.jsdelivr.net/npm/katex@0.18.1/dist/
+        url: katex/
       code-overflow: wrap
       highlight-style: github

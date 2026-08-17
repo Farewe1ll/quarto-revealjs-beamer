@@ -1,0 +1,23 @@
+---
+title: "Offline regression"
+author: "Offline Author"
+date: "August 17, 2026"
+short-title: "Offline"
+short-author: "Offline Author"
+beamer-variant: madrid
+format:
+  beamerslides-revealjs:
+    embed-resources: true
+    self-contained-math: true
+---
+
+# Offline
+
+## Embedded mathematics {#offline-math}
+
+The single HTML file must render $\sqrt{x}$ without a network connection.
+
+$$
+\sqrt{n}\left(\bar X_n-\mu\right)
+\xrightarrow{d} \mathcal{N}(0,\sigma^2).
+$$

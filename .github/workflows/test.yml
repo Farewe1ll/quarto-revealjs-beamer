@@ -10,22 +10,43 @@ permissions:
 jobs:
   regression:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: minimum-quarto
+            quarto: 1.4.557
+            node: 22
+            skip-visuals: "1"
+          - name: current-node-22
+            quarto: 1.10.18
+            node: 22
+            skip-visuals: "0"
+          - name: current-node-24
+            quarto: 1.10.18
+            node: 24
+            skip-visuals: "1"
+    name: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
       - uses: quarto-dev/quarto-actions/setup@v2
         with:
-          version: 1.10.18
+          version: ${{ matrix.quarto }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install test dependencies
+        run: npm ci
       - name: Run render and browser regression tests
         env:
           CHROME_BIN: google-chrome
-        run: node tests/run-tests.mjs
+          SKIP_VISUAL_REGRESSION: ${{ matrix.skip-visuals }}
+        run: npm test
       - name: Upload visual artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: beamerslides-regression-artifacts
+          name: beamerslides-regression-${{ matrix.name }}
           path: tests/_artifacts/
           if-no-files-found: ignore

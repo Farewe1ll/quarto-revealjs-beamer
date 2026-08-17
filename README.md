@@ -5,7 +5,8 @@
 - `madrid`：默认蓝色主题，遵循 Madrid 的无 headline 布局。
 - `cambridgeus`：白底红色标题、红灰 headline 与三段式 footline。
 - 长 frame title 会自动缩小并增高，不会被固定高度裁切。
-- 数学公式默认使用固定版本的 KaTeX，根号等可伸缩符号采用矢量路径，规则线会随字号统一缩放。
+- 数学公式默认使用扩展内置的固定版本 KaTeX，断网打开也能完整渲染；根号等可伸缩符号采用矢量路径，规则线会随字号统一缩放。
+- 拉丁字符使用扩展内置的 Libertinus Sans，避免不同系统因缺少字体而产生版式漂移；中文继续使用各平台原生 CJK 字体回退。
 - 默认关闭 Reveal.js 菜单、控制按钮、进度条和画布外边距；均可通过格式配置覆盖。
 
 ## 本地预览
@@ -64,7 +65,7 @@ beamer-progress: true
 
 标题页会显示可点击的邮箱地址；ORCID 使用内嵌矢量 iD 图标，并以作者名右上方的小角标呈现，避免位图缩放模糊。多位作者继续使用同一组 `name`、`email`、`orcid` 和 `affiliations` 字段。
 
-行内公式默认放大 `2%`，行间公式放大 `6%`。若文档依赖 KaTeX 尚未支持的 MathJax 专用语法，可以覆盖回 Quarto 的 MathJax：
+行内公式默认放大 `2%`，行间公式放大 `6%`。内置 KaTeX 及其字体不依赖 CDN。若文档依赖 KaTeX 尚未支持的 MathJax 专用语法，可以覆盖回 Quarto 的 MathJax（此时 MathJax 本身是否离线取决于用户的 Quarto 配置）：
 
 ```yaml
 format:
@@ -159,10 +160,13 @@ link-citations: true
 _extensions/beamerslides/
 ├── _extension.yml
 ├── _palette.scss
-├── beamer-after-body.html
+├── beamer-fonts.css
 ├── beamer.lua
 ├── beamer.js
-└── beamer.scss
+├── beamer.scss
+├── fonts/
+├── katex/
+└── THIRD_PARTY.md
 assets/
 └── normal-density.svg
 references.bib
@@ -174,13 +178,20 @@ tests/
 
 ## 测试
 
-需要 Quarto、Node.js 22+ 和 Chrome/Chromium：
+需要 Quarto、Node.js 22+ 和 Chrome/Chromium。首次运行先安装锁定的测试依赖：
 
 ```bash
-node tests/run-tests.mjs
+npm ci
+npm test
 ```
 
-测试会渲染两个变体与显式选项示例，检查元数据、邮箱与 ORCID、页眉页脚、列表、长标题、KaTeX 数学输出、文字背景对齐、表格对比度、代码块、图片、引用、16:9 / 4:3 视口、浏览器错误和 PDF 输出。截图与 PDF 写入 `tests/_artifacts/`，该目录不会进入版本控制。
+测试会渲染两个变体、显式选项与自包含离线示例，检查元数据、邮箱与 ORCID、页眉页脚、列表、长标题、本地 KaTeX 与字体、文字背景对齐、表格对比度、代码块、图片、引用、16:9 / 4:3 视口、浏览器错误，以及 Madrid/CambridgeUS PDF 输出。截图会与 `tests/baselines/` 中受版本控制的基线比较；实际截图、差异图与 PDF 写入 `tests/_artifacts/`，该目录不会进入版本控制。
+
+只有确认视觉变化符合预期后，才应更新基线：
+
+```bash
+npm run test:update-visuals
+```
 
 内容组织方式参考了 [quarto-revealjs-clean](https://github.com/grantmcdermott/quarto-revealjs-clean)；默认行为与色彩角色依据 Beamer 官方的 [Madrid](https://github.com/josephwright/beamer/blob/main/base/themes/theme/beamerthemeMadrid.sty) 和 [CambridgeUS](https://github.com/josephwright/beamer/blob/main/base/themes/theme/beamerthemeCambridgeUS.sty) 主题源码。
 

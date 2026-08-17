@@ -58,6 +58,43 @@ local function include_variant_bootstrap(variant)
   )
 end
 
+local dependency_registered = false
+local function register_dependency()
+  if dependency_registered then
+    return
+  end
+  if quarto == nil or quarto.doc == nil or quarto.doc.add_html_dependency == nil then
+    warning("Unable to register beamerslides browser resources.")
+    return
+  end
+
+  quarto.doc.add_html_dependency({
+    name = "beamerslides",
+    version = "0.2.4",
+    scripts = { "beamer.js" },
+    stylesheets = { "beamer-fonts.css" },
+    resources = {
+      {
+        name = "fonts/LibertinusSans-Regular.woff2",
+        path = "fonts/LibertinusSans-Regular.woff2",
+      },
+      {
+        name = "fonts/LibertinusSans-Italic.woff2",
+        path = "fonts/LibertinusSans-Italic.woff2",
+      },
+      {
+        name = "fonts/LibertinusSans-Bold.woff2",
+        path = "fonts/LibertinusSans-Bold.woff2",
+      },
+      {
+        name = "OFL.txt",
+        path = "fonts/OFL.txt",
+      },
+    },
+  })
+  dependency_registered = true
+end
+
 local function normalized_boolean(meta, name)
   if meta[name] == nil then
     return nil
@@ -72,6 +109,7 @@ local function normalized_boolean(meta, name)
 end
 
 function Meta(meta)
+  register_dependency()
   local variant = stringify(meta["beamer-variant"]) or "madrid"
   variant = variant:lower()
 

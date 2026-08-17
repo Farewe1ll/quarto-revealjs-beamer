@@ -6,7 +6,7 @@ $link-color: #285a94 !default;
 $selection-bg: #c9d9ea !default;
 $selection-color: #111827 !default;
 
-$font-family-sans-serif: "Latin Modern Sans", "Libertinus Sans", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", Arial, sans-serif !default;
+$font-family-sans-serif: "Beamerslides Libertinus Sans", "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", Arial, sans-serif !default;
 $font-family-monospace: "Iosevka", "SFMono-Regular", Consolas, "Liberation Mono", monospace !default;
 $presentation-font-size-root: 30px !default;
 $presentation-line-height: 1.28 !default;
@@ -37,6 +37,7 @@ $border-radius: 4px !default;
 
 .reveal {
   color: var(--beamer-ink);
+  font-synthesis: none;
 }
 
 .reveal .slides {
@@ -184,11 +185,6 @@ $border-radius: 4px !default;
   background: var(--beamer-progress);
 }
 
-#title-slide > .beamer-headline,
-.beamer-title-slide > .beamer-headline {
-  display: none;
-}
-
 /* Frame and section titles */
 
 .reveal .slides section > h2:first-of-type {
@@ -243,7 +239,14 @@ $border-radius: 4px !default;
 }
 
 .reveal .slides section.beamer-section-slide {
-  padding: 212px 12% calc(var(--beamer-footline-height) + 30px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: calc(var(--beamer-active-headline-height) + 34px) 12% calc(var(--beamer-footline-height) + 34px);
+}
+
+.reveal .slides section.beamer-section-slide.present {
+  display: flex !important;
 }
 
 .reveal .slides section.beamer-section-slide > h1:first-of-type {
@@ -268,8 +271,15 @@ $border-radius: 4px !default;
 /* Title page */
 
 .reveal .slides #title-slide {
-  padding: 122px 10% calc(var(--beamer-footline-height) + 36px);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: calc(var(--beamer-active-headline-height) + 36px) 10% calc(var(--beamer-footline-height) + 36px);
   text-align: center;
+}
+
+.reveal .slides #title-slide.present {
+  display: flex !important;
 }
 
 .beamer-title-box {
@@ -395,23 +405,22 @@ $border-radius: 4px !default;
 .reveal .slides section ul > li::before {
   content: "";
   position: absolute;
-  top: 0.55em;
+  top: 0.64em;
   left: -0.86em;
   width: 0.34em;
   height: 0.34em;
+  transform: translateY(-50%);
   background: var(--beamer-primary);
   border-radius: 1px;
 }
 
 .reveal .slides section ul ul > li::before {
-  top: 0.66em;
   width: 0.46em;
   height: 0.12em;
   background: var(--beamer-primary-2);
 }
 
 .reveal .slides section ul ul ul > li::before {
-  top: 0.53em;
   width: 0.28em;
   height: 0.28em;
   background: transparent;
@@ -425,17 +434,15 @@ $border-radius: 4px !default;
 .reveal .slides section ol {
   padding-left: 1.55em;
   list-style: none;
-  counter-reset: beamer-item;
 }
 
 .reveal .slides section ol > li {
   position: relative;
   margin: 0.32em 0;
-  counter-increment: beamer-item;
 }
 
 .reveal .slides section ol > li::before {
-  content: counter(beamer-item);
+  content: attr(data-beamer-marker-value);
   position: absolute;
   top: 0.18em;
   left: -1.9em;
@@ -482,7 +489,7 @@ $border-radius: 4px !default;
   content: attr(data-title);
   display: block;
   margin: -0.62em -0.76em 0.5em;
-  padding: 0.28em 0.76em 0.32em;
+  padding: 0.36em 0.76em 0.24em;
   color: var(--beamer-block-title-fg);
   background: var(--beamer-block-title-bg);
   font-size: 0.82em;
@@ -560,6 +567,8 @@ $border-radius: 4px !default;
 }
 
 .button {
+  position: relative;
+  top: -0.14em;
   display: inline-block;
   padding: 0.3em 0.62em;
   color: #fff !important;
@@ -796,4 +805,29 @@ $border-radius: 4px !default;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+}
+
+html.reveal-print .reveal .slides section.beamer-leaf-slide,
+html.print-pdf .reveal .slides section.beamer-leaf-slide {
+  top: 0 !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  padding: calc(var(--beamer-active-headline-height) + 34px) 58px calc(var(--beamer-footline-height) + 18px) !important;
+}
+
+html.reveal-print .reveal .slides section.beamer-leaf-slide.beamer-frame-slide,
+html.print-pdf .reveal .slides section.beamer-leaf-slide.beamer-frame-slide {
+  padding-top: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) + 22px) !important;
+}
+
+html.reveal-print .reveal .slides section.beamer-section-slide,
+html.print-pdf .reveal .slides section.beamer-section-slide {
+  display: flex !important;
+  padding: calc(var(--beamer-active-headline-height) + 34px) 12% calc(var(--beamer-footline-height) + 34px) !important;
+}
+
+html.reveal-print .reveal .slides section#title-slide,
+html.print-pdf .reveal .slides section#title-slide {
+  display: flex !important;
+  padding: calc(var(--beamer-active-headline-height) + 36px) 10% calc(var(--beamer-footline-height) + 36px) !important;
 }

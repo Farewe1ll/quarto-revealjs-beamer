@@ -1,12 +1,21 @@
-/.quarto/
+# Local tooling / agent scratch
+.reasonix/
+
+# Quarto cache and generated output
+.quarto/
 /_site/
 /*_files/
 /*.html
 /*.pdf
 /beamer.js
+**/*.quarto_ipynb
+
+# Node.js dependencies
+/node_modules/
+
+# Test output (rendered HTML, screenshots, diff images, PDFs)
 /tests/_output/
 /tests/_artifacts/
 
-/tmp/
-
-**/*.quarto_ipynb
+# Scratch / temporary files
+tmp/

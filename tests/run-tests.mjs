@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import {
   copyFileSync,
+  closeSync,
   createReadStream,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   rmSync,
   statSync,
@@ -16,16 +18,120 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import pixelmatch from "pixelmatch";
+import pngjs from "pngjs";
+
+const { PNG } = pngjs;
 
 const testsDir = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(testsDir, "..");
 const outputDir = join(testsDir, "_output");
 const artifactsDir = join(testsDir, "_artifacts");
-const chromeProfileDir = mkdtempSync(join(tmpdir(), "beamerslides-chrome-"));
+const baselinesDir = join(testsDir, "baselines");
+const chromeTemporaryDir = mkdtempSync(join(tmpdir(), "beamerslides-chrome-"));
+const chromeProfileDir = join(chromeTemporaryDir, "profile");
+const chromeStderrPath = join(chromeTemporaryDir, "chrome-stderr.log");
+mkdirSync(chromeProfileDir, { recursive: true });
 const temporaryInputs = [];
+const generatedFixtureIgnore = join(testsDir, "fixtures", ".gitignore");
+const fixtureIgnoreExisted = existsSync(generatedFixtureIgnore);
+const updateVisualBaselines = process.env.UPDATE_VISUAL_BASELINES === "1";
+const skipVisualRegression = process.env.SKIP_VISUAL_REGRESSION === "1";
+const quartoCommand = process.env.BEAMERSLIDES_QUARTO_BIN || "quarto";
+const maximumVisualDifference = 0.015;
+const requestedChromeStartupTimeout = Number.parseInt(
+  process.env.BEAMERSLIDES_CHROME_STARTUP_TIMEOUT_MS || "",
+  10
+);
+const chromeStartupTimeout =
+  Number.isFinite(requestedChromeStartupTimeout) &&
+  requestedChromeStartupTimeout > 0
+    ? requestedChromeStartupTimeout
+    : 30_000;
+const debugCleanup = (...values) => {
+  if (process.env.BEAMERSLIDES_DEBUG_CLEANUP === "1") {
+    console.error("[cleanup]", ...values);
+  }
+};
 
 const delay = (milliseconds) =>
   new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+
+const waitForChildExit = (processHandle, milliseconds) => {
+  if (processHandle.exitCode !== null || processHandle.signalCode !== null) {
+    return Promise.resolve(true);
+  }
+  return new Promise((resolveExit) => {
+    let settled = false;
+    let timeoutHandle;
+    const finish = (exited) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      processHandle.off("exit", onExit);
+      resolveExit(exited);
+    };
+    const onExit = () => finish(true);
+    processHandle.once("exit", onExit);
+    timeoutHandle = setTimeout(() => finish(false), milliseconds);
+    if (processHandle.exitCode !== null || processHandle.signalCode !== null) {
+      finish(true);
+    }
+  });
+};
+
+const childIsRunning = (processHandle) =>
+  processHandle.pid !== undefined &&
+  processHandle.exitCode === null &&
+  processHandle.signalCode === null;
+
+const stopChildProcess = async (processHandle) => {
+  if (!processHandle) return;
+
+  if (childIsRunning(processHandle)) {
+    try {
+      processHandle.kill("SIGTERM");
+    } catch (error) {
+      if (error.code !== "ESRCH") {
+        console.warn(`Warning: could not stop Chrome gracefully: ${error.message}`);
+      }
+    }
+    await waitForChildExit(processHandle, 3000);
+  }
+  if (childIsRunning(processHandle)) {
+    try {
+      processHandle.kill("SIGKILL");
+    } catch (error) {
+      if (error.code !== "ESRCH") {
+        console.warn(`Warning: could not force Chrome to stop: ${error.message}`);
+      }
+    }
+    await waitForChildExit(processHandle, 5000);
+  }
+  processHandle.unref();
+};
+
+const removeTemporaryDirectory = async (target) => {
+  let lastError;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      rmSync(target, { force: true, recursive: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!["EACCES", "EBUSY", "ENOTEMPTY", "EPERM"].includes(error.code)) {
+        break;
+      }
+      await delay(Math.min(1000, 100 * 2 ** attempt));
+    }
+  }
+
+  // A GitHub-hosted runner removes its own /tmp directory. A late Chrome
+  // helper must not turn an otherwise successful regression run into a failure.
+  console.warn(
+    `Warning: could not remove temporary Chrome directory ${target}: ${lastError?.message}`
+  );
+};
 
 const ensureTestPath = (target) => {
   const relativePath = relative(join(rootDir, "tests"), target);
@@ -64,7 +170,7 @@ const renderFixture = (name) => {
   temporaryInputs.push(temporaryInput);
   copyFileSync(fixture, temporaryInput);
   try {
-    run("quarto", [
+    run(quartoCommand, [
       "render",
       basename(temporaryInput),
       "--output",
@@ -179,18 +285,37 @@ class CdpConnection {
         this.events.push(message);
       }
     });
+    webSocket.addEventListener("close", () => {
+      const error = new Error("Chrome DevTools connection closed.");
+      for (const pending of this.pending.values()) pending.reject(error);
+      this.pending.clear();
+    });
   }
 
-  static async connect(url) {
+  static async connect(url, timeoutMilliseconds = 1000) {
     const webSocket = new WebSocket(url);
-    await new Promise((resolveOpen, rejectOpen) => {
-      webSocket.addEventListener("open", resolveOpen, { once: true });
-      webSocket.addEventListener(
-        "error",
-        () => rejectOpen(new Error(`Unable to connect to ${url}`)),
-        { once: true }
-      );
-    });
+    try {
+      await Promise.race([
+        new Promise((resolveOpen, rejectOpen) => {
+          webSocket.addEventListener("open", resolveOpen, { once: true });
+          webSocket.addEventListener(
+            "error",
+            () => rejectOpen(new Error(`Unable to connect to ${url}`)),
+            { once: true }
+          );
+        }),
+        delay(timeoutMilliseconds).then(() => {
+          throw new Error(`Timed out connecting to ${url}`);
+        }),
+      ]);
+    } catch (error) {
+      try {
+        webSocket.close();
+      } catch {
+        // The socket may still be in its initial connection state.
+      }
+      throw error;
+    }
     return new CdpConnection(webSocket);
   }
 
@@ -205,50 +330,167 @@ class CdpConnection {
   }
 
   close() {
-    this.webSocket.close();
+    if (this.webSocket.readyState >= WebSocket.CLOSING) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolveClose) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolveClose();
+      };
+      this.webSocket.addEventListener("close", finish, { once: true });
+      this.webSocket.addEventListener("error", finish, { once: true });
+      this.webSocket.close();
+      delay(1000).then(finish);
+    });
   }
 }
 
+const readChromeStderr = () =>
+  existsSync(chromeStderrPath)
+    ? readFileSync(chromeStderrPath, "utf8")
+    : "";
+
+const preserveChromeStartupDiagnostics = (details) => {
+  try {
+    mkdirSync(artifactsDir, { recursive: true });
+    if (existsSync(chromeStderrPath)) {
+      copyFileSync(chromeStderrPath, join(artifactsDir, "chrome-stderr.log"));
+    }
+    writeFileSync(
+      join(artifactsDir, "chrome-startup.json"),
+      `${JSON.stringify(details, null, 2)}\n`
+    );
+  } catch (error) {
+    console.warn(`Warning: could not preserve Chrome diagnostics: ${error.message}`);
+  }
+};
+
 const launchChrome = async () => {
   const chromePath = findChrome();
-  let stderr = "";
-  const processHandle = spawn(
-    chromePath,
-    [
-      "--headless=new",
-      "--disable-gpu",
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--no-sandbox",
-      "--remote-debugging-port=0",
-      `--user-data-dir=${chromeProfileDir}`,
-      "--window-size=1280,720",
-      "--force-device-scale-factor=1",
-    ],
-    { stdio: ["ignore", "ignore", "pipe"] }
-  );
-  processHandle.stderr.on("data", (chunk) => {
-    stderr += chunk.toString();
+  const startupStartedAt = Date.now();
+  const stderrFd = openSync(chromeStderrPath, "w");
+  let processHandle;
+  try {
+    processHandle = spawn(
+      chromePath,
+      [
+        "--headless=new",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--disable-breakpad",
+        "--disable-crash-reporter",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--no-sandbox",
+        "--remote-debugging-address=127.0.0.1",
+        "--remote-debugging-port=0",
+        `--user-data-dir=${chromeProfileDir}`,
+        "--window-size=1280,720",
+        "--force-device-scale-factor=1",
+      ],
+      { stdio: ["ignore", "ignore", stderrFd] }
+    );
+  } finally {
+    closeSync(stderrFd);
+  }
+
+  let spawnError;
+  let lastActivePortContents = "";
+  let lastConnectionError = "";
+  processHandle.once("error", (error) => {
+    spawnError = error;
   });
 
+  const startupFailure = async (summary) => {
+    const observedExitCode = processHandle.exitCode;
+    const observedSignalCode = processHandle.signalCode;
+    await stopChildProcess(processHandle);
+    const stderr = readChromeStderr();
+    const details = {
+      summary,
+      chromePath,
+      elapsedMilliseconds: Date.now() - startupStartedAt,
+      timeoutMilliseconds: chromeStartupTimeout,
+      exitCode: observedExitCode,
+      signalCode: observedSignalCode,
+      spawnError: spawnError?.message || null,
+      activePortFileContents: lastActivePortContents || null,
+      lastConnectionError: lastConnectionError || null,
+    };
+    preserveChromeStartupDiagnostics(details);
+    return new Error(
+      [
+        summary,
+        `Chrome executable: ${chromePath}`,
+        `Startup wait: ${details.elapsedMilliseconds} ms`,
+        lastConnectionError && `Last connection error: ${lastConnectionError}`,
+        "Chrome stderr:",
+        stderr.trim() || "(no stderr output)",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    );
+  };
+
   const activePortFile = join(chromeProfileDir, "DevToolsActivePort");
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  while (Date.now() - startupStartedAt < chromeStartupTimeout) {
+    if (spawnError) {
+      throw await startupFailure(`Chrome failed to launch: ${spawnError.message}`);
+    }
     if (existsSync(activePortFile)) {
-      const [port, browserPath] = readFileSync(activePortFile, "utf8")
-        .trim()
-        .split(/\r?\n/);
-      const connection = await CdpConnection.connect(
-        `ws://127.0.0.1:${port}${browserPath}`
-      );
-      return { connection, processHandle, stderr: () => stderr };
+      let port;
+      let browserPath;
+      try {
+        lastActivePortContents = readFileSync(activePortFile, "utf8").trim();
+        [port, browserPath] = lastActivePortContents.split(/\r?\n/);
+      } catch (error) {
+        lastConnectionError = `Could not read DevToolsActivePort: ${error.message}`;
+      }
+      if (/^\d+$/.test(port || "") && browserPath?.startsWith("/")) {
+        try {
+          const connection = await CdpConnection.connect(
+            `ws://127.0.0.1:${port}${browserPath}`
+          );
+          return { connection, processHandle, stderr: readChromeStderr };
+        } catch (error) {
+          lastConnectionError = error.message;
+          // Chrome can publish the port just before the socket accepts clients.
+        }
+      }
     }
-    if (processHandle.exitCode !== null) {
-      throw new Error(`Chrome exited before startup.\n${stderr}`);
+    if (!childIsRunning(processHandle)) {
+      throw await startupFailure("Chrome exited before startup.");
     }
-    await delay(25);
+    await delay(50);
   }
-  processHandle.kill("SIGKILL");
-  throw new Error(`Chrome did not expose a debugging port.\n${stderr}`);
+  throw await startupFailure(
+    `Chrome did not expose a debugging port within ${chromeStartupTimeout} ms.`
+  );
+};
+
+const shutdownChrome = async ({ connection, processHandle }) => {
+  if (childIsRunning(processHandle)) {
+    try {
+      await Promise.race([
+        connection.send("Browser.close").catch(() => undefined),
+        delay(1500),
+      ]);
+      await waitForChildExit(processHandle, 3000);
+    } catch (error) {
+      console.warn(`Warning: Chrome rejected graceful shutdown: ${error.message}`);
+    }
+  }
+
+  try {
+    await connection.close();
+  } catch (error) {
+    console.warn(`Warning: could not close Chrome DevTools connection: ${error.message}`);
+  }
+  await stopChildProcess(processHandle);
 };
 
 class BrowserPage {
@@ -346,7 +588,74 @@ class BrowserPage {
       this.viewport.height,
       `${name} screenshot height`
     );
-    writeFileSync(join(artifactsDir, `${name}.png`), bytes);
+    const actualPath = join(artifactsDir, `${name}.png`);
+    const baselinePath = join(baselinesDir, `${name}.png`);
+    writeFileSync(actualPath, bytes);
+
+    if (updateVisualBaselines) {
+      mkdirSync(baselinesDir, { recursive: true });
+      writeFileSync(baselinePath, bytes);
+      return;
+    }
+
+    if (skipVisualRegression) {
+      return;
+    }
+
+    assert(
+      existsSync(baselinePath),
+      `Missing visual baseline for ${name}; run npm run test:update-visuals`
+    );
+    const actual = PNG.sync.read(bytes);
+    const expected = PNG.sync.read(readFileSync(baselinePath));
+    assert.equal(actual.width, expected.width, `${name} baseline width`);
+    assert.equal(actual.height, expected.height, `${name} baseline height`);
+
+    const difference = new PNG({ width: actual.width, height: actual.height });
+    const changedPixels = pixelmatch(
+      expected.data,
+      actual.data,
+      difference.data,
+      actual.width,
+      actual.height,
+      { includeAA: false, threshold: 0.2 }
+    );
+    const differenceRatio = changedPixels / (actual.width * actual.height);
+    if (differenceRatio > maximumVisualDifference) {
+      writeFileSync(
+        join(artifactsDir, `${name}-diff.png`),
+        PNG.sync.write(difference)
+      );
+    }
+    assert(
+      differenceRatio <= maximumVisualDifference,
+      `${name} differs from its visual baseline by ${(
+        differenceRatio * 100
+      ).toFixed(3)}%`
+    );
+  }
+
+  async pressKey(key, code, windowsVirtualKeyCode) {
+    const event = { key, code, windowsVirtualKeyCode };
+    await this.connection.send(
+      "Input.dispatchKeyEvent",
+      { ...event, type: "rawKeyDown" },
+      this.sessionId
+    );
+    await this.connection.send(
+      "Input.dispatchKeyEvent",
+      { ...event, type: "keyUp" },
+      this.sessionId
+    );
+    await delay(40);
+  }
+
+  async emulateMedia(media) {
+    await this.connection.send(
+      "Emulation.setEmulatedMedia",
+      { media },
+      this.sessionId
+    );
   }
 
   async printPdf(name) {
@@ -408,13 +717,14 @@ const visibleInkMeasurementSource = `
     const paddingBottom = parseFloat(style.paddingBottom);
     const borderTop = parseFloat(style.borderTopWidth);
     const borderBottom = parseFloat(style.borderBottomWidth);
-    const boxHeight = pseudo
-      ? parseFloat(style.height)
+    const declaredHeight = parseFloat(style.height);
+    const boxHeight = pseudo && Number.isFinite(declaredHeight)
+      ? style.boxSizing === "border-box"
+        ? declaredHeight
+        : borderTop + paddingTop + declaredHeight + paddingBottom + borderBottom
       : borderTop + paddingTop + lineHeight + paddingBottom + borderBottom;
-    const lineTop = pseudo
-      ? borderTop + paddingTop +
-        (boxHeight - borderTop - borderBottom - paddingTop - paddingBottom - lineHeight) / 2
-      : borderTop + paddingTop;
+    const lineTop = borderTop + paddingTop +
+      (boxHeight - borderTop - borderBottom - paddingTop - paddingBottom - lineHeight) / 2;
     const textNode = element.querySelector(
       ":scope > .beamer-inline-label-text"
     );
@@ -438,6 +748,90 @@ const visibleInkMeasurementSource = `
     };
   };
 `;
+
+const printLayoutMeasurementSource = `(() => {
+  const directContent = (slide) =>
+    Array.from(slide.children).find((node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      if (node.matches("h2, .beamer-headline, .beamer-footline, .aside-footnotes")) {
+        return false;
+      }
+      return getComputedStyle(node).display !== "none";
+    });
+
+  return Array.from(document.querySelectorAll(".beamer-leaf-slide")).map((slide) => {
+    const slideRect = slide.getBoundingClientRect();
+    const heading = slide.querySelector(":scope > h2");
+    const content = heading ? directContent(slide) : null;
+    const headline = slide.querySelector(":scope > .beamer-headline");
+    const footer = slide.querySelector(":scope > .beamer-footline");
+    const headingRect = heading?.getBoundingClientRect();
+    const contentRect = content?.getBoundingClientRect();
+    const headlineRect = headline?.getBoundingClientRect();
+    const footerRect = footer?.getBoundingClientRect();
+    const isSpecialSlide =
+      slide.id === "title-slide" || slide.classList.contains("beamer-section-slide");
+    const specialContentRects = isSpecialSlide
+      ? Array.from(slide.children)
+          .filter(
+            (node) =>
+              node instanceof HTMLElement &&
+              !node.matches(
+                ".beamer-headline, .beamer-footline, .aside-footnotes, aside.notes"
+              ) &&
+              getComputedStyle(node).display !== "none"
+          )
+          .map((node) => node.getBoundingClientRect())
+      : [];
+    const specialContentCenter = specialContentRects.length
+      ? (Math.min(...specialContentRects.map((rect) => rect.top)) +
+          Math.max(...specialContentRects.map((rect) => rect.bottom))) /
+        2
+      : null;
+    const availableCenter = isSpecialSlide
+      ? ((headlineRect?.bottom ?? slideRect.top) +
+          (footerRect?.top ?? slideRect.bottom)) /
+        2
+      : null;
+    return {
+      id: slide.id,
+      frameContentBelowTitle:
+        !headingRect || !contentRect || contentRect.top >= headingRect.bottom - 0.5,
+      headlineContained:
+        !headlineRect ||
+        (headlineRect.top >= slideRect.top - 0.5 &&
+          headlineRect.bottom <= slideRect.bottom + 0.5),
+      footerContained:
+        !footerRect ||
+        (footerRect.top >= slideRect.top - 0.5 &&
+          footerRect.bottom <= slideRect.bottom + 0.5),
+      specialSlideCentered:
+        !isSpecialSlide ||
+        (getComputedStyle(slide).display === "flex" &&
+          specialContentCenter !== null &&
+          Math.abs(specialContentCenter - availableCenter) < 12)
+    };
+  });
+})()`;
+
+const assertPrintLayout = async (page) => {
+  const printLayout = await page.evaluate(printLayoutMeasurementSource);
+  assert.deepEqual(
+    printLayout.filter((slide) => !slide.frameContentBelowTitle),
+    [],
+    JSON.stringify(printLayout)
+  );
+  assert.deepEqual(
+    printLayout.filter(
+      (slide) =>
+        !slide.headlineContained ||
+        !slide.footerContained ||
+        !slide.specialSlideCentered
+    ),
+    [],
+    JSON.stringify(printLayout)
+  );
+};
 
 const testMadrid = async (connection, origin) => {
   const listsPage = await BrowserPage.create(
@@ -467,6 +861,30 @@ const testMadrid = async (connection, origin) => {
     const orderedMarkerTop =
       orderedItemRect.top + parseFloat(orderedMarker.top);
     const orderedMarkerHeight = parseFloat(orderedMarker.height);
+    const unorderedItems = [
+      unordered.querySelector(":scope > li"),
+      unordered.querySelector(":scope > li > ul > li"),
+      unordered.querySelector(":scope > li > ul > li > ul > li")
+    ];
+    const unorderedMarkerCenterDeltas = unorderedItems.map((item) => {
+      const marker = getComputedStyle(item, "::before");
+      const itemStyle = getComputedStyle(item);
+      const outerHeight =
+        parseFloat(marker.height) +
+        parseFloat(marker.borderTopWidth) +
+        parseFloat(marker.borderBottomWidth);
+      const translateY =
+        marker.transform === "none"
+          ? 0
+          : new DOMMatrixReadOnly(marker.transform).m42;
+      return (
+        parseFloat(marker.top) +
+        outerHeight / 2 +
+        translateY -
+        parseFloat(itemStyle.lineHeight) / 2
+      );
+    });
+    const block = slide.querySelector(".beamer-block");
     return {
       classes: reveal.className,
       leafSlides: document.querySelectorAll(".beamer-leaf-slide").length,
@@ -477,8 +895,11 @@ const testMadrid = async (connection, origin) => {
       date: footer.querySelector(".beamer-footline-date-text").textContent,
       progressCount: footer.querySelectorAll(".beamer-footline-progress").length,
       unorderedDisplay: getComputedStyle(unordered).display,
+      unorderedMarkerCenterDeltas,
       orderedDisplay: getComputedStyle(ordered).display,
       orderedMarkerDisplay: orderedMarker.display,
+      orderedMarkerContent: orderedMarker.content,
+      orderedMarkerValue: orderedItem.dataset.beamerMarkerValue,
       orderedMarkerHeight,
       orderedMarkerLineHeight: parseFloat(orderedMarker.lineHeight),
       orderedMarkerPaddingBottom: parseFloat(orderedMarker.paddingBottom),
@@ -490,13 +911,14 @@ const testMadrid = async (connection, origin) => {
         orderedMarkerTop + orderedMarkerHeight / 2 -
         (orderedTextRect.top + orderedTextRect.height / 2),
       listsAreStacked: orderedRect.top >= unorderedRect.bottom - 1,
-      blockNormalized: Boolean(slide.querySelector(".beamer-block[data-title='Definition']"))
+      blockNormalized: Boolean(slide.querySelector(".beamer-block[data-title='定义']")),
+      blockTitleInk: measureVisibleInk(block, "定义", "::before")
     };
   })()`);
 
   assert.match(state.classes, /beamer-madrid/);
   assert.match(state.classes, /beamer-no-headline/);
-  assert.equal(state.leafSlides, 9);
+  assert.equal(state.leafSlides, 10);
   assert.equal(state.headlineCount, 0);
   assert.equal(state.footerBoxCount, 3);
   assert(Math.max(...state.footerWidths) - Math.min(...state.footerWidths) < 1);
@@ -504,11 +926,14 @@ const testMadrid = async (connection, origin) => {
   assert.equal(state.date, "1843");
   assert.equal(state.progressCount, 0);
   assert.equal(state.unorderedDisplay, "block");
+  for (const centerDelta of state.unorderedMarkerCenterDeltas) {
+    assert(Math.abs(centerDelta) < 0.75, JSON.stringify(state));
+  }
   assert.equal(state.orderedDisplay, "block");
   assert.equal(state.orderedMarkerDisplay, "flex");
   assert(state.orderedMarkerLineHeight < state.orderedMarkerHeight);
   assert(state.orderedMarkerPaddingBottom > 0);
-  assert.equal(state.orderedMarkerAligned, true);
+  assert.equal(state.orderedMarkerAligned, true, JSON.stringify(state));
   assert(Math.abs(state.orderedMarkerCenterDelta) < 1.5, JSON.stringify(state));
   for (const marker of state.orderedMarkerInk) {
     assert(Math.abs(marker.centerDelta) < 1, JSON.stringify(marker));
@@ -516,11 +941,33 @@ const testMadrid = async (connection, origin) => {
   }
   assert.equal(state.listsAreStacked, true);
   assert.equal(state.blockNormalized, true);
+  assert(Math.abs(state.blockTitleInk.centerDelta) < 1, JSON.stringify(state));
   await listsPage.screenshot("madrid-lists");
   await listsPage.close();
 
   const titlePage = await BrowserPage.create(connection, `${origin}/madrid.html`);
   const titleState = await titlePage.evaluate(`(() => {
+    const slide = document.getElementById("title-slide");
+    const slideRect = slide.getBoundingClientRect();
+    const footerRect = slide
+      .querySelector(":scope > .beamer-footline")
+      .getBoundingClientRect();
+    const headline = slide.querySelector(":scope > .beamer-headline");
+    const headlineRect = headline?.getBoundingClientRect();
+    const contentRects = Array.from(slide.children)
+      .filter(
+        (node) =>
+          !node.matches(
+            ".beamer-headline, .beamer-footline, .aside-footnotes, aside.notes"
+          ) && getComputedStyle(node).display !== "none"
+      )
+      .map((node) => node.getBoundingClientRect());
+    const contentCenter =
+      (Math.min(...contentRects.map((rect) => rect.top)) +
+        Math.max(...contentRects.map((rect) => rect.bottom))) /
+      2;
+    const availableCenter =
+      ((headlineRect?.bottom ?? slideRect.top) + footerRect.top) / 2;
     const name = document.querySelector("#title-slide .quarto-title-author-name");
     const email = document.querySelector("#title-slide .quarto-title-author-email");
     const emailLink = email.querySelector("a");
@@ -538,7 +985,12 @@ const testMadrid = async (connection, origin) => {
       nameFontSize: parseFloat(getComputedStyle(name).fontSize),
       iconWidth: iconRect.width,
       iconHeight: iconRect.height,
-      iconAboveNameCenter: iconRect.bottom < nameRect.top + nameRect.height * 0.7
+      iconAboveNameCenter: iconRect.bottom < nameRect.top + nameRect.height * 0.7,
+      display: getComputedStyle(slide).display,
+      verticalCenterDelta: contentCenter - availableCenter,
+      slideStartsAtViewportTop: Math.abs(slideRect.top) <= 1,
+      footerVisible:
+        footerRect.top >= -1 && footerRect.bottom <= window.innerHeight + 1
     };
   })()`);
   assert.notEqual(titleState.emailDisplay, "none");
@@ -550,8 +1002,81 @@ const testMadrid = async (connection, origin) => {
   assert(titleState.iconWidth > 8);
   assert(titleState.iconHeight < titleState.nameFontSize * 0.65);
   assert.equal(titleState.iconAboveNameCenter, true);
+  assert.equal(titleState.display, "flex");
+  assert(Math.abs(titleState.verticalCenterDelta) < 12, JSON.stringify(titleState));
+  assert.equal(titleState.slideStartsAtViewportTop, true);
+  assert.equal(titleState.footerVisible, true);
   await titlePage.screenshot("madrid-title");
   await titlePage.close();
+
+  const sectionPage = await BrowserPage.create(
+    connection,
+    `${origin}/madrid.html#/foundations`
+  );
+  const sectionState = await sectionPage.evaluate(`(() => {
+    const slide = document.getElementById("foundations");
+    const slideRect = slide.getBoundingClientRect();
+    const footerRect = slide
+      .querySelector(":scope > .beamer-footline")
+      .getBoundingClientRect();
+    const headline = slide.querySelector(":scope > .beamer-headline");
+    const headlineRect = headline?.getBoundingClientRect();
+    const contentRects = Array.from(slide.children)
+      .filter(
+        (node) =>
+          !node.matches(
+            ".beamer-headline, .beamer-footline, .aside-footnotes, aside.notes"
+          ) && getComputedStyle(node).display !== "none"
+      )
+      .map((node) => node.getBoundingClientRect());
+    const contentCenter =
+      (Math.min(...contentRects.map((rect) => rect.top)) +
+        Math.max(...contentRects.map((rect) => rect.bottom))) /
+      2;
+    const availableCenter =
+      ((headlineRect?.bottom ?? slideRect.top) + footerRect.top) / 2;
+    return {
+      display: getComputedStyle(slide).display,
+      verticalCenterDelta: contentCenter - availableCenter,
+      slideStartsAtViewportTop: Math.abs(slideRect.top) <= 1,
+      footerVisible:
+        footerRect.top >= -1 && footerRect.bottom <= window.innerHeight + 1
+    };
+  })()`);
+  assert.equal(sectionState.display, "flex");
+  assert(Math.abs(sectionState.verticalCenterDelta) < 12, JSON.stringify(sectionState));
+  assert.equal(sectionState.slideStartsAtViewportTop, true);
+  assert.equal(sectionState.footerVisible, true);
+  await sectionPage.screenshot("madrid-section");
+  await sectionPage.close();
+
+  const navigatedLongTitlePage = await BrowserPage.create(
+    connection,
+    `${origin}/madrid.html`
+  );
+  for (let step = 0; step < 4; step += 1) {
+    await navigatedLongTitlePage.pressKey("ArrowRight", "ArrowRight", 39);
+  }
+  const navigatedLongTitle = await navigatedLongTitlePage.evaluate(`(() => {
+    const slide = window.Reveal.getCurrentSlide();
+    const heading = slide.querySelector(":scope > h2");
+    const paragraph = slide.querySelector(":scope > p");
+    const headingRect = heading.getBoundingClientRect();
+    const paragraphRect = paragraph.getBoundingClientRect();
+    return {
+      id: slide.id,
+      frameHeight: parseFloat(
+        getComputedStyle(slide).getPropertyValue("--beamer-frame-height")
+      ),
+      titleFits: heading.scrollHeight <= heading.clientHeight + 1,
+      bodyBelowTitle: paragraphRect.top >= headingRect.bottom
+    };
+  })()`);
+  assert.equal(navigatedLongTitle.id, "long-title");
+  assert(navigatedLongTitle.frameHeight > 58);
+  assert.equal(navigatedLongTitle.titleFits, true);
+  assert.equal(navigatedLongTitle.bodyBelowTitle, true);
+  await navigatedLongTitlePage.close();
 
   const longTitlePage = await BrowserPage.create(
     connection,
@@ -594,8 +1119,25 @@ const testMadrid = async (connection, origin) => {
       inlineRendered: Boolean(inlineMath),
       displayRendered: Boolean(displayMath),
       radicalRendered: Boolean(radical),
-      pinnedVersion: Array.from(document.scripts).some((script) =>
-        script.src.includes("katex@0.18.1/")
+      localKaTeX: Array.from(document.scripts).some((script) =>
+        script.src.endsWith("/katex/katex.min.js")
+      ),
+      externalRuntimeResources: [
+        ...Array.from(document.scripts, (script) => script.src),
+        ...Array.from(
+          document.querySelectorAll('link[rel="stylesheet"]'),
+          (link) => link.href
+        )
+      ].filter((url) => url && new URL(url).origin !== location.origin),
+      bodyFontFamily: getComputedStyle(slide).fontFamily,
+      regularFontLoaded: document.fonts.check(
+        '400 30px "Beamerslides Libertinus Sans"'
+      ),
+      boldFontLoaded: document.fonts.check(
+        '700 30px "Beamerslides Libertinus Sans"'
+      ),
+      italicFontLoaded: document.fonts.check(
+        'italic 400 30px "Beamerslides Libertinus Sans"'
       ),
       inlineFontSize: parseFloat(getComputedStyle(inlineWrapper).fontSize),
       displayFontSize: parseFloat(getComputedStyle(displayWrapper).fontSize),
@@ -606,7 +1148,12 @@ const testMadrid = async (connection, origin) => {
   assert.equal(mathState.inlineRendered, true);
   assert.equal(mathState.displayRendered, true);
   assert.equal(mathState.radicalRendered, true);
-  assert.equal(mathState.pinnedVersion, true);
+  assert.equal(mathState.localKaTeX, true);
+  assert.deepEqual(mathState.externalRuntimeResources, []);
+  assert.match(mathState.bodyFontFamily, /Beamerslides Libertinus Sans/);
+  assert.equal(mathState.regularFontLoaded, true);
+  assert.equal(mathState.boldFontLoaded, true);
+  assert.equal(mathState.italicFontLoaded, true);
   assert(mathState.displayFontSize > mathState.inlineFontSize);
   assert(mathState.inlineFontSize > 30);
   assert(mathState.formulaWidth > 100);
@@ -631,6 +1178,8 @@ const testMadrid = async (connection, origin) => {
     const filename = slide.querySelector(".code-with-filename-file");
     const filenameLabel = filename.querySelector("pre");
     const footer = slide.querySelector(":scope > .beamer-footline");
+    const backgroundRect = slide.querySelector(".bg").getBoundingClientRect();
+    const buttonRect = slide.querySelector(".button").getBoundingClientRect();
     const contentBottom = Math.max(
       slide.querySelector("table").getBoundingClientRect().bottom,
       filename.closest(".code-with-filename").getBoundingClientRect().bottom
@@ -638,6 +1187,10 @@ const testMadrid = async (connection, origin) => {
     return {
       backgroundLabel: measureInline(".bg"),
       button: measureInline(".button"),
+      inlineBoxCenterDelta:
+        (buttonRect.top + buttonRect.bottom -
+          backgroundRect.top - backgroundRect.bottom) /
+        2,
       headerText: header.textContent.trim(),
       headerColor: getComputedStyle(header).color,
       headerBackground: getComputedStyle(header).backgroundColor,
@@ -670,6 +1223,10 @@ const testMadrid = async (connection, origin) => {
   );
   assert.equal(formatsState.button.paddingBottom, formatsState.button.paddingTop);
   assert.equal(formatsState.button.textAligned, true);
+  assert(
+    Math.abs(formatsState.inlineBoxCenterDelta) < 1.5,
+    JSON.stringify(formatsState)
+  );
   assert.equal(formatsState.headerText, "Theme");
   assert.equal(formatsState.headerColor, "rgb(51, 51, 179)");
   assert.equal(formatsState.headerBackground, "rgba(0, 0, 0, 0)");
@@ -742,10 +1299,64 @@ const testMadrid = async (connection, origin) => {
   await referencesPage.screenshot("madrid-references");
   await referencesPage.close();
 
+  const orderedPage = await BrowserPage.create(
+    connection,
+    `${origin}/madrid.html#/ordered-semantics`
+  );
+  const orderedState = await orderedPage.evaluate(`(() => {
+    const values = (selector) =>
+      Array.from(document.querySelectorAll(selector + " > li")).map(
+        (item) => item.dataset.beamerMarkerValue
+      );
+    return {
+      start: values("#ordered-start"),
+      nested: values("#ordered-nested"),
+      explicitValue: values("#ordered-value"),
+      reversed: values("#ordered-reversed")
+    };
+  })()`);
+  assert.deepEqual(orderedState.start, ["3", "4"]);
+  assert.deepEqual(orderedState.nested, ["12"]);
+  assert.deepEqual(orderedState.explicitValue, ["7", "8"]);
+  assert.deepEqual(orderedState.reversed, ["3", "2"]);
+  await orderedPage.screenshot("madrid-ordered-semantics");
+  await orderedPage.close();
+
   const printPage = await BrowserPage.create(
     connection,
     `${origin}/madrid.html?print-pdf`
   );
+  await printPage.emulateMedia("print");
+  const printButtonState = await printPage.evaluate(`(async () => {
+    ${visibleInkMeasurementSource}
+    const button = document.querySelector("#content-formats .button");
+    const textNode = button.querySelector(":scope > .beamer-inline-label-text");
+    textNode.style.top = "0.5em";
+    window.dispatchEvent(new Event("beforeprint"));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const backgroundRect = document
+      .querySelector("#content-formats .bg")
+      .getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    return {
+      ink: measureVisibleInk(button, textNode.textContent.trim()),
+      correctedTop: textNode.style.top,
+      inlineBoxCenterDelta:
+        (buttonRect.top + buttonRect.bottom -
+          backgroundRect.top - backgroundRect.bottom) /
+        2
+    };
+  })()`);
+  assert(
+    Math.abs(printButtonState.ink.centerDelta) < 1,
+    JSON.stringify(printButtonState)
+  );
+  assert.notEqual(printButtonState.correctedTop, "0.5em");
+  assert(
+    Math.abs(printButtonState.inlineBoxCenterDelta) < 1.5,
+    JSON.stringify(printButtonState)
+  );
+  await assertPrintLayout(printPage);
   await printPage.printPdf("madrid-print");
   await printPage.close();
 };
@@ -757,20 +1368,96 @@ const testCambridgeUs = async (connection, origin) => {
   );
   const titleState = await titlePage.evaluate(`(() => {
     const reveal = document.querySelector(".reveal");
+    const slide = document.getElementById("title-slide");
     const box = document.querySelector(".beamer-title-box");
     const title = box.querySelector(".title");
+    const headline = slide.querySelector(":scope > .beamer-headline");
+    const headlineRect = headline?.getBoundingClientRect();
+    const footerRect = slide
+      .querySelector(":scope > .beamer-footline")
+      .getBoundingClientRect();
+    const slideRect = slide.getBoundingClientRect();
+    const contentRects = Array.from(slide.children)
+      .filter(
+        (node) =>
+          !node.matches(
+            ".beamer-headline, .beamer-footline, .aside-footnotes, aside.notes"
+          ) && getComputedStyle(node).display !== "none"
+      )
+      .map((node) => node.getBoundingClientRect());
+    const contentCenter =
+      (Math.min(...contentRects.map((rect) => rect.top)) +
+        Math.max(...contentRects.map((rect) => rect.bottom))) /
+      2;
+    const availableCenter =
+      ((headlineRect?.bottom ?? slideRect.top) + footerRect.top) / 2;
     return {
       classes: reveal.className,
       boxBackground: getComputedStyle(box).backgroundColor,
-      titleColor: getComputedStyle(title).color
+      titleColor: getComputedStyle(title).color,
+      display: getComputedStyle(slide).display,
+      verticalCenterDelta: contentCenter - availableCenter,
+      headlineCount: headline ? 1 : 0,
+      headlineVisible:
+        Boolean(headlineRect) &&
+        getComputedStyle(headline).display !== "none" &&
+        headlineRect.top >= -1 &&
+        headlineRect.bottom <= window.innerHeight + 1,
+      footerVisible:
+        footerRect.top >= -1 && footerRect.bottom <= window.innerHeight + 1
     };
   })()`);
   assert.match(titleState.classes, /beamer-cambridgeus/);
   assert.match(titleState.classes, /beamer-has-headline/);
   assert.equal(titleState.boxBackground, "rgb(255, 255, 255)");
   assert.equal(titleState.titleColor, "rgb(204, 0, 0)");
+  assert.equal(titleState.headlineCount, 1);
+  assert.equal(titleState.headlineVisible, true);
+  assert.equal(titleState.display, "flex");
+  assert(Math.abs(titleState.verticalCenterDelta) < 12, JSON.stringify(titleState));
+  assert.equal(titleState.footerVisible, true);
   await titlePage.screenshot("cambridgeus-title");
   await titlePage.close();
+
+  const sectionPage = await BrowserPage.create(
+    connection,
+    `${origin}/cambridgeus.html#/theme-palette`
+  );
+  const sectionState = await sectionPage.evaluate(`(() => {
+    const slide = document.getElementById("theme-palette");
+    const slideRect = slide.getBoundingClientRect();
+    const headlineRect = slide
+      .querySelector(":scope > .beamer-headline")
+      .getBoundingClientRect();
+    const footerRect = slide
+      .querySelector(":scope > .beamer-footline")
+      .getBoundingClientRect();
+    const contentRects = Array.from(slide.children)
+      .filter(
+        (node) =>
+          !node.matches(
+            ".beamer-headline, .beamer-footline, .aside-footnotes, aside.notes"
+          ) && getComputedStyle(node).display !== "none"
+      )
+      .map((node) => node.getBoundingClientRect());
+    const contentCenter =
+      (Math.min(...contentRects.map((rect) => rect.top)) +
+        Math.max(...contentRects.map((rect) => rect.bottom))) /
+      2;
+    const availableCenter = (headlineRect.bottom + footerRect.top) / 2;
+    return {
+      display: getComputedStyle(slide).display,
+      verticalCenterDelta: contentCenter - availableCenter,
+      contained:
+        headlineRect.top >= slideRect.top - 1 &&
+        footerRect.bottom <= slideRect.bottom + 1
+    };
+  })()`);
+  assert.equal(sectionState.display, "flex");
+  assert(Math.abs(sectionState.verticalCenterDelta) < 12, JSON.stringify(sectionState));
+  assert.equal(sectionState.contained, true);
+  await sectionPage.screenshot("cambridgeus-section");
+  await sectionPage.close();
 
   const contentPage = await BrowserPage.create(
     connection,
@@ -863,6 +1550,47 @@ const testCambridgeUs = async (connection, origin) => {
   assert.equal(formatsState.contentFits, true);
   await formatsPage.screenshot("cambridgeus-content-formats");
   await formatsPage.close();
+
+  const printPage = await BrowserPage.create(
+    connection,
+    `${origin}/cambridgeus.html?print-pdf`
+  );
+  await assertPrintLayout(printPage);
+  await printPage.printPdf("cambridgeus-print");
+  await printPage.close();
+};
+
+const testOffline = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/offline.html#/offline-math`
+  );
+  const state = await page.evaluate(`(() => {
+    const slide = document.getElementById("offline-math");
+    const runtimeResources = [
+      ...Array.from(document.scripts, (script) => script.src),
+      ...Array.from(
+        document.querySelectorAll('link[rel="stylesheet"]'),
+        (link) => link.href
+      )
+    ].filter((url) => /^https?:/.test(url));
+    return {
+      inlineRendered: Boolean(slide.querySelector(".math.inline .katex")),
+      displayRendered: Boolean(slide.querySelector(".math.display .katex")),
+      radicalRendered: Boolean(slide.querySelector(".sqrt svg path")),
+      runtimeResources,
+      fontLoaded: document.fonts.check(
+        '400 30px "Beamerslides Libertinus Sans"'
+      )
+    };
+  })()`);
+  assert.equal(state.inlineRendered, true);
+  assert.equal(state.displayRendered, true);
+  assert.equal(state.radicalRendered, true);
+  assert.deepEqual(state.runtimeResources, []);
+  assert.equal(state.fontLoaded, true);
+  await page.screenshot("offline-mathematics");
+  await page.close();
 };
 
 const testOptions = async (connection, origin) => {
@@ -1020,9 +1748,13 @@ try {
   resetDirectory(outputDir);
   resetDirectory(artifactsDir);
   run("node", ["--check", "_extensions/beamerslides/beamer.js"]);
-  for (const fixture of ["madrid", "cambridgeus", "options"]) {
+  for (const fixture of ["madrid", "cambridgeus", "options", "offline"]) {
     renderFixture(fixture);
   }
+  assert.doesNotMatch(
+    readFileSync(join(outputDir, "offline.html"), "utf8"),
+    /https:\/\/cdn\.jsdelivr\.net\/npm\/katex/
+  );
 
   const local = await startServer();
   server = local.server;
@@ -1031,36 +1763,41 @@ try {
   await testMadrid(chrome.connection, local.origin);
   await testCambridgeUs(chrome.connection, local.origin);
   await testOptions(chrome.connection, local.origin);
+  await testOffline(chrome.connection, local.origin);
   await testFourThreeViewport(chrome.connection, local.origin);
   assertNoBrowserErrors(chrome.connection);
 
   console.log("All beamerslides regression tests passed.");
   console.log(`Artifacts: ${relative(rootDir, artifactsDir)}`);
 } finally {
+  debugCleanup("start");
   for (const temporaryInput of temporaryInputs) {
     if (existsSync(temporaryInput)) unlinkSync(temporaryInput);
   }
-  if (server) {
-    await new Promise((resolveClose) => server.close(resolveClose));
+  if (!fixtureIgnoreExisted && existsSync(generatedFixtureIgnore)) {
+    unlinkSync(generatedFixtureIgnore);
   }
+  debugCleanup("temporary inputs removed");
   if (chrome) {
-    chrome.connection.close();
-    if (chrome.processHandle.exitCode === null) {
-      chrome.processHandle.kill("SIGTERM");
-      await Promise.race([
-        new Promise((resolveExit) => chrome.processHandle.once("exit", resolveExit)),
-        delay(2000),
-      ]);
-    }
-    if (chrome.processHandle.exitCode === null) {
-      chrome.processHandle.kill("SIGKILL");
-      await new Promise((resolveExit) => chrome.processHandle.once("exit", resolveExit));
-    }
+    debugCleanup("stopping Chrome");
+    await shutdownChrome(chrome);
+    debugCleanup("Chrome stopped", chrome.processHandle.exitCode, chrome.processHandle.signalCode);
   }
-  rmSync(chromeProfileDir, {
-    force: true,
-    recursive: true,
-    maxRetries: 5,
-    retryDelay: 100,
-  });
+  if (server) {
+    debugCleanup("closing HTTP server");
+    server.closeIdleConnections?.();
+    server.closeAllConnections?.();
+    await new Promise((resolveClose) => {
+      server.close((error) => {
+        if (error) console.warn(`Warning: could not close HTTP server: ${error.message}`);
+        resolveClose();
+      });
+    });
+    debugCleanup("HTTP server closed");
+  }
+  await removeTemporaryDirectory(chromeTemporaryDir);
+  debugCleanup(
+    "done",
+    process._getActiveHandles().map((handle) => handle.constructor?.name)
+  );
 }

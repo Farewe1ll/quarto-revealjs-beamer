@@ -25,12 +25,13 @@ format:
 
 - First unordered item
   - Nested unordered item
+    - Third-level unordered item
 - Second unordered item
 
 1. First ordered item
 2. Second ordered item
 
-::: {.block title="Definition"}
+::: {.block title="定义"}
 Blocks must survive the Lua normalization pass.
 :::
 
@@ -51,7 +52,7 @@ $$
 
 ## Content formats {#content-formats}
 
-[关键假设]{.bg style="--col: #f5dfe1"} and [[Summary]{.button}](#mathematics) must be vertically centered.
+[关键假设]{.bg style="--col: #f5dfe1"} and [[查看总结]{.button}](#mathematics) must be vertically centered.
 
 | Theme | Accent |
 |:---|:---|
@@ -81,3 +82,24 @@ The theme keeps native Quarto citations [@clean-theme].
 
 ::: {#refs}
 :::
+
+## Ordered numbering semantics {#ordered-semantics}
+
+<ol id="ordered-start" start="3">
+  <li>Third item</li>
+  <li>Fourth item
+    <ol id="ordered-nested" start="12">
+      <li>Twelfth nested item</li>
+    </ol>
+  </li>
+</ol>
+
+<ol id="ordered-value">
+  <li value="7">Seventh item</li>
+  <li>Eighth item</li>
+</ol>
+
+<ol id="ordered-reversed" reversed start="3">
+  <li>Third item in reverse</li>
+  <li>Second item in reverse</li>
+</ol>
