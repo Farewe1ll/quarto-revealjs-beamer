@@ -2024,6 +2024,8 @@ const testSpacingVariant = async (connection, origin, variant) => {
     };
     const number = (value) => Number.parseFloat(value) || 0;
     const scale = () => Math.max(0.0001, window.Reveal.getScale());
+    const codeBlockSelector =
+      ":scope > .code-copy-outer-scaffold, :scope > .sourceCode, :scope > pre";
     const frameGap = (slide, element) => {
       const heading = slide.querySelector(":scope > h2");
       return (
@@ -2032,7 +2034,25 @@ const testSpacingVariant = async (connection, origin, variant) => {
     };
     const firstGap = async (id, selector) => {
       const slide = await show(id);
-      return frameGap(slide, slide.querySelector(selector));
+      const element = slide.querySelector(selector);
+      if (!element) {
+        const children = Array.from(slide.children)
+          .map(
+            (child) =>
+              child.tagName.toLowerCase() +
+              (child.id ? "#" + child.id : "." + child.className)
+          )
+          .join(", ");
+        throw new Error(
+          "Missing spacing target " +
+            selector +
+            " in #" +
+            id +
+            "; direct children: " +
+            children
+        );
+      }
+      return frameGap(slide, element);
     };
     const columnState = async (id) => {
       const slide = await show(id);
@@ -2054,7 +2074,7 @@ const testSpacingVariant = async (connection, origin, variant) => {
     const firstContentGaps = {
       paragraph: await firstGap("paragraph-first", ":scope > p"),
       list: await firstGap("list-first", ":scope > ul"),
-      code: await firstGap("code-first", ":scope > .code-copy-outer-scaffold"),
+      code: await firstGap("code-first", codeBlockSelector),
       callout: await firstGap("callout-first", ":scope > .callout"),
       columns: await firstGap("equal-columns", ":scope > .columns")
     };
@@ -2121,8 +2141,14 @@ const testSpacingVariant = async (connection, origin, variant) => {
 
     slide = await show("code-first");
     const sourceCode = slide.querySelector("div.sourceCode");
+    if (!sourceCode) {
+      throw new Error("Missing source code element in #code-first");
+    }
     const sourceStyle = getComputedStyle(sourceCode);
-    const codeWrapper = slide.querySelector(".code-copy-outer-scaffold");
+    const codeWrapper = slide.querySelector(codeBlockSelector);
+    if (!codeWrapper) {
+      throw new Error("Missing code block wrapper in #code-first");
+    }
     const slideStyle = getComputedStyle(slide);
     const availableWidth =
       slide.offsetWidth -
