@@ -203,6 +203,64 @@
     });
   };
 
+  const alphabeticOrderedMarker = (value) => {
+    if (!Number.isInteger(value) || value < 1) {
+      return String(value);
+    }
+
+    let marker = "";
+    let remaining = value;
+    while (remaining > 0) {
+      remaining -= 1;
+      marker = String.fromCharCode(97 + (remaining % 26)) + marker;
+      remaining = Math.floor(remaining / 26);
+    }
+    return marker;
+  };
+
+  const romanOrderedMarker = (value) => {
+    if (!Number.isInteger(value) || value < 1 || value > 3999) {
+      return String(value);
+    }
+
+    const numerals = [
+      [1000, "m"],
+      [900, "cm"],
+      [500, "d"],
+      [400, "cd"],
+      [100, "c"],
+      [90, "xc"],
+      [50, "l"],
+      [40, "xl"],
+      [10, "x"],
+      [9, "ix"],
+      [5, "v"],
+      [4, "iv"],
+      [1, "i"],
+    ];
+    let marker = "";
+    let remaining = value;
+    numerals.forEach(([number, numeral]) => {
+      while (remaining >= number) {
+        marker += numeral;
+        remaining -= number;
+      }
+    });
+    return marker;
+  };
+
+  const orderedMarker = (value, type) => {
+    if (type === "a" || type === "A") {
+      const marker = alphabeticOrderedMarker(value);
+      return type === "A" ? marker.toUpperCase() : marker;
+    }
+    if (type === "i" || type === "I") {
+      const marker = romanOrderedMarker(value);
+      return type === "I" ? marker.toUpperCase() : marker;
+    }
+    return String(value);
+  };
+
   const alignOrderedMarkers = () => {
     const lists = Array.from(
       document.querySelectorAll(".reveal .slides section ol")
@@ -215,6 +273,7 @@
         node.matches("li")
       );
       const reversed = list.hasAttribute("reversed");
+      const type = list.getAttribute("type") || "1";
       const parsedStart = Number.parseInt(list.getAttribute("start"), 10);
       let value = Number.isFinite(parsedStart)
         ? parsedStart
@@ -227,7 +286,7 @@
         if (Number.isFinite(explicitValue)) {
           value = explicitValue;
         }
-        item.dataset.beamerMarkerValue = String(value);
+        item.dataset.beamerMarkerValue = orderedMarker(value, type);
         value += reversed ? -1 : 1;
       });
     });

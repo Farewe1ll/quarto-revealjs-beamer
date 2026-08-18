@@ -418,32 +418,33 @@ $border-radius: 4px !default;
 
 /* Flat lists */
 
-.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])),
-.reveal .slides section ol:where(:not(.aside-footnotes)) {
+/* Document-level Quarto footnotes keep their native counter styles. */
+.reveal .slides section:where(:not(.footnotes)) ul:where(:not(.panel-tabset-tabby):not([role="tablist"])),
+.reveal .slides section:where(:not(.footnotes)) ol:where(:not(.aside-footnotes)) {
   display: block;
   width: auto;
   margin: 0.42em 0 0.58em;
 }
 
-.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) {
+.reveal .slides section:where(:not(.footnotes)) ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) {
   padding-left: 1.05em;
   list-style: none;
 }
 
-.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li {
+.reveal .slides section:where(:not(.footnotes)) ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li {
   position: relative;
   margin: 0.3em 0;
 }
 
-.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li:first-child {
+.reveal .slides section:where(:not(.footnotes)) ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li:first-child {
   margin-top: 0;
 }
 
-.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li:last-child {
+.reveal .slides section:where(:not(.footnotes)) ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li:last-child {
   margin-bottom: 0;
 }
 
-.reveal .slides section ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li::before {
+.reveal .slides section:where(:not(.footnotes)) ul:where(:not(.panel-tabset-tabby):not([role="tablist"])) > li::before {
   content: "";
   position: absolute;
   top: 0.64em;
@@ -455,42 +456,42 @@ $border-radius: 4px !default;
   border-radius: 1px;
 }
 
-.reveal .slides section ul ul > li::before {
+.reveal .slides section:where(:not(.footnotes)) ul ul > li::before {
   width: 0.46em;
   height: 0.12em;
   background: var(--beamer-primary-2);
 }
 
-.reveal .slides section ul ul ul > li::before {
+.reveal .slides section:where(:not(.footnotes)) ul ul ul > li::before {
   width: 0.28em;
   height: 0.28em;
   background: transparent;
   border: 2px solid var(--beamer-primary-3);
 }
 
-.reveal .slides section ul.task-list > li::before {
+.reveal .slides section:where(:not(.footnotes)) ul.task-list > li::before {
   content: none;
 }
 
-.reveal .slides section ol:where(:not(.aside-footnotes)) {
+.reveal .slides section:where(:not(.footnotes)) ol:where(:not(.aside-footnotes)) {
   padding-left: 1.55em;
   list-style: none;
 }
 
-.reveal .slides section ol:where(:not(.aside-footnotes)) > li {
+.reveal .slides section:where(:not(.footnotes)) ol:where(:not(.aside-footnotes)) > li {
   position: relative;
   margin: 0.32em 0;
 }
 
-.reveal .slides section ol:where(:not(.aside-footnotes)) > li:first-child {
+.reveal .slides section:where(:not(.footnotes)) ol:where(:not(.aside-footnotes)) > li:first-child {
   margin-top: 0;
 }
 
-.reveal .slides section ol:where(:not(.aside-footnotes)) > li:last-child {
+.reveal .slides section:where(:not(.footnotes)) ol:where(:not(.aside-footnotes)) > li:last-child {
   margin-bottom: 0;
 }
 
-.reveal .slides section ol:where(:not(.aside-footnotes)) > li::before {
+.reveal .slides section:where(:not(.footnotes)) ol:where(:not(.aside-footnotes)) > li::before {
   content: attr(data-beamer-marker-value);
   position: absolute;
   top: 0.18em;
@@ -511,7 +512,7 @@ $border-radius: 4px !default;
   font-variant-numeric: tabular-nums;
 }
 
-.reveal .slides section ol:where(:not(.aside-footnotes)) ol:where(:not(.aside-footnotes)) > li::before {
+.reveal .slides section:where(:not(.footnotes)) ol:where(:not(.aside-footnotes)) ol:where(:not(.aside-footnotes)) > li::before {
   color: var(--beamer-primary);
   background: transparent;
   border-left: 3px solid var(--beamer-primary-2);
@@ -522,21 +523,21 @@ $border-radius: 4px !default;
   margin: 0;
 }
 
-.reveal .slides section .panel-tabset > ul.panel-tabset-tabby,
-.reveal .slides section .panel-tabset > ul[role="tablist"] {
+.reveal .slides section:where(:not(.footnotes)) .panel-tabset > ul.panel-tabset-tabby,
+.reveal .slides section:where(:not(.footnotes)) .panel-tabset > ul[role="tablist"] {
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.reveal .slides section .panel-tabset > ul.panel-tabset-tabby > li,
-.reveal .slides section .panel-tabset > ul[role="tablist"] > li {
+.reveal .slides section:where(:not(.footnotes)) .panel-tabset > ul.panel-tabset-tabby > li,
+.reveal .slides section:where(:not(.footnotes)) .panel-tabset > ul[role="tablist"] > li {
   position: static;
   margin: 0;
 }
 
-.reveal .slides section .panel-tabset > ul.panel-tabset-tabby > li::before,
-.reveal .slides section .panel-tabset > ul[role="tablist"] > li::before {
+.reveal .slides section:where(:not(.footnotes)) .panel-tabset > ul.panel-tabset-tabby > li::before,
+.reveal .slides section:where(:not(.footnotes)) .panel-tabset > ul[role="tablist"] > li::before {
   content: none;
 }
 

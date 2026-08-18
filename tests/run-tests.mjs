@@ -48,6 +48,14 @@ const chromeStartupTimeout =
   requestedChromeStartupTimeout > 0
     ? requestedChromeStartupTimeout
     : 30_000;
+const requestedPageReadyTimeout = Number.parseInt(
+  process.env.BEAMERSLIDES_PAGE_READY_TIMEOUT_MS || "",
+  10
+);
+const pageReadyTimeout =
+  Number.isFinite(requestedPageReadyTimeout) && requestedPageReadyTimeout > 0
+    ? requestedPageReadyTimeout
+    : 20_000;
 const debugCleanup = (...values) => {
   if (process.env.BEAMERSLIDES_DEBUG_CLEANUP === "1") {
     console.error("[cleanup]", ...values);
@@ -566,29 +574,32 @@ class BrowserPage {
   }
 
   async waitForReady() {
-    for (let attempt = 0; attempt < 160; attempt += 1) {
-      const ready = await this.evaluate(`(() => ({
+    const startedAt = Date.now();
+    let ready = null;
+    while (Date.now() - startedAt < pageReadyTimeout) {
+      ready = await this.evaluate(`(() => ({
         documentReady: document.readyState === "complete",
         revealReady: Boolean(window.Reveal && window.Reveal.isReady && window.Reveal.isReady()),
         decorated: document.querySelector(".reveal")?.dataset.beamerDecorated === "true",
-        mathReady: !document.querySelector(".math") || Boolean(document.querySelector(".math .katex"))
+        mathReady: !document.querySelector(".math") || Boolean(document.querySelector(".math .katex")),
+        fontsReady: !document.fonts || document.fonts.status === "loaded"
       }))()`);
       if (
         ready.documentReady &&
         ready.revealReady &&
         ready.decorated &&
-        ready.mathReady
+        ready.mathReady &&
+        ready.fontsReady
       ) {
-        await this.evaluate(`(async () => {
-          if (document.fonts?.ready) await document.fonts.ready;
-          await new Promise((resolve) => setTimeout(resolve, 140));
-          return true;
-        })()`);
+        await delay(140);
         return;
       }
       await delay(50);
     }
-    throw new Error(`Timed out waiting for ${this.url}`);
+    throw new Error(
+      `Timed out waiting for ${this.url} after ${pageReadyTimeout} ms; ` +
+        `last state: ${JSON.stringify(ready)}`
+    );
   }
 
   async screenshot(name) {
@@ -1377,8 +1388,8 @@ const testMadrid = async (connection, origin) => {
   })()`);
   assert.deepEqual(orderedState.start, ["3", "4"]);
   assert.deepEqual(orderedState.nested, ["12"]);
-  assert.deepEqual(orderedState.explicitValue, ["7", "8"]);
-  assert.deepEqual(orderedState.reversed, ["3", "2"]);
+  assert.deepEqual(orderedState.explicitValue, ["G", "H"]);
+  assert.deepEqual(orderedState.reversed, ["iii", "ii"]);
   assert.notEqual(
     orderedState.topMarker.backgroundColor,
     "rgba(0, 0, 0, 0)",
@@ -2280,6 +2291,72 @@ const testSpacing = async (connection, origin) => {
   await testSpacingVariant(connection, origin, "cambridgeus");
 };
 
+const readDocumentFootnoteState = `(() => {
+  const slide = document.querySelector("section.footnotes");
+  const list = slide?.querySelector(":scope > ol");
+  const item = list?.querySelector(":scope > li");
+  const marker = item ? getComputedStyle(item, "::before") : null;
+  return {
+    slidePresent: Boolean(slide),
+    listPresent: Boolean(list),
+    itemText: item?.textContent.trim() || "",
+    hasMarkerValue: Boolean(item?.dataset.beamerMarkerValue),
+    listStyleType: list ? getComputedStyle(list).listStyleType : null,
+    markerContent: marker?.content || null,
+    markerDisplay: marker?.display || null,
+    markerPosition: marker?.position || null,
+    markerBackground: marker?.backgroundColor || null,
+    markerBorderRadius: marker?.borderRadius || null
+  };
+})()`;
+
+const assertDocumentFootnoteState = (state, context) => {
+  assert.equal(state.slidePresent, true, `${context}: footnote slide`);
+  assert.equal(state.listPresent, true, `${context}: footnote list`);
+  assert.match(state.itemText, /Footnote content with descenders/, context);
+  assert.equal(state.hasMarkerValue, false, `${context}: custom marker data`);
+  assert.equal(state.listStyleType, "none", `${context}: list style`);
+  assert.match(state.markerContent, /counter\(ol\)/, `${context}: native marker`);
+  assert.equal(state.markerDisplay, "inline", `${context}: marker display`);
+  assert.equal(state.markerPosition, "static", `${context}: marker position`);
+  assert.equal(
+    state.markerBackground,
+    "rgba(0, 0, 0, 0)",
+    `${context}: marker background`
+  );
+  assert.equal(state.markerBorderRadius, "0px", `${context}: marker shape`);
+};
+
+const testDocumentFootnotesVariant = async (connection, origin, variant) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/spacing-endnotes-${variant}.html`
+  );
+  const state = await page.evaluate(readDocumentFootnoteState);
+  assertDocumentFootnoteState(state, `${variant} screen`);
+
+  if (variant === "madrid") {
+    await showSlide(page, "footnotes");
+    await page.screenshot("spacing-madrid-endnotes");
+  }
+  await page.close();
+
+  const printPage = await BrowserPage.create(
+    connection,
+    `${origin}/spacing-endnotes-${variant}.html?print-pdf`
+  );
+  await printPage.emulateMedia("print");
+  const printState = await printPage.evaluate(readDocumentFootnoteState);
+  assertDocumentFootnoteState(printState, `${variant} print`);
+  await assertPrintLayout(printPage);
+  await printPage.close();
+};
+
+const testDocumentFootnotes = async (connection, origin) => {
+  await testDocumentFootnotesVariant(connection, origin, "madrid");
+  await testDocumentFootnotesVariant(connection, origin, "cambridgeus");
+};
+
 let server;
 let chrome;
 try {
@@ -2305,6 +2382,20 @@ try {
     source: "spacing",
     metadata: { "beamer-variant": "cambridgeus" },
   });
+  renderFixture("spacing-endnotes-madrid", {
+    source: "spacing",
+    metadata: {
+      "beamer-variant": "madrid",
+      "reference-location": "document",
+    },
+  });
+  renderFixture("spacing-endnotes-cambridgeus", {
+    source: "spacing",
+    metadata: {
+      "beamer-variant": "cambridgeus",
+      "reference-location": "document",
+    },
+  });
   assert.doesNotMatch(
     readFileSync(join(outputDir, "offline.html"), "utf8"),
     /https:\/\/cdn\.jsdelivr\.net\/npm\/katex/
@@ -2322,6 +2413,7 @@ try {
   await testBehavior(chrome.connection, local.origin);
   await testFourThreeViewport(chrome.connection, local.origin);
   await testSpacing(chrome.connection, local.origin);
+  await testDocumentFootnotes(chrome.connection, local.origin);
   assertNoBrowserErrors(chrome.connection);
 
   console.log("All beamerslides regression tests passed.");

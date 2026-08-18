@@ -189,6 +189,8 @@ npm test
 
 测试会渲染两个变体、显式选项与自包含离线示例，检查元数据、邮箱与 ORCID、页眉页脚、列表、长标题、本地 KaTeX 与字体、文字背景对齐、表格对比度、代码块、图片、引用、16:9 / 4:3 视口、浏览器错误，以及 Madrid/CambridgeUS PDF 输出。截图会与 `tests/baselines/` 中受版本控制的基线比较；实际截图、差异图与 PDF 写入 `tests/_artifacts/`，该目录不会进入版本控制。
 
+页面就绪等待默认最长 20 秒；慢速环境可通过 `BEAMERSLIDES_PAGE_READY_TIMEOUT_MS` 调整，例如 `BEAMERSLIDES_PAGE_READY_TIMEOUT_MS=30000 npm test`。
+
 只有确认视觉变化符合预期后，才应更新基线：
 
 ```bash

@@ -94,12 +94,12 @@ The theme keeps native Quarto citations [@clean-theme].
   </li>
 </ol>
 
-<ol id="ordered-value">
+<ol id="ordered-value" type="A">
   <li value="7">Seventh item</li>
   <li>Eighth item</li>
 </ol>
 
-<ol id="ordered-reversed" reversed start="3">
+<ol id="ordered-reversed" type="i" reversed start="3">
   <li>Third item in reverse</li>
   <li>Second item in reverse</li>
 </ol>
