@@ -250,7 +250,9 @@ $border-radius: 4px !default;
   line-height: 1.1;
 }
 
-.reveal .slides section > h3 {
+/* Descendant selectors on purpose: subheadings inside .columns, blocks, and
+   callouts must keep the theme's structure colors, not the reveal fallback. */
+.reveal .slides section h3 {
   margin: 0.1em 0 0.55em;
   color: var(--beamer-primary);
   font-size: 0.91em;
@@ -258,7 +260,7 @@ $border-radius: 4px !default;
   letter-spacing: 0;
 }
 
-.reveal .slides section > h4 {
+.reveal .slides section h4 {
   margin: 0.8em 0 0.25em;
   color: var(--beamer-alert);
   font-size: 0.78em;
@@ -414,6 +416,13 @@ $border-radius: 4px !default;
 .reveal.beamer-cambridgeus .slides section.beamer-section-slide > h1:first-of-type {
   border: 0;
   box-shadow: none;
+}
+
+/* The CambridgeUS title block has no fill of its own, so the generous
+   margin reserved for Madrid's filled title box would read as dead space
+   between the title and the author metadata. */
+.reveal.beamer-cambridgeus .beamer-title-box {
+  margin-bottom: 0.5em;
 }
 
 /* Flat lists */

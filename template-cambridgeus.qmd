@@ -1,0 +1,153 @@
+---
+title: "Quarto × Beamer"
+subtitle: "CambridgeUS 风格的 Reveal.js 主题"
+author:
+  - name: "演示者姓名"
+    email: "speaker@example.edu"
+    orcid: "0000-0002-1825-0097"
+    affiliations: "机构或院系"
+date: today
+bibliography: references.bib
+link-citations: true
+short-title: "Quarto × Beamer"
+short-author: "演示者姓名"
+short-institute: "机构简称"
+beamer-variant: cambridgeus
+lang: zh
+format:
+  beamerslides-revealjs:
+    incremental: false
+    embed-resources: true
+---
+
+# 设计语言
+
+以 CambridgeUS 为蓝本的白底酒红外观，适配现代浏览器演示。
+
+## 经典报告版式 {data-subsection="配色"}
+
+### 正式、克制、适合学术报告与答辩
+
+这套主题默认显示红灰双色的 section / subsection 导航页眉，标题块不带底色，配合三段式 footline 与扁平列表符号。
+
+- 一级条目使用扁平实心方块
+  - 二级条目使用短横线
+    - 三级条目使用空心方块
+- 支持 **粗体**、*强调*、[链接](https://quarto.org) 与 [警示信息]{.alert}
+
+1. 编号以紧凑色块呈现
+2. 层级清楚，不使用立体小球
+3. 长文本会自然换行并保持对齐
+
+## Beamer Blocks {data-subsection="组件"}
+
+::: {.block title="定义"}
+一个主题不只是配色，也应建立稳定的内容层级和页面节奏。
+:::
+
+::: {.exampleblock title="示例"}
+使用 `beamer-variant: madrid` 即可切换为 Madrid 深蓝配色。
+:::
+
+::: {.alertblock title="注意"}
+内容过多时，可在页面标题后添加 `.smaller`，或主动拆分为两页。
+:::
+
+# 内容呈现
+
+## 双栏布局 {data-subsection="布局"}
+
+:::: {.columns}
+
+::: {.column width="48%"}
+### 左栏
+
+- 观点先行
+- 一页一个主要结论
+- 通过 block 强化结构
+:::
+
+::: {.column width="48%"}
+### 右栏
+
+> 好的幻灯片不是缩小的论文，而是清晰的叙事界面。
+
+[[查看总结]{.button}](#sec-summary)
+:::
+
+::::
+
+## 表格与代码 {data-subsection="数据"}
+
+:::: {.columns}
+
+::: {.column width="52%"}
+| 主题 | 主色 | 气质 |
+|:---|:---|:---|
+| CambridgeUS | 酒红 | 经典、正式 |
+| Madrid | 深蓝 | 稳健、理性 |
+| 共通设计 | 白与炭黑 | 清爽、易读 |
+
+: 主题配色对照
+:::
+
+::: {.column width="44%"}
+```{.r filename="render-slides.R"}
+library(quarto)
+
+quarto_render(
+  input = "slides.qmd"
+)
+```
+:::
+
+::::
+
+## 图片与引用 {data-subsection="图文"}
+
+:::: {.columns}
+
+::: {.column width="56%"}
+![标准正态分布密度曲线](assets/normal-density.svg){#fig-normal width="94%"}
+:::
+
+::: {.column width="40%"}
+### 图文关系
+
+图像使用 Quarto 原生 figure 结构，图注与正文保持同一视觉层级。主题结构参考 Reveal.js 的内容组织方式 [@quarto]，简洁组件借鉴 Clean 主题 [@clean-theme]。
+
+> 引用块保留克制的底色与左侧强调线，适合放置定义、原话或来源说明。
+:::
+
+::::
+
+## 数学与强调 {data-subsection="公式"}
+
+::: {.block title="中心极限定理"}
+若 $X_1, X_2, \ldots$ 独立同分布，且方差有限，则
+
+$$
+\sqrt{n}\left(\bar X_n-\mu\right)
+\xrightarrow{d} \mathcal{N}(0,\sigma^2).
+$$
+:::
+
+结论中的 [关键假设]{.bg style="--col: #f5dfe1"} 可以用 `.bg` 标记，也可用 [自定义前景色]{.fg style="--col: #2c7550"}。
+
+# 总结
+
+## 两套经典外观，一个现代格式 {#sec-summary data-subsection="总结"}
+
+- `beamer-variant: cambridgeus`：经典的酒红色报告风格，默认显示章节页眉
+- `beamer-variant: madrid`：沉稳的蓝色学术风格，无页眉布局
+- frame、作者、标题、日期和页码自动进入信息栏，页眉可通过 `beamer-secheader` 覆盖
+- 完整兼容 Quarto Reveal.js 的 fragments、代码、公式与布局能力
+
+::: {.exampleblock title="开始使用"}
+复制模板，替换标题和内容，然后运行 `quarto preview`。
+:::
+
+## 参考文献 {data-subsection="来源"}
+
+::: {#refs}
+:::

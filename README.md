@@ -2,8 +2,9 @@
 
 一个高仿 LaTeX Beamer `Madrid` / `CambridgeUS` 的 Quarto Reveal.js 格式扩展。它保留 frame title、三段式 footline 和经典配色，同时使用扁平列表符号与适合网页演示的紧凑内容排版。
 
-- `madrid`：默认蓝色主题，遵循 Madrid 的无 headline 布局。
-- `cambridgeus`：白底红色标题、红灰 headline 与三段式 footline。
+- `madrid`：默认蓝色主题，遵循 Madrid 的无 headline 布局（与原版 `secheader` 选项一致，可用 `beamer-secheader: true` 开启）。
+- `cambridgeus`：白底红色标题、红灰 headline 与三段式 footline；标题块不带底色，标题与作者信息的间距比 Madrid 的实心标题盒更紧凑。
+- 页眉页脚在文档解析完成时立即注入（早于 Reveal.js 初始化），首帧即呈现完整信息栏；仅依赖布局的光学对齐在初始化后进行。通过格式配置开启原生 `progress: true` 时，footline 顶部的进度线会在 Reveal.js 初始化完成后出现。
 - 长 frame title 会自动缩小并增高，不会被固定高度裁切。
 - 数学公式默认使用扩展内置的固定版本 KaTeX，断网打开也能完整渲染；根号等可伸缩符号采用矢量路径，规则线会随字号统一缩放。
 - 拉丁字符使用扩展内置的 Libertinus Sans，避免不同系统因缺少字体而产生版式漂移；中文继续使用各平台原生 CJK 字体回退。
@@ -15,7 +16,11 @@
 quarto preview template.qmd
 ```
 
-仓库根目录的 `template.qmd` 是可直接修改的完整示例。
+仓库根目录的 `template.qmd` 是可直接修改的完整示例；`template-cambridgeus.qmd` 是 CambridgeUS 变体的对应示例：
+
+```bash
+quarto preview template-cambridgeus.qmd
+```
 
 开发时建议使用 `quarto preview`。直接打开旧的 `file://` 页面时，浏览器可能继续复用旧 HTML 或主题 CSS 缓存；重新渲染后关闭旧标签页再打开，或执行一次强制刷新即可。新生成的 HTML 会引用带内容哈希的 CSS 文件，分发或部署时不会继承这类旧缓存。
 
@@ -173,6 +178,7 @@ assets/
 └── normal-density.svg
 references.bib
 template.qmd
+template-cambridgeus.qmd
 tests/
 ├── fixtures/
 └── run-tests.mjs

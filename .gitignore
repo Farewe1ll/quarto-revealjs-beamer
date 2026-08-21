@@ -1,5 +1,6 @@
 # Local tooling / agent scratch
 .reasonix/
+.DS_Store
 
 # Quarto cache and generated output
 /.quarto/

@@ -70,7 +70,6 @@ local function register_dependency()
 
   quarto.doc.add_html_dependency({
     name = "beamerslides",
-    version = "0.2.4",
     scripts = { "beamer.js" },
     stylesheets = { "beamer-fonts.css" },
     resources = {

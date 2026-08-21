@@ -401,6 +401,18 @@
     return info.author || info.institute || "";
   };
 
+  const appendProgress = (footer, count) => {
+    if (!footer || footer.querySelector(":scope > .beamer-footline-progress")) {
+      return;
+    }
+    const progress = document.createElement("i");
+    progress.className = "beamer-footline-progress";
+    progress.style.width = `${
+      count && count.total > 0 ? (count.progress / count.total) * 100 : 0
+    }%`;
+    footer.appendChild(progress);
+  };
+
   const addChrome = (slide, context, info, count, options) => {
     if (slide.querySelector(":scope > .beamer-footline")) {
       return;
@@ -432,12 +444,7 @@
     }
 
     if (options.showProgress) {
-      const progress = document.createElement("i");
-      progress.className = "beamer-footline-progress";
-      progress.style.width = `${
-        count.total > 0 ? (count.progress / count.total) * 100 : 0
-      }%`;
-      footer.appendChild(progress);
+      appendProgress(footer, count);
     }
 
     slide.appendChild(footer);
@@ -617,16 +624,23 @@
     }
   };
 
-  const decorate = () => {
+  // Phase 1: chrome injection. This only needs the parsed document, so it
+  // runs as soon as possible - before Reveal.js initializes - so the Beamer
+  // headline/footline never flash in after the slides are already visible.
+  let chromePollHandle = 0;
+
+  const decorateChrome = () => {
     const reveal = document.querySelector(".reveal");
-    if (!reveal || reveal.dataset.beamerDecorated === "true") {
-      return;
+    if (!reveal) {
+      return false;
+    }
+    if (reveal.dataset.beamerChrome === "true") {
+      return true;
     }
 
     const slides = leafSlides();
     if (slides.length === 0) {
-      window.setTimeout(decorate, 25);
-      return;
+      return false;
     }
 
     const signature = slides
@@ -634,35 +648,27 @@
       .join("|");
     if (reveal.dataset.beamerSlideSignature !== signature) {
       reveal.dataset.beamerSlideSignature = signature;
-      window.setTimeout(decorate, 50);
-      return;
+      return false;
     }
 
     delete reveal.dataset.beamerSlideSignature;
-    reveal.dataset.beamerDecorated = "true";
+    reveal.dataset.beamerChrome = "true";
 
     const variant = meta("beamer-variant") || "madrid";
     const showHeadline = metaBoolean(
       "beamer-secheader",
       variant === "cambridgeus"
     );
-    const revealConfig =
-      typeof window.Reveal.getConfig === "function"
-        ? window.Reveal.getConfig()
-        : {};
-    const showProgress = metaBoolean(
-      "beamer-progress",
-      revealConfig.progress === true
-    );
-    const options = { showHeadline, showProgress };
-    const centerAllSlides = revealConfig.center === true;
+    const options = {
+      showHeadline,
+      showProgress: metaBoolean("beamer-progress", false),
+    };
 
     document.documentElement.classList.add(`beamer-${variant}`);
     document.body.classList.add(`beamer-${variant}`);
     reveal.classList.add(`beamer-${variant}`);
     reveal.classList.toggle("beamer-has-headline", showHeadline);
     reveal.classList.toggle("beamer-no-headline", !showHeadline);
-    reveal.classList.toggle("beamer-has-progress", showProgress);
 
     const info = titleMetadata();
     const counts = slideCounts(slides);
@@ -675,7 +681,7 @@
       slide.classList.add("beamer-leaf-slide");
       slide.classList.toggle(
         "beamer-center-slide",
-        centerAllSlides || slide.classList.contains("center")
+        slide.classList.contains("center")
       );
       // Reveal measures the slide before Beamer's full-height layout is added.
       // Its earlier top offset is stale once flex centering owns the content area.
@@ -707,6 +713,50 @@
     arrangeTitleSlide();
     alignInlineLabels();
     alignOrderedMarkers();
+    return true;
+  };
+
+  const startChrome = () => {
+    window.clearTimeout(chromePollHandle);
+    if (decorateChrome()) {
+      return;
+    }
+    chromePollHandle = window.setTimeout(startChrome, 25);
+  };
+
+  // Phase 2: everything that depends on Reveal's layout or configuration.
+  const finishDecorate = () => {
+    const reveal = document.querySelector(".reveal");
+    if (!reveal || reveal.dataset.beamerDecorated === "true") {
+      return;
+    }
+    if (reveal.dataset.beamerChrome !== "true") {
+      window.setTimeout(finishDecorate, 25);
+      return;
+    }
+    reveal.dataset.beamerDecorated = "true";
+
+    const slides = leafSlides();
+    const revealConfig =
+      typeof window.Reveal.getConfig === "function"
+        ? window.Reveal.getConfig()
+        : {};
+    const showProgress = metaBoolean(
+      "beamer-progress",
+      revealConfig.progress === true
+    );
+
+    if (revealConfig.center === true) {
+      slides.forEach((slide) => slide.classList.add("beamer-center-slide"));
+    }
+    reveal.classList.toggle("beamer-has-progress", showProgress);
+    if (showProgress) {
+      const counts = slideCounts(slides);
+      slides.forEach((slide) => {
+        appendProgress(slide.querySelector(":scope > .beamer-footline"), counts.get(slide));
+      });
+    }
+
     fitFrameTitles(slides);
     watchFrameTitles(slides);
     positionNativeUi(reveal);
@@ -755,15 +805,16 @@
     }
 
     if (window.Reveal.isReady && window.Reveal.isReady()) {
-      decorate();
+      finishDecorate();
     } else {
-      window.Reveal.on("ready", decorate);
+      window.Reveal.on("ready", finishDecorate);
     }
   };
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", connect, { once: true });
+    document.addEventListener("DOMContentLoaded", startChrome, { once: true });
   } else {
-    connect();
+    startChrome();
   }
+  connect();
 })();

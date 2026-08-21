@@ -199,19 +199,20 @@ const renderFixture = (name, options = {}) => {
   }
 };
 
-const renderTemplate = () => {
+const renderTemplate = (source) => {
+  const output = `${source}-smoke.html`;
   run(quartoCommand, [
     "render",
-    "template.qmd",
+    `${source}.qmd`,
     "--output",
-    "template-smoke.html",
+    output,
     "--output-dir",
     "tests/_output",
     "--no-clean",
   ]);
   assert(
-    existsSync(join(outputDir, "template-smoke.html")),
-    "The root template did not produce an HTML presentation."
+    existsSync(join(outputDir, output)),
+    `The template ${source}.qmd did not produce an HTML presentation.`
   );
 };
 
@@ -1478,6 +1479,14 @@ const testCambridgeUs = async (connection, origin) => {
     return {
       classes: reveal.className,
       boxBackground: getComputedStyle(box).backgroundColor,
+      boxMarginBottom: parseFloat(getComputedStyle(box).marginBottom),
+      boxFontSize: parseFloat(getComputedStyle(box).fontSize),
+      authorsTopGap:
+        (document
+          .querySelector("#title-slide .quarto-title-authors")
+          .getBoundingClientRect().top -
+          box.getBoundingClientRect().bottom) /
+        Math.max(0.0001, window.Reveal.getScale()),
       titleColor: getComputedStyle(title).color,
       display: getComputedStyle(slide).display,
       verticalCenterDelta: contentCenter - availableCenter,
@@ -1493,7 +1502,16 @@ const testCambridgeUs = async (connection, origin) => {
   })()`);
   assert.match(titleState.classes, /beamer-cambridgeus/);
   assert.match(titleState.classes, /beamer-has-headline/);
-  assert.equal(titleState.boxBackground, "rgb(255, 255, 255)");
+  // CambridgeUS keeps no filled title box: transparent background and a
+  // tighter gap above the author metadata than Madrid's filled box.
+  assert.equal(titleState.boxBackground, "rgba(0, 0, 0, 0)");
+  assert(
+    Math.abs(
+      titleState.boxMarginBottom - titleState.boxFontSize * 0.5
+    ) < 0.6,
+    JSON.stringify(titleState)
+  );
+  assert(titleState.authorsTopGap < 24, JSON.stringify(titleState));
   assert.equal(titleState.titleColor, "rgb(204, 0, 0)");
   assert.equal(titleState.headlineCount, 1);
   assert.equal(titleState.headlineVisible, true);
@@ -2389,7 +2407,8 @@ try {
   resetDirectory(outputDir);
   resetDirectory(artifactsDir);
   run("node", ["--check", "_extensions/beamerslides/beamer.js"]);
-  renderTemplate();
+  renderTemplate("template");
+  renderTemplate("template-cambridgeus");
   for (const fixture of [
     "madrid",
     "cambridgeus",
