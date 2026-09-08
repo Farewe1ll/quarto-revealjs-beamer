@@ -704,11 +704,13 @@
     }
   };
 
-  // Phase 1: chrome injection. This only needs the parsed document, so it runs
-  // as soon as the DOM is available - before Reveal paints - so the Beamer
+  // Phase 1: chrome injection. This only needs the parsed slide markup, so it
+  // runs as soon as that markup is final - before Reveal paints - so the Beamer
   // headline/footline never flash in after the slides are already visible.
   let chromePollHandle = 0;
   let chromeAttempts = 0;
+  let chromeObserver = null;
+  let chromeInjected = false;
 
   const decorateChrome = () => {
     const reveal = document.querySelector(".reveal");
@@ -724,14 +726,9 @@
       return false;
     }
 
-    // The document is parsed by the time this runs, so the slide markup is
-    // final. Injecting here - rather than waiting for a second poll - keeps the
-    // chrome ahead of Reveal's first paint, so no frame renders without its
-    // Beamer headline/footline.
-    if (document.readyState === "loading") {
-      return false;
-    }
-
+    // The slide markup is final by the time this runs (see `chromeIsSettled`),
+    // so injecting here keeps the chrome ahead of Reveal's first paint and no
+    // frame renders without its Beamer headline/footline.
     reveal.dataset.beamerChrome = "true";
 
     const variant = meta("beamer-variant") || "madrid";
@@ -796,13 +793,55 @@
     return true;
   };
 
+  // The slide markup is only final once the parser has passed it. Waiting for
+  // DOMContentLoaded is not enough: Reveal adds its `.ready` class from a timer
+  // that fires as soon as its bundle is parsed, which can happen while the
+  // document is still loading (deferred scripts are still being fetched), and
+  // the deck then paints a chrome-less frame. `.reveal.ready` therefore also
+  // proves the markup is settled - Reveal can only be ready after it has read
+  // the slides - so the chrome is injected the moment that class shows up.
+  const chromeIsSettled = () =>
+    document.readyState !== "loading" ||
+    Boolean(document.querySelector(".reveal.ready"));
+
+  const stopWatchingChrome = () => {
+    if (chromeObserver) {
+      chromeObserver.disconnect();
+      chromeObserver = null;
+    }
+    window.clearTimeout(chromePollHandle);
+  };
+
+  const injectChrome = () => {
+    if (chromeInjected) {
+      return true;
+    }
+    if (!chromeIsSettled() || !decorateChrome()) {
+      return false;
+    }
+    chromeInjected = true;
+    stopWatchingChrome();
+    // When Reveal's `ready` event is what unblocked the injection, phase 2 has
+    // already run and skipped the missing chrome, so finish it now rather than
+    // letting the poll paint a half-decorated frame first.
+    if (
+      window.Reveal &&
+      typeof window.Reveal.isReady === "function" &&
+      window.Reveal.isReady()
+    ) {
+      finishDecorate();
+    }
+    return true;
+  };
+
   const startChrome = () => {
     window.clearTimeout(chromePollHandle);
-    if (decorateChrome()) {
+    if (injectChrome()) {
       return;
     }
     chromeAttempts += 1;
     if (chromeAttempts >= MAX_POLL_ATTEMPTS) {
+      stopWatchingChrome();
       console.warn(
         "[beamerslides] Could not decorate the slides; giving up after " +
           `${Math.round((MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS) / 1000)}s.`
@@ -810,6 +849,24 @@
       return;
     }
     chromePollHandle = window.setTimeout(startChrome, POLL_INTERVAL_MS);
+  };
+
+  // A MutationObserver callback is a microtask, which the browser always drains
+  // before it paints, so reacting to the `.ready` class here beats the frame it
+  // would otherwise show bare. A timer cannot: it can miss the window entirely.
+  const watchChrome = () => {
+    if (typeof window.MutationObserver !== "function") {
+      return;
+    }
+    chromeObserver = new window.MutationObserver(() => {
+      injectChrome();
+    });
+    chromeObserver.observe(document.documentElement || document, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    });
   };
 
   // Phase 2: everything that depends on Reveal's layout or configuration.
@@ -921,5 +978,6 @@
   } else {
     startChrome();
   }
+  watchChrome();
   connect();
 })();
