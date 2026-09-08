@@ -1,10 +1,15 @@
 (function () {
   "use strict";
 
-  const MIN_FRAME_TITLE_HEIGHT = 58;
-  const COMPACT_FRAME_TITLE_THRESHOLD = 92;
-  const TIGHT_FRAME_TITLE_THRESHOLD = 118;
-  const SCROLLING_FRAME_TITLE_THRESHOLD = 132;
+  const DEFAULT_FRAME_TITLE_HEIGHT = 58;
+  // Frame-title steps are multiples of the base height so a theme that changes
+  // `--beamer-frame-height` keeps the same proportions. The ratios reproduce
+  // the 92 / 118 / 132 px breakpoints of the default 58px title bar.
+  const COMPACT_FRAME_TITLE_RATIO = 1.5862;
+  const TIGHT_FRAME_TITLE_RATIO = 2.0345;
+  const SCROLLING_FRAME_TITLE_RATIO = 2.2759;
+  const POLL_INTERVAL_MS = 25;
+  const MAX_POLL_ATTEMPTS = 200;
 
   const text = (node) => (node ? node.textContent.trim() : "");
   const meta = (name) => {
@@ -30,6 +35,28 @@
       }
     }
     return null;
+  };
+
+  // Read the base height from the element that owns the theme variables, not
+  // from the slide (whose inline `--beamer-frame-height` this script rewrites).
+  const baseFrameTitleHeight = () => {
+    const reveal = document.querySelector(".reveal");
+    const read = (element) =>
+      element
+        ? Number.parseFloat(
+            window
+              .getComputedStyle(element)
+              .getPropertyValue("--beamer-frame-height")
+          )
+        : Number.NaN;
+    const value = read(reveal);
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+    const rootValue = read(document.documentElement);
+    return Number.isFinite(rootValue) && rootValue > 0
+      ? rootValue
+      : DEFAULT_FRAME_TITLE_HEIGHT;
   };
 
   const leafSlides = () =>
@@ -495,9 +522,55 @@
     }
   };
 
+  const overflowReported = new Set();
+
+  const slideScrolls = (slide) =>
+    slide.classList.contains("scrollable") ||
+    slide.classList.contains("smaller") ||
+    slide.classList.contains("beamer-long-frame-title");
+
+  // In print/PDF layout Reveal paginates the deck, so a slide's client height no
+  // longer describes the space its content has. Measuring there reports phantom
+  // overflows, so the check is screen-only.
+  const isPrintLayout = () =>
+    document.documentElement.classList.contains("reveal-print") ||
+    document.documentElement.classList.contains("print-pdf") ||
+    (typeof window.matchMedia === "function" &&
+      window.matchMedia("print").matches);
+
+  // Beamer reports an overfull vbox; on the web the equivalent failure is
+  // silent, because the slide box hides its overflow. Warn once per slide state
+  // so an author notices instead of shipping a frame with invisible content.
+  const reportOverflow = (slide) => {
+    if (
+      isPrintLayout() ||
+      slide.getBoundingClientRect().width <= 0 ||
+      slideScrolls(slide)
+    ) {
+      return;
+    }
+    const overflow = slide.scrollHeight - slide.clientHeight;
+    if (overflow <= 2) {
+      return;
+    }
+    const key = `${slide.id || "unnamed"}:${slide.scrollHeight}`;
+    if (overflowReported.has(key)) {
+      return;
+    }
+    overflowReported.add(key);
+    console.warn(
+      `[beamerslides] ${slide.id ? `#${slide.id}` : "a frame"} overflows its ` +
+        `content area by ${overflow}px (${slide.scrollHeight}px of content in ` +
+        `${slide.clientHeight}px). Add \`.smaller\` to the frame title, split ` +
+        "the frame, or add `.scrollable` so it can scroll."
+    );
+  };
+
   const measureFrameTitle = (slide) => {
     const heading = directHeading(slide, "h2");
+    const minHeight = baseFrameTitleHeight();
     if (!heading || heading.getBoundingClientRect().width <= 0) {
+      reportOverflow(slide);
       return;
     }
 
@@ -506,27 +579,25 @@
       "beamer-frame-title-compact",
       "beamer-frame-title-tight"
     );
-    slide.style.setProperty(
-      "--beamer-frame-height",
-      `${MIN_FRAME_TITLE_HEIGHT}px`
-    );
+    slide.style.setProperty("--beamer-frame-height", `${minHeight}px`);
 
     let height = Math.ceil(heading.scrollHeight);
-    if (height > COMPACT_FRAME_TITLE_THRESHOLD) {
+    if (height > Math.round(minHeight * COMPACT_FRAME_TITLE_RATIO)) {
       heading.classList.add("beamer-frame-title-compact");
       height = Math.ceil(heading.scrollHeight);
     }
-    if (height > TIGHT_FRAME_TITLE_THRESHOLD) {
+    if (height > Math.round(minHeight * TIGHT_FRAME_TITLE_RATIO)) {
       heading.classList.add("beamer-frame-title-tight");
       height = Math.ceil(heading.scrollHeight);
     }
 
-    const finalHeight = Math.max(MIN_FRAME_TITLE_HEIGHT, height);
+    const finalHeight = Math.max(minHeight, height);
     slide.style.setProperty("--beamer-frame-height", `${finalHeight}px`);
     slide.classList.toggle(
       "beamer-long-frame-title",
-      finalHeight > SCROLLING_FRAME_TITLE_THRESHOLD
+      finalHeight > Math.round(minHeight * SCROLLING_FRAME_TITLE_RATIO)
     );
+    reportOverflow(slide);
   };
 
   let frameTitleAnimation = 0;
@@ -616,6 +687,15 @@
       "--beamer-menu-right",
       `${Math.max(spacing, window.innerWidth - slideRect.right + spacing)}px`
     );
+    if (logoRect && logoRect.width > 0 && logoRect.height > 0) {
+      // Reserve exactly as much title padding as the rendered logo needs,
+      // measured in canvas pixels rather than a fixed guess.
+      const logoRightGap = Math.max(0, slideRect.right - logoRect.right);
+      reveal.style.setProperty(
+        "--beamer-logo-reserve",
+        `${Math.round((logoRect.width + logoRightGap + spacing) / scale)}px`
+      );
+    }
     if (footerRect) {
       reveal.style.setProperty(
         "--beamer-native-footline-offset",
@@ -624,10 +704,11 @@
     }
   };
 
-  // Phase 1: chrome injection. This only needs the parsed document, so it
-  // runs as soon as possible - before Reveal.js initializes - so the Beamer
+  // Phase 1: chrome injection. This only needs the parsed document, so it runs
+  // as soon as the DOM is available - before Reveal paints - so the Beamer
   // headline/footline never flash in after the slides are already visible.
   let chromePollHandle = 0;
+  let chromeAttempts = 0;
 
   const decorateChrome = () => {
     const reveal = document.querySelector(".reveal");
@@ -643,15 +724,14 @@
       return false;
     }
 
-    const signature = slides
-      .map((slide) => slide.id || slide.textContent.trim().slice(0, 80))
-      .join("|");
-    if (reveal.dataset.beamerSlideSignature !== signature) {
-      reveal.dataset.beamerSlideSignature = signature;
+    // The document is parsed by the time this runs, so the slide markup is
+    // final. Injecting here - rather than waiting for a second poll - keeps the
+    // chrome ahead of Reveal's first paint, so no frame renders without its
+    // Beamer headline/footline.
+    if (document.readyState === "loading") {
       return false;
     }
 
-    delete reveal.dataset.beamerSlideSignature;
     reveal.dataset.beamerChrome = "true";
 
     const variant = meta("beamer-variant") || "madrid";
@@ -721,17 +801,34 @@
     if (decorateChrome()) {
       return;
     }
-    chromePollHandle = window.setTimeout(startChrome, 25);
+    chromeAttempts += 1;
+    if (chromeAttempts >= MAX_POLL_ATTEMPTS) {
+      console.warn(
+        "[beamerslides] Could not decorate the slides; giving up after " +
+          `${Math.round((MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS) / 1000)}s.`
+      );
+      return;
+    }
+    chromePollHandle = window.setTimeout(startChrome, POLL_INTERVAL_MS);
   };
 
   // Phase 2: everything that depends on Reveal's layout or configuration.
+  let decorateAttempts = 0;
   const finishDecorate = () => {
     const reveal = document.querySelector(".reveal");
     if (!reveal || reveal.dataset.beamerDecorated === "true") {
       return;
     }
     if (reveal.dataset.beamerChrome !== "true") {
-      window.setTimeout(finishDecorate, 25);
+      decorateAttempts += 1;
+      if (decorateAttempts >= MAX_POLL_ATTEMPTS) {
+        console.warn(
+          "[beamerslides] The slide chrome was never injected; skipping " +
+            "layout integration."
+        );
+        return;
+      }
+      window.setTimeout(finishDecorate, POLL_INTERVAL_MS);
       return;
     }
     reveal.dataset.beamerDecorated = "true";
@@ -798,9 +895,17 @@
     window.setTimeout(repositionNativeUi, 100);
   };
 
+  let connectAttempts = 0;
   const connect = () => {
     if (!window.Reveal || typeof window.Reveal.on !== "function") {
-      window.setTimeout(connect, 25);
+      connectAttempts += 1;
+      if (connectAttempts >= MAX_POLL_ATTEMPTS) {
+        console.warn(
+          "[beamerslides] Reveal.js was not found; skipping layout integration."
+        );
+        return;
+      }
+      window.setTimeout(connect, POLL_INTERVAL_MS);
       return;
     }
 
