@@ -1,0 +1,19 @@
+---
+title: "Palette override on CambridgeUS"
+author: "Palette Author"
+date: "August 17, 2026"
+short-title: "Palette"
+short-author: "Palette Author"
+short-institute: "Palette Institute"
+short-date: "2026"
+beamer-variant: cambridgeus
+format:
+  beamerslides-revealjs:
+    css: tests/fixtures/palette-override.css
+---
+
+# Palette
+
+## Frame {#palette-frame}
+
+A document-level `:root` override must reach the CambridgeUS palette too.

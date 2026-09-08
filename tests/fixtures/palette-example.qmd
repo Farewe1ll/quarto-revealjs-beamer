@@ -1,0 +1,19 @@
+---
+title: "Palette override via the shipped example"
+author: "Palette Author"
+date: "August 17, 2026"
+short-title: "Palette"
+short-author: "Palette Author"
+short-institute: "Palette Institute"
+short-date: "2026"
+beamer-variant: madrid
+format:
+  beamerslides-revealjs:
+    theme: [default, _extensions/beamerslides/beamer.scss, examples/custom-palette.css]
+---
+
+# Palette
+
+## Frame {#palette-frame}
+
+The shipped single-seed example must derive the whole palette.

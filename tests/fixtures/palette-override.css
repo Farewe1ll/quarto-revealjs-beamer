@@ -1,0 +1,12 @@
+/* Regression guard for the palette contract:
+   - `:root` overrides must win (the base palette used to be re-declared on
+     `.reveal.beamer-madrid`, which shadowed document-level overrides);
+   - `.reveal.beamer-*` overrides must win as well. */
+:root {
+  --beamer-footline-author-bg: #123456;
+}
+
+.reveal.beamer-madrid {
+  --beamer-primary: #2c7550;
+  --beamer-frame-bg: #2c7550;
+}

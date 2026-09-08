@@ -1,0 +1,20 @@
+---
+title: "Palette override via theme"
+author: "Palette Author"
+date: "August 17, 2026"
+short-title: "Palette"
+short-author: "Palette Author"
+short-institute: "Palette Institute"
+short-date: "2026"
+beamer-variant: madrid
+format:
+  beamerslides-revealjs:
+    theme: [default, _extensions/beamerslides/beamer.scss, tests/fixtures/palette-override.scss]
+---
+
+# Palette
+
+## Frame {#palette-frame}
+
+Re-referencing the extension theme by path must keep the Beamer styling and
+still accept document-level overrides.
