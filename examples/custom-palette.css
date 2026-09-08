@@ -1,0 +1,58 @@
+/*-- scss:rules --*/
+
+/* Single-seed palette for the Madrid variant.
+ *
+ * Copy this file, change `--beamer-seed`, and reference it from the document:
+ *
+ *   format:
+ *     beamerslides-revealjs:
+ *       theme: [default, _extensions/beamerslides/beamer.scss, custom-palette.css]
+ *
+ * or, keeping the extension's own theme list untouched:
+ *
+ *   format:
+ *     beamerslides-revealjs:
+ *       css: custom-palette.css
+ *
+ * The literal palette in _palette.scss is kept as exact Beamer colour algebra
+ * (structure / structure!75!black / structure!50!black). This example derives
+ * the same relationships from one seed with `color-mix()`, which can differ by
+ * at most one 8-bit step. Use the literals if you need byte-exact colours.
+ */
+
+.reveal.beamer-madrid {
+  --beamer-seed: #2c7550;
+
+  /* palette primary = structure */
+  --beamer-primary: var(--beamer-seed);
+  --beamer-frame-bg: var(--beamer-seed);
+  --beamer-title-bg: var(--beamer-seed);
+  --beamer-section-title-bg: var(--beamer-seed);
+  --beamer-headline-subsection-bg: var(--beamer-seed);
+  --beamer-footline-date-bg: var(--beamer-seed);
+}
+
+@supports (color: color-mix(in srgb, red, black)) {
+  .reveal.beamer-madrid {
+    /* palette secondary = structure!75!black */
+    --beamer-primary-2: color-mix(in srgb, var(--beamer-seed) 75%, black);
+    --beamer-footline-title-bg: color-mix(in srgb, var(--beamer-seed) 75%, black);
+    --beamer-block-title-bg: color-mix(in srgb, var(--beamer-seed) 75%, black);
+
+    /* palette tertiary = structure!50!black */
+    --beamer-primary-3: color-mix(in srgb, var(--beamer-seed) 50%, black);
+    --beamer-headline-section-bg: color-mix(in srgb, var(--beamer-seed) 50%, black);
+    --beamer-footline-author-bg: color-mix(in srgb, var(--beamer-seed) 50%, black);
+
+    /* orchid block body = block title background!10!white */
+    --beamer-block-body-bg: color-mix(
+      in srgb,
+      color-mix(in srgb, var(--beamer-seed) 75%, black) 10%,
+      white
+    );
+
+    /* Theme-only surfaces. */
+    --beamer-soft: color-mix(in srgb, var(--beamer-seed) 8%, white);
+    --beamer-line: color-mix(in srgb, var(--beamer-seed) 30%, white);
+  }
+}
