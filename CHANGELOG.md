@@ -18,6 +18,15 @@ Earlier releases predate this file; their history is in the git log.
   also driven by a `MutationObserver`, whose callback the browser drains before
   it paints, alongside the existing `DOMContentLoaded` and bounded-poll paths.
 
+### Changed
+
+- The browser harness retries a stalled headless Chrome launch (three attempts,
+  each with a fresh profile) and starts Chrome with shared-runner hardening
+  flags (no background networking, component updates, extensions or desktop
+  keyring) plus startup logging. A launch that used to fail after 30s with
+  `(no stderr output)` now retries and, if it still fails, leaves per-attempt
+  diagnostics in the uploaded artifacts.
+
 ## [0.3.0] - 2026-09-08
 
 ### Added
