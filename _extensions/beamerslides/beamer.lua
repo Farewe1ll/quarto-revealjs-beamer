@@ -128,6 +128,21 @@ function Meta(meta)
   return meta
 end
 
+-- Block titles are attribute values, so they stay literal text: no markdown
+-- parsing, which would silently turn `a_b_c` into emphasis. Split on ASCII
+-- whitespace only - a locale-aware `%s` can match bytes inside multi-byte UTF-8
+-- characters and corrupt CJK titles.
+local function title_inlines(value)
+  local inlines = pandoc.List()
+  for word in value:gmatch("[^ \t\r\n]+") do
+    if #inlines > 0 then
+      inlines:insert(pandoc.Space())
+    end
+    inlines:insert(pandoc.Str(word))
+  end
+  return inlines
+end
+
 local block_kinds = {
   ["block"] = "beamer-block",
   ["beamer-block"] = "beamer-block",
@@ -165,8 +180,18 @@ function Div(div)
 
   local title = div.attributes.title
   if title and title ~= "" then
-    div.attributes["data-title"] = title
     div.attributes.title = nil
+    -- Emit the title as real text so it stays selectable, searchable, and
+    -- exposed to assistive technology. A CSS pseudo-element cannot do any of
+    -- that. Hand-written `data-title` markup keeps working through the
+    -- `[data-title]::before` fallback in beamer.scss.
+    div.content:insert(
+      1,
+      pandoc.Div(
+        { pandoc.Plain(title_inlines(title)) },
+        pandoc.Attr("", { "beamer-block-title" })
+      )
+    )
   end
 
   return div

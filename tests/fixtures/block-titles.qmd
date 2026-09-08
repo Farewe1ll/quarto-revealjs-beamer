@@ -1,0 +1,31 @@
+---
+title: "Block title regression"
+author: "Block Author"
+date: "August 17, 2026"
+short-title: "Block titles"
+short-author: "Block Author"
+short-institute: "Block Institute"
+short-date: "2026"
+beamer-variant: madrid
+format: beamerslides-revealjs
+---
+
+# Blocks
+
+## Titles {#block-titles}
+
+::: {.block title="Definition & scope of the model"}
+Titles are plain attribute values, so they must survive escaping.
+:::
+
+::: {.exampleblock title="多词 中文 标题"}
+Multi-token CJK titles must not be split at byte boundaries.
+:::
+
+::: {.alertblock title="含 **强调** 与 `代码` 的标题"}
+Inline markdown inside a title is rendered, not printed literally.
+:::
+
+::: {.block}
+A block without a title must not render an empty title bar.
+:::
