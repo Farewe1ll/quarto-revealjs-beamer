@@ -13,6 +13,7 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -33,9 +34,6 @@ const outputDir = join(testsDir, "_output");
 const artifactsDir = join(testsDir, "_artifacts");
 const baselinesDir = join(testsDir, "baselines");
 const chromeTemporaryDir = mkdtempSync(join(tmpdir(), "beamerslides-chrome-"));
-const chromeProfileDir = join(chromeTemporaryDir, "profile");
-const chromeStderrPath = join(chromeTemporaryDir, "chrome-stderr.log");
-mkdirSync(chromeProfileDir, { recursive: true });
 const temporaryInputs = [];
 const generatedFixtureIgnore = join(testsDir, "fixtures", ".gitignore");
 const fixtureIgnoreExisted = existsSync(generatedFixtureIgnore);
@@ -51,7 +49,16 @@ const chromeStartupTimeout =
   Number.isFinite(requestedChromeStartupTimeout) &&
   requestedChromeStartupTimeout > 0
     ? requestedChromeStartupTimeout
-    : 30_000;
+    : 45_000;
+const requestedChromeLaunchAttempts = Number.parseInt(
+  process.env.BEAMERSLIDES_CHROME_LAUNCH_ATTEMPTS || "",
+  10
+);
+const chromeLaunchAttempts =
+  Number.isFinite(requestedChromeLaunchAttempts) &&
+  requestedChromeLaunchAttempts > 0
+    ? requestedChromeLaunchAttempts
+    : 3;
 const requestedPageReadyTimeout = Number.parseInt(
   process.env.BEAMERSLIDES_PAGE_READY_TIMEOUT_MS || "",
   10
@@ -409,19 +416,30 @@ class CdpConnection {
   }
 }
 
-const readChromeStderr = () =>
-  existsSync(chromeStderrPath)
-    ? readFileSync(chromeStderrPath, "utf8")
-    : "";
+const readChromeStderr = (path) =>
+  existsSync(path) ? readFileSync(path, "utf8") : "";
+
+// Diagnostics must never replace the real failure, so every probe is total.
+const safeListDirectory = (path) => {
+  try {
+    return readdirSync(path).slice(0, 20);
+  } catch {
+    return null;
+  }
+};
 
 const preserveChromeStartupDiagnostics = (details) => {
   try {
     mkdirSync(artifactsDir, { recursive: true });
-    if (existsSync(chromeStderrPath)) {
-      copyFileSync(chromeStderrPath, join(artifactsDir, "chrome-stderr.log"));
+    const suffix = details.attempt > 1 ? `-attempt-${details.attempt}` : "";
+    if (details.stderrPath && existsSync(details.stderrPath)) {
+      copyFileSync(
+        details.stderrPath,
+        join(artifactsDir, `chrome-stderr${suffix}.log`)
+      );
     }
     writeFileSync(
-      join(artifactsDir, "chrome-startup.json"),
+      join(artifactsDir, `chrome-startup${suffix}.json`),
       `${JSON.stringify(details, null, 2)}\n`
     );
   } catch (error) {
@@ -429,31 +447,52 @@ const preserveChromeStartupDiagnostics = (details) => {
   }
 };
 
-const launchChrome = async () => {
-  const chromePath = findChrome();
+// Headless Chrome is driven straight through CDP, so the flags also cover the
+// shared-runner hazards that can stall a launch for the whole timeout: tiny
+// /dev/shm, background networking and component updates, and a desktop keyring
+// that is not there. Startup logging goes to the captured stderr so a stalled
+// launch is diagnosable from the uploaded artifacts.
+const chromeFlags = (profileDir) => [
+  "--headless=new",
+  "--disable-gpu",
+  "--disable-dev-shm-usage",
+  "--disable-breakpad",
+  "--disable-crash-reporter",
+  "--no-first-run",
+  "--no-default-browser-check",
+  "--no-sandbox",
+  "--remote-debugging-address=127.0.0.1",
+  "--remote-debugging-port=0",
+  `--user-data-dir=${profileDir}`,
+  "--window-size=1280,720",
+  "--force-device-scale-factor=1",
+  "--disable-background-networking",
+  "--disable-client-side-phishing-detection",
+  "--disable-component-update",
+  "--disable-default-apps",
+  "--disable-extensions",
+  "--disable-hang-monitor",
+  "--disable-sync",
+  "--metrics-recording-only",
+  "--mute-audio",
+  "--password-store=basic",
+  "--use-mock-keychain",
+  "--enable-logging=stderr",
+];
+
+const launchChromeAttempt = async ({
+  attempt,
+  chromePath,
+  profileDir,
+  stderrPath,
+}) => {
   const startupStartedAt = Date.now();
-  const stderrFd = openSync(chromeStderrPath, "w");
+  const stderrFd = openSync(stderrPath, "w");
   let processHandle;
   try {
-    processHandle = spawn(
-      chromePath,
-      [
-        "--headless=new",
-        "--disable-gpu",
-        "--disable-dev-shm-usage",
-        "--disable-breakpad",
-        "--disable-crash-reporter",
-        "--no-first-run",
-        "--no-default-browser-check",
-        "--no-sandbox",
-        "--remote-debugging-address=127.0.0.1",
-        "--remote-debugging-port=0",
-        `--user-data-dir=${chromeProfileDir}`,
-        "--window-size=1280,720",
-        "--force-device-scale-factor=1",
-      ],
-      { stdio: ["ignore", "ignore", stderrFd] }
-    );
+    processHandle = spawn(chromePath, chromeFlags(profileDir), {
+      stdio: ["ignore", "ignore", stderrFd],
+    });
   } finally {
     closeSync(stderrFd);
   }
@@ -469,9 +508,20 @@ const launchChrome = async () => {
     const observedExitCode = processHandle.exitCode;
     const observedSignalCode = processHandle.signalCode;
     await stopChildProcess(processHandle);
-    const stderr = readChromeStderr();
+    const stderr = readChromeStderr(stderrPath);
+    // Chromium sends logs to stderr with --enable-logging=stderr, but some
+    // builds write them to chrome_debug.log inside the profile instead.
+    const debugLogPath = join(profileDir, "chrome_debug.log");
+    const debugLogTail = existsSync(debugLogPath)
+      ? readChromeStderr(debugLogPath)
+          .split("\n")
+          .filter((line) => line.trim())
+          .slice(-20)
+          .join("\n")
+      : "";
     const details = {
       summary,
+      attempt,
       chromePath,
       elapsedMilliseconds: Date.now() - startupStartedAt,
       timeoutMilliseconds: chromeStartupTimeout,
@@ -480,6 +530,11 @@ const launchChrome = async () => {
       spawnError: spawnError?.message || null,
       activePortFileContents: lastActivePortContents || null,
       lastConnectionError: lastConnectionError || null,
+      // A profile that Chrome never populated points at the launch itself
+      // rather than at the DevTools endpoint.
+      profileEntries: safeListDirectory(profileDir),
+      debugLogTail: debugLogTail || null,
+      stderrPath,
     };
     preserveChromeStartupDiagnostics(details);
     return new Error(
@@ -487,16 +542,18 @@ const launchChrome = async () => {
         summary,
         `Chrome executable: ${chromePath}`,
         `Startup wait: ${details.elapsedMilliseconds} ms`,
+        `Launch attempt: ${attempt}/${chromeLaunchAttempts}`,
         lastConnectionError && `Last connection error: ${lastConnectionError}`,
         "Chrome stderr:",
         stderr.trim() || "(no stderr output)",
+        debugLogTail && `chrome_debug.log (last lines):\n${debugLogTail}`,
       ]
         .filter(Boolean)
         .join("\n")
     );
   };
 
-  const activePortFile = join(chromeProfileDir, "DevToolsActivePort");
+  const activePortFile = join(profileDir, "DevToolsActivePort");
   while (Date.now() - startupStartedAt < chromeStartupTimeout) {
     if (spawnError) {
       throw await startupFailure(`Chrome failed to launch: ${spawnError.message}`);
@@ -515,7 +572,11 @@ const launchChrome = async () => {
           const connection = await CdpConnection.connect(
             `ws://127.0.0.1:${port}${browserPath}`
           );
-          return { connection, processHandle, stderr: readChromeStderr };
+          return {
+            connection,
+            processHandle,
+            stderr: () => readChromeStderr(stderrPath),
+          };
         } catch (error) {
           lastConnectionError = error.message;
           // Chrome can publish the port just before the socket accepts clients.
@@ -530,6 +591,43 @@ const launchChrome = async () => {
   throw await startupFailure(
     `Chrome did not expose a debugging port within ${chromeStartupTimeout} ms.`
   );
+};
+
+// A shared runner can occasionally stall a single Chrome start (load spikes,
+// stale first-run state). Each attempt gets a fresh profile and its own stderr
+// log, and the previous process is stopped before the next one starts.
+const launchChrome = async () => {
+  const chromePath = findChrome();
+  let lastError;
+  for (let attempt = 1; attempt <= chromeLaunchAttempts; attempt += 1) {
+    const attemptDir = join(chromeTemporaryDir, `attempt-${attempt}`);
+    const profileDir = join(attemptDir, "profile");
+    const stderrPath = join(attemptDir, "chrome-stderr.log");
+    mkdirSync(profileDir, { recursive: true });
+    try {
+      const launched = await launchChromeAttempt({
+        attempt,
+        chromePath,
+        profileDir,
+        stderrPath,
+      });
+      if (attempt > 1) {
+        console.log(`Chrome started on launch attempt ${attempt}.`);
+      }
+      return launched;
+    } catch (error) {
+      lastError = error;
+      if (attempt < chromeLaunchAttempts) {
+        console.warn(
+          `Warning: Chrome launch attempt ${attempt}/${chromeLaunchAttempts} failed; ` +
+            "retrying with a fresh profile."
+        );
+        // Let the runner reclaim the stalled process before starting again.
+        await delay(1_000);
+      }
+    }
+  }
+  throw lastError;
 };
 
 const shutdownChrome = async ({ connection, processHandle }) => {
