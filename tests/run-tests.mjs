@@ -1600,7 +1600,13 @@ const testInjectionTiming = async (connection, origin) => {
     undefined,
     {
       preloadScript: `(() => {
-        window.__beamerTimeline = { footlineAt: null, readyAt: null, bareFrames: 0 };
+        window.__beamerTimeline = {
+          footlineAt: null,
+          readyAt: null,
+          readyFrames: 0,
+          bareFrames: 0,
+          bareFrameAt: null
+        };
         const mark = (key) => {
           if (window.__beamerTimeline[key] === null) {
             window.__beamerTimeline[key] = performance.now();
@@ -1610,32 +1616,41 @@ const testInjectionTiming = async (connection, origin) => {
           const reveal = document.querySelector(".reveal");
           const ready = Boolean(reveal && reveal.classList.contains("ready"));
           const footline = Boolean(document.querySelector(".reveal .beamer-footline"));
-          if (ready && !footline) {
-            window.__beamerTimeline.bareFrames += 1;
+          if (ready) {
+            window.__beamerTimeline.readyFrames += 1;
+            if (!footline) {
+              window.__beamerTimeline.bareFrames += 1;
+              if (window.__beamerTimeline.bareFrameAt === null) {
+                window.__beamerTimeline.bareFrameAt = performance.now();
+              }
+            }
           }
           if (window.__beamerTimeline.frames === undefined) {
             window.__beamerTimeline.frames = 0;
           }
           window.__beamerTimeline.frames += 1;
-          if (window.__beamerTimeline.frames < 30) requestAnimationFrame(tick);
+          // Keep observing until the first ready frame plus 30 more, so a slow
+          // renderer cannot end the window before the deck ever paints ready
+          // (which would make the bare-frame check pass vacuously).
+          if (window.__beamerTimeline.readyFrames < 30) {
+            requestAnimationFrame(tick);
+          }
         };
-        const watch = () => {
-          const observer = new MutationObserver(() => {
-            if (document.querySelector(".reveal .beamer-footline")) mark("footlineAt");
-            if (document.querySelector(".reveal.ready")) mark("readyAt");
-          });
-          observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ["class"]
-          });
-        };
-        if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", watch, { once: true });
-        } else {
-          watch();
-        }
+        // Diagnostics only: mutation timestamps cannot express the ordering the
+        // deck must respect, because a mutation callback may observe Reveal's
+        // ready class one microtask before the chrome injection that the same
+        // microtask checkpoint performs. Only the frame timeline shows what
+        // actually reached the screen.
+        const observer = new MutationObserver(() => {
+          if (document.querySelector(".reveal .beamer-footline")) mark("footlineAt");
+          if (document.querySelector(".reveal.ready")) mark("readyAt");
+        });
+        observer.observe(document, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["class"]
+        });
         requestAnimationFrame(tick);
       })();`,
     }
@@ -1646,7 +1661,9 @@ const testInjectionTiming = async (connection, origin) => {
     return {
       footlineAt: timeline.footlineAt,
       readyAt: timeline.readyAt,
+      readyFrames: timeline.readyFrames,
       bareFrames: timeline.bareFrames,
+      bareFrameAt: timeline.bareFrameAt,
       footlineCount: document.querySelectorAll(".beamer-footline").length
     };
   })()`);
@@ -1656,8 +1673,8 @@ const testInjectionTiming = async (connection, origin) => {
     `timeline incomplete: ${JSON.stringify(state)}`
   );
   assert(
-    state.footlineAt <= state.readyAt,
-    `chrome was injected ${state.footlineAt}ms, after Reveal became ready at ${state.readyAt}ms`
+    state.readyFrames > 0,
+    `the deck never painted as ready: ${JSON.stringify(state)}`
   );
   assert.equal(
     state.bareFrames,
