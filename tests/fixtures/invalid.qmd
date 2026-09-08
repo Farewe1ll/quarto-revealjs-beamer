@@ -1,0 +1,20 @@
+---
+title: "Invalid option regression"
+author: "Option Author"
+date: "August 17, 2026"
+short-title: "Invalid options"
+short-author: "Option Author"
+short-institute: "Option Institute"
+short-date: "2026"
+beamer-variant: bogus
+beamer-secheader: maybe
+beamer-progress: nonsense
+format: beamerslides-revealjs
+---
+
+# Fallback
+
+## Defaulted frame {#defaulted}
+
+Unknown option values must warn and fall back to Madrid without a headline or
+progress rule.
