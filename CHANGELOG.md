@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Earlier releases predate this file; their history is in the git log.
 
+## [Unreleased]
+
+### Fixed
+
+- Chrome injection now also wins the race against Reveal's own `ready` class.
+  Reveal publishes that class from a timer that can fire while the document is
+  still loading (its deferred scripts are still being fetched), so waiting for
+  `DOMContentLoaded` alone could lose the race and let the first frames paint the
+  deck without its Beamer headline/footline on slower machines. Injection is now
+  also driven by a `MutationObserver`, whose callback the browser drains before
+  it paints, alongside the existing `DOMContentLoaded` and bounded-poll paths.
+
 ## [0.3.0] - 2026-09-08
 
 ### Added
