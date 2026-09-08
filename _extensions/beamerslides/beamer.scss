@@ -300,7 +300,11 @@ $border-radius: 4px !default;
   text-align: center;
 }
 
+/* Beamer's title page uses a `beamercolorbox` without `wd=`, so the box spans
+   the full text width; keeping the same width here is what makes the Madrid
+   title band read like the real theme instead of a centered badge. */
 .beamer-title-box {
+  width: 100%;
   margin: 0 auto 1.25em;
   overflow: hidden;
   color: var(--beamer-title-fg);
@@ -582,8 +586,11 @@ $border-radius: 4px !default;
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.07);
 }
 
+/* The block title is real text: it stays selectable, searchable, and exposed
+   to assistive technology. The `[data-title]` rule below is a fallback for
+   hand-written HTML that predates the markup change. */
+.beamer-block > .beamer-block-title,
 .beamer-block[data-title]::before {
-  content: attr(data-title);
   display: block;
   margin: -0.62em -0.76em 0.5em;
   padding: 0.36em 0.76em 0.24em;
@@ -594,10 +601,16 @@ $border-radius: 4px !default;
   line-height: 1.2;
 }
 
+.beamer-block[data-title]::before {
+  content: attr(data-title);
+}
+
+.beamer-block.beamer-example > .beamer-block-title,
 .beamer-block.beamer-example[data-title]::before {
   background: var(--beamer-example);
 }
 
+.beamer-block.beamer-alert > .beamer-block-title,
 .beamer-block.beamer-alert[data-title]::before {
   background: var(--beamer-alert);
 }
@@ -606,8 +619,16 @@ $border-radius: 4px !default;
   margin-top: 0;
 }
 
+.beamer-block > .beamer-block-title:first-child {
+  margin-top: -0.62em;
+}
+
 .beamer-block > :last-child {
   margin-bottom: 0;
+}
+
+.beamer-block > .beamer-block-title:last-child {
+  margin-bottom: 0.5em;
 }
 
 .reveal .slides section div.callout {
@@ -900,7 +921,9 @@ $border-radius: 4px !default;
 }
 
 .reveal.has-logo .slides section > h2:first-of-type {
-  padding-right: 225px;
+  /* Default reserve for the logo; beamer.js refines it from the measured
+     logo box once Reveal has laid the deck out. */
+  padding-right: var(--beamer-logo-reserve, 225px);
 }
 
 .reveal .slide-number {
