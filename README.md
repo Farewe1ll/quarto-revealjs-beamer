@@ -4,7 +4,8 @@
 
 - `madrid`：默认蓝色主题，遵循 Madrid 的无 headline 布局（与原版 `secheader` 选项一致，可用 `beamer-secheader: true` 开启）。
 - `cambridgeus`：白底红色标题、红灰 headline 与三段式 footline；标题块不带底色，标题与作者信息的间距比 Madrid 的实心标题盒更紧凑。
-- 页眉页脚在文档解析完成时立即注入（早于 Reveal.js 初始化），首帧即呈现完整信息栏；仅依赖布局的光学对齐在初始化后进行。通过格式配置开启原生 `progress: true` 时，footline 顶部的进度线会在 Reveal.js 初始化完成后出现。
+- 页眉页脚在 DOM 解析完成后立即注入（早于 Reveal.js 的首帧），首帧即呈现完整信息栏；仅依赖布局的光学对齐在初始化后进行。通过格式配置开启原生 `progress: true` 时，footline 顶部的进度线会在 Reveal.js 初始化完成后出现。
+- 内容超出 frame 可用高度时，会在浏览器控制台输出一条包含 frame id 与实际溢出像素的告警（`.scrollable`、`.smaller` 或超长标题导致的滚动页除外），避免内容被静默裁切。
 - 长 frame title 会自动缩小并增高，不会被固定高度裁切。
 - 数学公式默认使用扩展内置的固定版本 KaTeX，断网打开也能完整渲染；根号等可伸缩符号采用矢量路径，规则线会随字号统一缩放。
 - 拉丁字符使用扩展内置的 Libertinus Sans，避免不同系统因缺少字体而产生版式漂移；中文继续使用各平台原生 CJK 字体回退。
@@ -70,6 +71,31 @@ beamer-progress: true
 
 若未提供短值，扩展会回退到 Quarto 生成的标题、作者、机构和日期。非法的变体或布尔值会输出警告，并使用安全的默认行为。
 
+## 自定义配色
+
+整套外观由 CSS 自定义属性驱动，默认值写在 `_extensions/beamerslides/_palette.scss`，并且**严格等于 Beamer 的混色代数**（`structure`、`structure!75!black`、`structure!50!black` 等）。覆盖时请注意两点：
+
+1. 变量可以写在 `.reveal`、`.reveal.beamer-madrid` / `.reveal.beamer-cambridgeus` 上，也可以直接写在 `:root` 上——两个变体的调色板都按 `:root` 级选择器声明（CambridgeUS 用 `:where(:root).beamer-cambridgeus` 保持同等特异性），因此文档级 `:root` 覆盖对两种变体都生效。
+2. `--beamer-primary` 只影响正文强调色与列表标记；frame title、标题页色块、页眉页脚各自有独立变量，需要一并覆盖。
+
+最简单的做法是复制仓库里的 `examples/custom-palette.css`，只改一个种子色，其余由 `color-mix()` 按 Beamer 的关系派生：
+
+```yaml
+format:
+  beamerslides-revealjs:
+    theme: [default, _extensions/beamerslides/beamer.scss, examples/custom-palette.css]
+```
+
+若不想接管 `theme` 列表（扩展自带的主题名 `beamer.scss` 与 Quarto 内置主题查找同名，直接写会报 `beamer.scss.scss` 找不到），用 `css:` 追加样式表即可：
+
+```yaml
+format:
+  beamerslides-revealjs:
+    css: examples/custom-palette.css
+```
+
+该文件以 `/*-- scss:rules --*/` 开头：Quarto 要求 `theme:` 里的样式文件带 SCSS 层标记，这一行对 `css:` 路径无害。三条路径（`css:`、`theme:`、随仓库提供的示例文件）与两种变体都由回归测试覆盖（`palette-css` / `palette-theme` / `palette-example` / `palette-cambridgeus` fixture）；`color-mix()` 派生结果与字面量最多相差 1/255，需要逐通道完全一致时请直接覆盖字面量。
+
 标题页会显示可点击的邮箱地址；ORCID 使用内嵌矢量 iD 图标，并以作者名右上方的小角标呈现，避免位图缩放模糊。多位作者继续使用同一组 `name`、`email`、`orcid` 和 `affiliations` 字段。
 
 行内公式默认放大 `2%`，行间公式放大 `6%`。内置 KaTeX 及其字体不依赖 CDN。若文档依赖 KaTeX 尚未支持的 MathJax 专用语法，可以覆盖回 Quarto 的 MathJax（此时 MathJax 本身是否离线取决于用户的 Quarto 配置）：
@@ -109,6 +135,8 @@ format:
 需要强调的内容。
 :::
 ```
+
+block 标题会渲染为真实文本节点（而不是 CSS 伪元素），因此在浏览器里可以被 Ctrl+F 搜索、选中复制，也能被读屏软件读取。标题保持字面文本（不解析 markdown，避免 `a_b_c` 之类的标题被误当作强调）。手写 HTML 时仍可用 `data-title` 属性，此时由 CSS 伪元素兜底。
 
 行内辅助类包括：
 
@@ -176,11 +204,15 @@ _extensions/beamerslides/
 └── THIRD_PARTY.md
 assets/
 └── normal-density.svg
+examples/
+└── custom-palette.css
 references.bib
 template.qmd
 template-cambridgeus.qmd
 tests/
 ├── fixtures/
+├── lib/
+│   └── harness.mjs
 └── run-tests.mjs
 ```
 
@@ -193,7 +225,7 @@ npm ci
 npm test
 ```
 
-测试会渲染两个变体、显式选项与自包含离线示例，检查元数据、邮箱与 ORCID、页眉页脚、列表、长标题、本地 KaTeX 与字体、文字背景对齐、表格对比度、代码块、图片、引用、16:9 / 4:3 视口、浏览器错误，以及 Madrid/CambridgeUS PDF 输出。截图会与 `tests/baselines/` 中受版本控制的基线比较；实际截图、差异图与 PDF 写入 `tests/_artifacts/`，该目录不会进入版本控制。
+测试会渲染两个变体、显式选项与自包含离线示例，检查元数据、邮箱与 ORCID、页眉页脚、列表、长标题、本地 KaTeX 与字体、文字背景对齐、表格对比度、代码块、图片、引用、16:9 / 4:3 视口、浏览器错误，以及 Madrid/CambridgeUS PDF 输出。另外还会断言：标题页色块铺满 textwidth、block 标题是真实文本、页眉页脚在 Reveal 就绪之前完成注入（逐帧检查无"就绪但缺页脚"的帧）、非法选项的警告与回退、以及超页内容会产出带 frame id 的控制台告警。截图会与 `tests/baselines/` 中受版本控制的基线比较；实际截图、差异图与 PDF 写入 `tests/_artifacts/`，该目录不会进入版本控制。
 
 页面就绪等待默认最长 20 秒；慢速环境可通过 `BEAMERSLIDES_PAGE_READY_TIMEOUT_MS` 调整，例如 `BEAMERSLIDES_PAGE_READY_TIMEOUT_MS=30000 npm test`。
 
