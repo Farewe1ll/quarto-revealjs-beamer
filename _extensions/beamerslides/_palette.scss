@@ -1,7 +1,8 @@
-:root,
-html.beamer-madrid,
-body.beamer-madrid,
-.reveal.beamer-madrid {
+/* The base palette (Madrid) is declared on `:root` only. Declaring the same
+   variables on `.reveal.beamer-madrid` used to shadow document-level
+   overrides, so `:root { --beamer-primary: ... }` silently did nothing.
+   Custom properties inherit, so every element still sees them. */
+:root {
   --beamer-primary: #3333b3;
   --beamer-primary-2: #262686;
   --beamer-primary-3: #1a1a59;
@@ -41,11 +42,14 @@ body.beamer-madrid,
   --beamer-active-headline-height: var(--beamer-headline-height);
   --beamer-frame-height: 58px;
   --beamer-footline-height: 30px;
+  --beamer-logo-reserve: 225px;
 }
 
-html.beamer-cambridgeus,
-body.beamer-cambridgeus,
-.reveal.beamer-cambridgeus {
+/* CambridgeUS overrides the same variables. The variant class is added to
+   <html> by the in-header bootstrap script, so this needs no JavaScript.
+   `:where()` keeps the specificity at `:root` level, so a document-level
+   `:root { --beamer-... }` override still wins for this variant too. */
+:where(:root).beamer-cambridgeus {
   --beamer-primary: #a30000;
   --beamer-primary-2: #8f0000;
   --beamer-primary-3: #7a0000;
