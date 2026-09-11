@@ -59,6 +59,14 @@ const chromeLaunchAttempts =
   requestedChromeLaunchAttempts > 0
     ? requestedChromeLaunchAttempts
     : 3;
+const requestedPageReadyAttempts = Number.parseInt(
+  process.env.BEAMERSLIDES_PAGE_READY_ATTEMPTS || "",
+  10
+);
+const pageReadyAttempts =
+  Number.isFinite(requestedPageReadyAttempts) && requestedPageReadyAttempts > 0
+    ? requestedPageReadyAttempts
+    : 3;
 const requestedPageReadyTimeout = Number.parseInt(
   process.env.BEAMERSLIDES_PAGE_READY_TIMEOUT_MS || "",
   10
@@ -207,6 +215,37 @@ const runCapture = (command, args) => {
 
 const run = (command, args) => runCapture(command, args).stdout;
 
+// Quarto's Deno runtime occasionally dies with SIGSEGV part-way through a
+// render. It is not caused by the document -- the same input renders fine on
+// the next attempt, and the crash happens before any of this project's code
+// runs -- but it fails the suite hard, so renders are retried. A render that
+// fails for a real reason still fails, just after the retries.
+const renderAttempts = 3;
+
+const runQuartoRender = (args) => {
+  let lastError = null;
+  for (let attempt = 1; attempt <= renderAttempts; attempt += 1) {
+    try {
+      return runCapture(quartoCommand, args);
+    } catch (error) {
+      lastError = error;
+      if (attempt === renderAttempts) {
+        break;
+      }
+      console.warn(
+        `[harness] quarto render failed (attempt ${attempt}/${renderAttempts}); ` +
+          "retrying -- Quarto's Deno runtime crashes intermittently"
+      );
+      // Synchronous sleep: the callers of this helper are synchronous.
+      const until = Date.now() + 400 * attempt;
+      while (Date.now() < until) {
+        // deliberately blocking
+      }
+    }
+  }
+  throw lastError;
+};
+
 const renderFixture = (name, options = {}) => {
   const source = options.source || name;
   const fixture = join(testsDir, "fixtures", `${source}.qmd`);
@@ -219,7 +258,7 @@ const renderFixture = (name, options = {}) => {
   try {
     // Quarto writes extension warnings to stderr; callers that assert on them
     // receive the captured text.
-    return runCapture(quartoCommand, [
+    return runQuartoRender([
       "render",
       basename(temporaryInput),
       "--output",
@@ -238,7 +277,7 @@ const renderFixture = (name, options = {}) => {
 
 const renderTemplate = (source) => {
   const output = `${source}-smoke.html`;
-  run(quartoCommand, [
+  runQuartoRender([
     "render",
     `${source}.qmd`,
     "--output",
@@ -711,6 +750,37 @@ class BrowserPage {
   }
 
   async waitForReady() {
+    // Reveal occasionally never publishes itself: the document finishes and the
+    // fonts settle, but `window.Reveal` stays absent and the slide is unusable.
+    // The same page loads correctly on the next attempt, so a reload is the fix.
+    // Retrying here only rescues a page that never became ready -- a page that
+    // loads and then breaks an assertion still fails on its own merits.
+    for (let attempt = 1; attempt <= pageReadyAttempts; attempt += 1) {
+      try {
+        await this.waitForReadyOnce();
+        return;
+      } catch (error) {
+        if (attempt === pageReadyAttempts) {
+          throw error;
+        }
+        console.warn(
+          `[harness] ${this.url} was not ready (attempt ${attempt}/${pageReadyAttempts}); ` +
+            "reloading"
+        );
+        await this.reload();
+      }
+    }
+  }
+
+  async reload() {
+    await this.connection.send(
+      "Page.navigate",
+      { url: this.url },
+      this.sessionId
+    );
+  }
+
+  async waitForReadyOnce() {
     const startedAt = Date.now();
     let ready = null;
     while (Date.now() - startedAt < pageReadyTimeout) {

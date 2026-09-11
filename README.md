@@ -334,6 +334,8 @@ npm test
 
 页面就绪等待默认最长 20 秒；慢速环境可通过 `BEAMERSLIDES_PAGE_READY_TIMEOUT_MS` 调整，例如 `BEAMERSLIDES_PAGE_READY_TIMEOUT_MS=30000 npm test`。
 
+测试对两类**外部偶发故障**做了重试，这是实测统计出来的、与扩展代码无关的抖动：`quarto render` 会偶发 `SIGSEGV`（Quarto 的 Deno 运行时崩溃，同一输入下次即成功），以及 Reveal 偶尔不发布 `window.Reveal` 就绪（页面已加载、字体已就绪，但就是没初始化）。前者重试 3 次，后者重载页面最多 3 次；重试只挽救"从未完成"的渲染或页面，真正的失败依然会失败。重试次数可用 `BEAMERSLIDES_PAGE_READY_ATTEMPTS` 覆盖。
+
 只有确认视觉变化符合预期后，才应更新基线：
 
 ```bash

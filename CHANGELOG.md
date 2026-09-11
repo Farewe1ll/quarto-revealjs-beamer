@@ -151,6 +151,16 @@ Earlier releases predate this file; their history is in the git log.
 
 ### Changed
 
+- The harness now retries the two external failures that were intermittently
+  failing the suite, both of which happen outside this project's code.
+  `quarto render` is retried (three attempts): Quarto's Deno runtime dies with
+  SIGSEGV part-way through a render every so often -- the same input renders
+  fine on the next attempt, and the crash predates any of this extension's code
+  running. And `BrowserPage.waitForReady` reloads the page up to three times:
+  Reveal occasionally never publishes itself, leaving `document.readyState` and
+  the fonts settled but `window.Reveal` absent. Measured over 15 consecutive
+  suite runs, these two accounted for 2 failures; a retry only rescues a page or
+  a render that never completed, so a genuine failure still fails.
 - The browser harness retries a stalled headless Chrome launch (three attempts,
   each with a fresh profile) and starts Chrome with shared-runner hardening
   flags (no background networking, component updates, extensions or desktop
