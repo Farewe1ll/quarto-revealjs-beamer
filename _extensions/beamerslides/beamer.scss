@@ -225,6 +225,14 @@ $border-radius: 4px !default;
 
 /* Frame and section titles */
 
+/* beamer.js wraps each band's text so it can nudge the text's optical centre
+   without moving the band itself. Inline-block keeps the wrapper hugging the
+   line box; the transform does the rest. */
+.reveal .slides section > h2:first-of-type > .beamer-title-ink,
+.reveal .slides section.beamer-section-slide > h1:first-of-type > .beamer-title-ink {
+  display: inline-block;
+}
+
 .reveal .slides section > h2:first-of-type {
   position: absolute;
   top: var(--beamer-active-headline-height);
@@ -291,6 +299,7 @@ $border-radius: 4px !default;
 
 .reveal .slides section.beamer-section-slide > h1:first-of-type {
   position: absolute;
+  transform-origin: center center;
   top: var(--beamer-active-headline-height);
   /* Built exactly like the frame title above: a full-bleed band whose text is
      inset by the body margin. Insets on the band itself would put the section

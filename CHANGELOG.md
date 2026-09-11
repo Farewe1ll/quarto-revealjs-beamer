@@ -84,6 +84,16 @@ Earlier releases predate this file; their history is in the git log.
 - The title page band now uses the 58px body inset instead of `10%`, so it
   spans the body measure (`\textwidth`) rather than 1024px against a 1164px
   measure.
+- Band titles are now optically centred. `align-items: center` centres the line
+  box, not the glyphs, so a CJK title -- which has no descenders and therefore
+  puts almost all of its ink above the baseline -- sat about 5px high inside the
+  58px band, while Latin text sat about 7px low. The two offsets run in opposite
+  directions, so no single CSS value fixes both; `beamer.js` now measures each
+  title's painted ink and nudges the text. The ink is read from the rasterised
+  glyphs rather than from `actualBoundingBoxAscent/Descent`, because those
+  report the CJK fallback's font bounding box, which is roughly twice as tall as
+  what is actually painted and over-corrected by about 2x. The nudge is applied
+  to an inner wrapper, not to the heading, so the coloured band stays put.
 - The headline no longer draws a separator. It had
   `box-shadow: 0 1px 0`, a 1px coloured line spanning the slide at the
   headline/frametitle boundary; infolines butts the two colour boxes straight

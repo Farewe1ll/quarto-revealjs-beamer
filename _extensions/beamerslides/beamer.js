@@ -230,6 +230,146 @@
     });
   };
 
+  // Shared 2D context for glyph metrics. The ink is measured from the DRAWN
+  // pixels rather than from `actualBoundingBoxAscent/Descent`: those report the
+  // font's own bounding box, which for the CJK fallback runs about twice as tall
+  // as the glyphs actually painted, and using them over-corrected by roughly 2x.
+  let metricsContext = null;
+  const fontMetrics = (style, text, contentBoxHeight) => {
+    if (!metricsContext) {
+      metricsContext = document.createElement("canvas").getContext("2d", {
+        willReadFrequently: true,
+      });
+      if (!metricsContext) {
+        return null;
+      }
+    }
+    const fontSize = Number.parseFloat(style.fontSize);
+    const lineHeight = Number.parseFloat(style.lineHeight);
+    if (!Number.isFinite(fontSize) || !Number.isFinite(lineHeight)) {
+      return null;
+    }
+    // One line only: with several lines the band is laid out from the top, so
+    // centring the first line's ink would just push the whole block around.
+    if (contentBoxHeight > lineHeight * 1.5) {
+      return null;
+    }
+    const canvas = metricsContext.canvas;
+    const styled = (size) =>
+      [style.fontStyle, style.fontWeight, `${size}px`, style.fontFamily].join(
+        " "
+      );
+    metricsContext.font = styled(fontSize);
+    const measured = metricsContext.measureText(text);
+    const fontAscent = Number.isFinite(measured.fontBoundingBoxAscent)
+      ? measured.fontBoundingBoxAscent
+      : measured.actualBoundingBoxAscent;
+    const fontDescent = Number.isFinite(measured.fontBoundingBoxDescent)
+      ? measured.fontBoundingBoxDescent
+      : measured.actualBoundingBoxDescent;
+    if (!Number.isFinite(fontAscent) || !Number.isFinite(fontDescent)) {
+      return null;
+    }
+    const width = Math.ceil(measured.width) + 8;
+    const height = Math.ceil(lineHeight * 3);
+    canvas.width = width;
+    canvas.height = height;
+    metricsContext.font = styled(fontSize);
+    metricsContext.clearRect(0, 0, width, height);
+    metricsContext.fillStyle = "#000";
+    const baseline = Math.round(height / 2);
+    metricsContext.textBaseline = "alphabetic";
+    metricsContext.fillText(text, 4, baseline);
+
+    const pixels = metricsContext.getImageData(0, 0, width, height).data;
+    let firstRow = -1;
+    let lastRow = -1;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (pixels[(y * width + x) * 4 + 3] > 20) {
+          if (firstRow < 0) {
+            firstRow = y;
+          }
+          lastRow = y;
+          break;
+        }
+      }
+    }
+    if (firstRow < 0) {
+      return null;
+    }
+    return {
+      lineHeight,
+      // Distance from the line box's top down to the painted ink's centre: the
+      // half-leading term places the baseline inside the line box, then the
+      // ink's midpoint sits half its own sign-height below that baseline.
+      inkCentreFromLineTop:
+        (lineHeight - (fontAscent + fontDescent)) / 2 +
+        fontAscent +
+        (lastRow - firstRow) / 2 -
+        (baseline - firstRow),
+    };
+  };
+
+  // `align-items: center` centres the LINE BOX, not the ink. A CJK title has no
+  // descenders, so its ink sits entirely above the baseline and the band reads
+  // as top-heavy; Latin text pulls the other way. Both are corrected here so
+  // the optical centre matches the geometric centre of the band. The two shifts
+  // run in opposite directions, which is why CSS alone cannot fix both.
+  //
+  // The nudge has to move the TEXT, not the band: transforming the heading
+  // moves its coloured band along with it and drags the bar off the headline.
+  // So the text is wrapped once and the wrapper carries the transform.
+  const titleTextWrapper = (title) => {
+    let wrapper = title.querySelector(":scope > .beamer-title-ink");
+    if (!wrapper) {
+      wrapper = document.createElement("span");
+      wrapper.className = "beamer-title-ink";
+      while (title.firstChild) {
+        wrapper.appendChild(title.firstChild);
+      }
+      title.appendChild(wrapper);
+    }
+    return wrapper;
+  };
+
+  const centerTitleInk = () => {
+    const titles = document.querySelectorAll(
+      ".reveal .slides section.beamer-section-slide > h1:first-of-type, " +
+        ".reveal .slides section.beamer-frame-slide > h2:first-of-type"
+    );
+    titles.forEach((title) => {
+      const text = title.textContent.trim();
+      if (!text || title.clientHeight <= 0) {
+        return;
+      }
+      const wrapper = titleTextWrapper(title);
+      wrapper.style.removeProperty("transform");
+      // getBoundingClientRect is in device pixels, so undo Reveal's scale before
+      // comparing the text height against the CSS line height.
+      const revealScale =
+        window.Reveal && typeof window.Reveal.getScale === "function"
+          ? window.Reveal.getScale()
+          : 1;
+      const metrics = fontMetrics(
+        window.getComputedStyle(title),
+        text,
+        wrapper.getBoundingClientRect().height / Math.max(0.0001, revealScale)
+      );
+      if (!metrics) {
+        return;
+      }
+      const boxHeight = title.clientHeight;
+      const inkCentre =
+        (boxHeight - metrics.lineHeight) / 2 + metrics.inkCentreFromLineTop;
+      const shift = boxHeight / 2 - inkCentre;
+      if (Math.abs(shift) < 0.25) {
+        return;
+      }
+      wrapper.style.transform = "translateY(" + shift.toFixed(2) + "px)";
+    });
+  };
+
   const alphabeticOrderedMarker = (value) => {
     if (!Number.isInteger(value) || value < 1) {
       return String(value);
@@ -790,6 +930,7 @@
     arrangeTitleSlide();
     alignInlineLabels();
     alignOrderedMarkers();
+    centerTitleInk();
     return true;
   };
 
@@ -918,10 +1059,12 @@
     const realignOpticalLabels = () => {
       window.requestAnimationFrame(alignInlineLabels);
       window.requestAnimationFrame(alignOrderedMarkers);
+      window.requestAnimationFrame(centerTitleInk);
     };
     const realignForPrint = () => {
       alignInlineLabels();
       alignOrderedMarkers();
+      centerTitleInk();
       slides.forEach(measureFrameTitle);
     };
     const repositionNativeUi = (event) => {
