@@ -2214,6 +2214,12 @@ const testSectionStyles = async (connection, origin) => {
           height: headingRect.height,
           radius: parseFloat(style.borderTopLeftRadius),
           color: style.color,
+          // A transparent fill means the text sits on the page background, so
+          // that is what its contrast must be measured against.
+          effectiveBackground:
+            style.backgroundColor === "rgba(0, 0, 0, 0)"
+              ? opaqueBackdrop(slide)
+              : style.backgroundColor,
           hasShadow: style.boxShadow !== "none" && style.boxShadow !== "",
           align: style.textAlign,
           fontSize: parseFloat(style.fontSize),
@@ -2224,6 +2230,10 @@ const testSectionStyles = async (connection, origin) => {
             : null,
           // Centre of the title together with every body block, and the centre
           // of the space between the headline and the footline.
+          bodyColor: body ? getComputedStyle(body).color : null,
+          // The body sits on the page, not on the title's band, so it needs its
+          // own backdrop rather than reusing the title's.
+          bodyBackground: body ? opaqueBackdrop(body) : null,
           groupCentre: (() => {
             const boxes = Array.from(slide.children)
               .filter(
@@ -2254,7 +2264,21 @@ const testSectionStyles = async (connection, origin) => {
           })(),
         };
       };
+      // A slide's own background is usually transparent, so the real backdrop
+      // is whatever opaque colour an ancestor paints.
+      const opaqueBackdrop = (element) => {
+        let node = element;
+        while (node && node.nodeType === 1) {
+          const value = getComputedStyle(node).backgroundColor;
+          const parts = String(value).match(/[\d.]+/g);
+          const alpha = parts && parts.length > 3 ? Number(parts[3]) : 1;
+          if (parts && alpha > 0.05) return value;
+          node = node.parentElement;
+        }
+        return "rgb(255, 255, 255)";
+      };
       return {
+        backdrop: opaqueBackdrop(document.getElementById("sec-default")),
         band: read("sec-default"),
         badge: read("sec-badge"),
         minimal: read("sec-minimal"),
@@ -2271,6 +2295,26 @@ const testSectionStyles = async (connection, origin) => {
       false,
       `${variant}: an ordinary frame must not become a section page`
     );
+    const parseRgb = (value) => {
+      const parts = String(value).match(/[\d.]+/g);
+      return parts ? parts.slice(0, 3).map(Number) : null;
+    };
+    const relativeLuminance = (value) => {
+      const rgb = parseRgb(value);
+      if (!rgb) return null;
+      const [r, g, b] = rgb.map((channel) => {
+        const c = channel / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrastRatio = (foreground, background) => {
+      const a = relativeLuminance(foreground);
+      const b = relativeLuminance(background);
+      if (a === null || b === null) return null;
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+
     for (const kind of ["band", "badge", "minimal"]) {
       const look = state[kind];
       assert(look, `${variant}: the ${kind} section page was not rendered`);
@@ -2284,6 +2328,31 @@ const testSectionStyles = async (connection, origin) => {
         true,
         `${variant}: ${kind} body must clear the title`
       );
+      // The minimal look drops the band's fill but used to keep the band's
+      // white text, which rendered white-on-white for Madrid. Asserting only
+      // that the fill is transparent did not catch it; legibility has to be
+      // checked directly.
+      const titleContrast = contrastRatio(look.color, look.effectiveBackground);
+      assert(
+        titleContrast !== null && titleContrast >= 4.5,
+        `${variant}: ${kind} title must be legible against its background: ` +
+          JSON.stringify({
+            color: look.color,
+            background: look.effectiveBackground,
+            contrast: titleContrast,
+          })
+      );
+      if (look.bodyColor) {
+        const bodyContrast = contrastRatio(
+          look.bodyColor,
+          look.bodyBackground
+        );
+        assert(
+          bodyContrast !== null && bodyContrast >= 4.5,
+          `${variant}: ${kind} body text must be legible: ` +
+            JSON.stringify({ color: look.bodyColor, bg: look.bodyBackground, contrast: bodyContrast })
+        );
+      }
     }
     assert.equal(state.band.align, "left", `${variant}: default band alignment`);
 

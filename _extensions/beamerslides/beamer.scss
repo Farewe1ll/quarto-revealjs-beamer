@@ -370,6 +370,9 @@ $border-radius: 4px !default;
   --beamer-section-shadow: none;
   --beamer-section-align: center;
   --beamer-section-size: 1.4em;
+  /* No fill, so the band's own text colour cannot be reused: it is white for
+     Madrid, which is invisible on the page. */
+  --beamer-section-fg: var(--beamer-section-minimal-fg, var(--beamer-structure));
 }
 
 .reveal .slides section.beamer-section-slide.section-minimal > h1:first-of-type {
@@ -406,7 +409,9 @@ $border-radius: 4px !default;
 }
 
 .reveal .slides section.beamer-section-slide > p {
-  color: var(--beamer-muted);
+  /* Body text, so it takes the body colour -- a section page's prose has no
+     reason to be dimmer than the prose on a frame. */
+  color: var(--beamer-ink);
   text-align: center;
 }
 

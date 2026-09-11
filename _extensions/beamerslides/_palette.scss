@@ -58,6 +58,10 @@
   --beamer-title-subtitle-fg: rgba(255, 255, 255, 0.9);
   --beamer-section-title-bg: #3333b2;
   --beamer-section-title-fg: #ffffff;
+  /* The minimal look drops the band's fill, so it cannot keep the band's
+     white text -- on a light page that is white on white. It uses the accent
+     instead, which also makes it read consistently in both variants. */
+  --beamer-section-minimal-fg: var(--beamer-structure);
 
   --beamer-headline-section-bg: #1a1a59;
   --beamer-headline-section-fg: #ffffff;
@@ -146,6 +150,7 @@
   --beamer-title-subtitle-fg: #7a0000;
   --beamer-section-title-bg: transparent;
   --beamer-section-title-fg: #cc0000;
+  --beamer-section-minimal-fg: var(--beamer-structure);
 
   --beamer-headline-section-bg: #a30000;
   --beamer-headline-section-fg: #f2f2f2;
