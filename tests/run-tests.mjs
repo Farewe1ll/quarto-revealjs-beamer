@@ -1977,16 +1977,23 @@ const paletteModel = (() => {
           background: toHex(madridPlainBand),
           body: bodyOf(madridPlainBand),
           color: "#ffffff",
+          weight: "650",
+          strokeWidth: 0,
         },
         Example: {
           background: toHex(madridExampleBand),
           body: bodyOf(madridExampleBand),
           color: "#ffffff",
+          weight: "650",
+          strokeWidth: 0,
         },
         Alert: {
+          // White on the #bf0000 band is 7.6:1, so no outline is needed.
           background: toHex(madridAlertBand),
           body: bodyOf(madridAlertBand),
           color: "#ffffff",
+          weight: "650",
+          strokeWidth: 0,
         },
       },
     },
@@ -1995,15 +2002,29 @@ const paletteModel = (() => {
       frameTitle: toHex(mix(GRAY, 0.1, WHITE)),
       blocks: {
         // Plain and example are unfilled, coloured by text alone, as upstream.
-        Plain: { background: "transparent", body: "transparent", color: toHex(DARKRED) },
+        Plain: {
+          background: "transparent",
+          body: "transparent",
+          color: toHex(DARKRED),
+          weight: "650",
+          strokeWidth: 0,
+        },
         Example: {
           background: "transparent",
           body: "transparent",
           color: toHex(EXAMPLE_TEXT),
+          weight: "650",
+          strokeWidth: 0,
         },
-        // Alert is unfilled yellow text (explicit design choice; measures
-        // 1.48:1 against the slide background, so it reads as washed-out gold).
-        Alert: { background: "transparent", body: "transparent", color: "#ffcd00" },
+        // Yellow on the light slide is 1.48:1 on its own, so this is the one
+        // title that carries an outline -- and the heaviest weight.
+        Alert: {
+          background: "transparent",
+          body: "transparent",
+          color: "#ffcd00",
+          weight: "700",
+          strokeWidth: 2,
+        },
       },
     },
   };
@@ -2047,6 +2068,11 @@ const testPaletteAlgebra = async (connection, origin) => {
           background: hex(style.backgroundColor),
           body: hex(getComputedStyle(block).backgroundColor),
           color: hex(style.color),
+          weight: style.fontWeight,
+          strokeWidth: style.webkitTextStrokeWidth || style.getPropertyValue("-webkit-text-stroke-width"),
+          strokeColor: hex(
+            style.webkitTextStrokeColor || style.getPropertyValue("-webkit-text-stroke-color")
+          ),
         };
       });
       const root = getComputedStyle(document.documentElement);
@@ -2125,6 +2151,22 @@ const testPaletteAlgebra = async (connection, origin) => {
       closeTo(got.background, want.background, `${variant} ${kind} block title background`);
       closeTo(got.body, want.body, `${variant} ${kind} block body`);
       closeTo(got.color, want.color, `${variant} ${kind} block title colour`);
+      assert.equal(
+        got.weight,
+        want.weight,
+        `${variant} ${kind} block title weight`
+      );
+    }
+    // The alert title's outline is the only thing making a low-contrast fill
+    // legible, so assert it is actually applied where it is wanted and absent
+    // where it is not.
+    for (const [kind, want] of Object.entries(expected.blocks)) {
+      const got = state.kinds[kind].strokeWidth;
+      assert.equal(
+        parseFloat(got),
+        want.strokeWidth,
+        `${variant} ${kind} block title stroke width`
+      );
     }
     await page.close();
   }

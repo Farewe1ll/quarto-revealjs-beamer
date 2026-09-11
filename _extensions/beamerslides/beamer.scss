@@ -694,6 +694,17 @@ $border-radius: 4px !default;
      this 700 against ~600 for the other titles, so the alert outranks them by
      weight as well as by fill; the bundled Libertinus has no step above 700. */
   font-weight: var(--beamer-block-alert-title-weight, 650);
+  /* Outline for low-contrast fills. CambridgeUS paints this title yellow on a
+     light slide (1.48:1), which is hard to read on its own; the stroke puts a
+     high-contrast edge around each glyph without changing the fill colour.
+     `paint-order` is what keeps the stroke *behind* the fill -- without it the
+     stroke is centred on the glyph outline and eats into the letterform.
+     Both are progressive: a browser without them simply gets the plain fill,
+     which is the previous behaviour. Defaults to no stroke so only the variant
+     that needs it opts in. */
+  -webkit-text-stroke-width: var(--beamer-block-alert-title-stroke, 0);
+  -webkit-text-stroke-color: var(--beamer-block-alert-title-stroke-color, currentColor);
+  paint-order: stroke fill;
 }
 
 .beamer-block > :first-child {

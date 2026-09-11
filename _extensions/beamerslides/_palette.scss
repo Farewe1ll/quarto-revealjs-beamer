@@ -75,6 +75,8 @@
   --beamer-block-alert-title-bg: #bf0000;
   --beamer-block-alert-title-fg: #ffffff;
   --beamer-block-alert-title-weight: 650;
+  /* White on the #bf0000 band is already 7.6:1, so no stroke is needed. */
+  --beamer-block-alert-title-stroke: 0;
 
   --beamer-headline-height: 32px;
   --beamer-active-headline-height: var(--beamer-headline-height);
@@ -174,6 +176,17 @@
   --beamer-block-alert-title-bg: transparent;
   --beamer-block-alert-title-fg: #ffcd00;
   --beamer-block-alert-title-weight: 700;
+  /* Yellow text on a light slide is 1.48:1, which on its own is barely
+     legible. A dark stroke puts a 20.7:1 edge around every glyph, so the
+     letterforms read against the background while the fill stays the yellow
+     that was asked for. `paint-order: stroke fill` in beamer.scss keeps the
+     stroke behind the fill, so the yellow body is not eaten away.
+     Width tuned by rendering a sweep: at 16px glyphs, 4px swallows the yellow
+     on thin stems entirely, 3px closes the `e` counter into a blob, and 3px+
+     turns the title into a black bar at a glance. 2px is the widest that keeps
+     every counter open while still reading as an outline. */
+  --beamer-block-alert-title-stroke: 2px;
+  --beamer-block-alert-title-stroke-color: #000000;
 }
 
 .reveal.beamer-no-headline {
