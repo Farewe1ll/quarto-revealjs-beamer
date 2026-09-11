@@ -106,7 +106,9 @@
        darkred            = #cc0000
        darkred!75!black   = #990000
        darkred!50!black   = #660000
-     This changes bullets, numbered markers and unfilled block titles. */
+     This drives the list markers (unordered and numbered) and nothing else:
+     the block titles are set separately below, precisely so the plain block
+     does not inherit this red. */
   --beamer-structure: #cc0000;
   --beamer-structure-2: #990000;
   --beamer-structure-3: #660000;
@@ -118,13 +120,18 @@
   --beamer-frame-fg: #cc0000;
   --beamer-soft: #f8f2f2;
   --beamer-line: #d7b9bc;
-  /* beaver: alerted text = darkred!80!gray ->
-     0.8*(0.8,0,0) + 0.2*(0.5,0.5,0.5) = (0.74,0.1,0.1) -> #bd1a1a.
+  /* Upstream beaver sets alerted text = darkred!80!gray
+     (0.8*(0.8,0,0) + 0.2*(0.5,0.5,0.5) = (0.74,0.1,0.1) -> #bd1a1a). We use
+     the undiluted darkred instead so the alert signal is the same red as the
+     list markers and the highest-chroma warm colour on the slide; mixing in
+     grey was the one thing making the alert read *quieter* than the plain
+     block. This value drives the alert block title, `.alert` inline emphasis
+     and `h4`.
      `example text` is NOT derived from `structure` -- beamercolorthemedefault
      pins it to green!50!black, and neither beaver nor orchid redefines it -- so
      it keeps the same value here as in Madrid even though `structure` moved to
      darkred. */
-  --beamer-alert: #bd1a1a;
+  --beamer-alert: #cc0000;
   --beamer-example: #008000;
 
   --beamer-title-bg: transparent;
@@ -146,11 +153,23 @@
   --beamer-footline-date-fg: #7a0000;
   --beamer-progress: #cc0000;
 
-  /* `block title` has no bg here, so the title text falls back to `structure`
-     (the deliberate red above, not beaver's blue). Same for the example and
-     alert variants, which inherit `example text` / `alerted text` as fg only. */
+  /* `block title` has no bg here, so each kind shows its own colour as text.
+     The three are chosen so the semantic weight reads in order -- alert
+     loudest, then example, then the plain block quietly in the middle of the
+     warm range rather than competing with the alert red:
+
+       alert    #cc0000  red    -- same hue as the markers, but this is the
+                                   only place red signals *attention*
+       example  #008000  green  -- `example text`, pinned by beamer
+       plain    #b45309  amber  -- NOT `structure`: kept separate so the red
+                                   markers and the alert signal stay one colour
+                                   and the plain block does not compete with it
+
+     Note amber is the lightest orange that still clears 4.5:1 on the light
+     slide background (4.94:1); anything closer to a true orange drops below
+     3:1 and the title stops being legible. */
   --beamer-block-title-bg: transparent;
-  --beamer-block-title-fg: var(--beamer-structure);
+  --beamer-block-title-fg: #b45309;
   --beamer-block-example-title-bg: transparent;
   --beamer-block-example-title-fg: var(--beamer-example);
   --beamer-block-alert-title-bg: transparent;

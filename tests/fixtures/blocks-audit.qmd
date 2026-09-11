@@ -8,19 +8,17 @@ format: beamerslides-revealjs
 ## All three block types {#blocks}
 
 - Plain bullet
-- Second bullet
 
 1. Numbered one
-2. Numbered two
 
 ::: {.block title="Plain"}
-Plain block body.
+Plain body.
 :::
 
 ::: {.exampleblock title="Example"}
-Example block body.
+Example body.
 :::
 
 ::: {.alertblock title="Alert"}
-Alert block body.
+Alert body.
 :::

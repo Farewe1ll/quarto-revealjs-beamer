@@ -1996,18 +1996,19 @@ const paletteModel = (() => {
       blocks: {
         // No orchid -> `block title` keeps parent=structure with an empty bg,
         // so every kind is unfilled and the parent colour shows as text.
-        // `structure` here is the deliberate darkred, not beaver's blue.
-        Plain: { background: "transparent", body: "transparent", color: toHex(DARKRED) },
+        // Alert uses the undiluted darkred, not beaver's grey-mixed
+        // `darkred!80!gray`: the grey was what made the alert read quieter
+        // than the plain block.
+        // Plain block titles are a deliberate amber, not `structure`: red is
+        // reserved for the markers and the alert signal, so the plain block
+        // sits in the middle of the warm range instead of competing.
+        Plain: { background: "transparent", body: "transparent", color: "#b45309" },
         Example: {
           background: "transparent",
           body: "transparent",
           color: toHex(EXAMPLE_TEXT),
         },
-        Alert: {
-          background: "transparent",
-          body: "transparent",
-          color: toHex(mix(DARKRED, 0.8, GRAY)),
-        },
+        Alert: { background: "transparent", body: "transparent", color: toHex(DARKRED) },
       },
     },
   };
@@ -2055,6 +2056,9 @@ const testPaletteAlgebra = async (connection, origin) => {
       });
       const root = getComputedStyle(document.documentElement);
       const frame = document.querySelector(".slides section.beamer-frame-slide > h2");
+      if (!frame) {
+        return { error: "no .beamer-frame-slide > h2 in the rendered page" };
+      }
       const bullet = document.querySelector(".slides section ul > li");
       const numbered = document.querySelector(".slides section ol > li");
       return {
@@ -2070,6 +2074,10 @@ const testPaletteAlgebra = async (connection, origin) => {
       };
     })()`);
 
+    assert(
+      !state.error,
+      `${variant}: ${state.error} -- the fixture did not render as expected`
+    );
     const expected = paletteModel[variant];
     // A one-step delta is the rgb conversion gap described above; anything
     // larger is a genuine palette regression (the old hard-coded block colours
