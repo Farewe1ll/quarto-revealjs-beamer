@@ -74,6 +74,7 @@
   --beamer-block-example-title-fg: #ffffff;
   --beamer-block-alert-title-bg: #bf0000;
   --beamer-block-alert-title-fg: #ffffff;
+  --beamer-block-alert-title-weight: 650;
 
   --beamer-headline-height: 32px;
   --beamer-active-headline-height: var(--beamer-headline-height);
@@ -153,27 +154,32 @@
   --beamer-footline-date-fg: #7a0000;
   --beamer-progress: #cc0000;
 
-  /* `block title` has no bg here, so each kind shows its own colour as text.
-     The three are chosen so the semantic weight reads in order -- alert
-     loudest, then example, then the plain block quietly in the middle of the
-     warm range rather than competing with the alert red:
+  /* Block titles. The plain and example kinds are unfilled and coloured by
+     text alone, as upstream; the alert kind is the exception -- see below.
 
-       alert    #cc0000  red    -- same hue as the markers, but this is the
-                                   only place red signals *attention*
+       plain    #cc0000  red    -- `structure`, same as the list markers
        example  #008000  green  -- `example text`, pinned by beamer
-       plain    #b45309  amber  -- NOT `structure`: kept separate so the red
-                                   markers and the alert signal stay one colour
-                                   and the plain block does not compete with it
-
-     Note amber is the lightest orange that still clears 4.5:1 on the light
-     slide background (4.94:1); anything closer to a true orange drops below
-     3:1 and the title stops being legible. */
+       alert    yellow band + near-black bold text  (a warning sign) */
   --beamer-block-title-bg: transparent;
-  --beamer-block-title-fg: #b45309;
+  --beamer-block-title-fg: var(--beamer-structure);
   --beamer-block-example-title-bg: transparent;
   --beamer-block-example-title-fg: var(--beamer-example);
-  --beamer-block-alert-title-bg: transparent;
-  --beamer-block-alert-title-fg: var(--beamer-alert);
+
+  /* DELIBERATE DEVIATION, and the only filled block title we ship.
+     A warning sign is legible because it is a yellow FIELD with dark text on
+     it. Yellow as a foreground colour on this light slide background is not:
+     the warning yellow measures 1.38:1 against it, gold 1.60:1 and pure
+     yellow 1.06:1, against the 4.5:1 that body-size text needs. So the title
+     yellow as a background and near-black text over it -- 12.4:1 -- plus a
+     heavier weight than the other titles, which are already ~600 because the
+     bundled Libertinus ships only Regular and Bold.
+
+     Note `--beamer-alert` stays red on purpose: it still drives `.alert`
+     inline emphasis and `h4`, which sit on the light background and would be
+     unreadable in yellow. Only the block title band is yellow. */
+  --beamer-block-alert-title-bg: #ffd700;
+  --beamer-block-alert-title-fg: #1a1a1a;
+  --beamer-block-alert-title-weight: 700;
 }
 
 .reveal.beamer-no-headline {

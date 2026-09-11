@@ -690,6 +690,10 @@ $border-radius: 4px !default;
 .beamer-block.beamer-alert[data-title]::before {
   color: var(--beamer-block-alert-title-fg, var(--beamer-block-title-fg));
   background: var(--beamer-block-alert-title-bg);
+  /* Whatever `--beamer-block-alert-title-weight` carries. CambridgeUS makes
+     this 700 against ~600 for the other titles, so the alert outranks them by
+     weight as well as by fill; the bundled Libertinus has no step above 700. */
+  font-weight: var(--beamer-block-alert-title-weight, 650);
 }
 
 .beamer-block > :first-child {

@@ -1994,21 +1994,17 @@ const paletteModel = (() => {
       // beaver: frametitle bg = gray!10!white.
       frameTitle: toHex(mix(GRAY, 0.1, WHITE)),
       blocks: {
-        // No orchid -> `block title` keeps parent=structure with an empty bg,
-        // so every kind is unfilled and the parent colour shows as text.
-        // Alert uses the undiluted darkred, not beaver's grey-mixed
-        // `darkred!80!gray`: the grey was what made the alert read quieter
-        // than the plain block.
-        // Plain block titles are a deliberate amber, not `structure`: red is
-        // reserved for the markers and the alert signal, so the plain block
-        // sits in the middle of the warm range instead of competing.
-        Plain: { background: "transparent", body: "transparent", color: "#b45309" },
+        // Plain and example are unfilled, coloured by text alone, as upstream.
+        Plain: { background: "transparent", body: "transparent", color: toHex(DARKRED) },
         Example: {
           background: "transparent",
           body: "transparent",
           color: toHex(EXAMPLE_TEXT),
         },
-        Alert: { background: "transparent", body: "transparent", color: toHex(DARKRED) },
+        // Alert is a warning sign: a yellow FIELD with near-black text, because
+        // yellow as a foreground on this background is unreadable (#ffd700 is
+        // 1.38:1). This is the only filled block title we ship.
+        Alert: { background: "#ffd700", body: "transparent", color: "#1a1a1a" },
       },
     },
   };

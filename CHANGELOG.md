@@ -49,15 +49,19 @@ Earlier releases predate this file; their history is in the git log.
   CambridgeUS moves `structure`.
 - `testPaletteAlgebra` now also asserts that the bullet and numbered-list
   markers use `--beamer-structure`, so the two roles cannot be conflated again.
-- CambridgeUS block titles are now differentiated by semantic weight rather
-  than all deriving from `structure`: alert `#cc0000` (the same red as the list
-  markers, so red means "attention" in exactly one place), example `#008000`
-  (unchanged, beamer-pinned) and plain `#b45309` amber. Previously the alert
-  was beaver's grey-mixed `#bd1a1a`, which was the *lowest*-chroma of the three
-  and therefore read quieter than the plain block it was meant to outrank.
-  Amber rather than a true orange because a legible orange on the light slide
-  background does not exist: `#f76707` is 2.99:1, `orange` 1.94:1, `yellow`
-  1.06:1, against the 4.5:1 needed for body text.
+- CambridgeUS alert blocks are now rendered as warning signs: a `#ffd700`
+  title band with near-black bold text (12.4:1). This is the only filled block
+  title we ship, and it is a deliberate deviation. Yellow cannot be used as the
+  title *text* colour -- measured against the light slide background, warning
+  yellow is 1.38:1, gold 1.60:1 and pure yellow 1.06:1, against the 4.5:1
+  body text needs -- so the yellow becomes the field and the text goes dark,
+  which is how an actual warning sign is legible. `--beamer-alert` deliberately
+  stays red because it also drives `.alert` inline emphasis and `h4`, which sit
+  directly on the light background.
+- The alert title also carries `font-weight: 700` against 650 for the other
+  kinds. The bundled Libertinus Sans ships only Regular and Bold, so 700 is the
+  heaviest step available; measured, everything from 600 up renders at the same
+  advance width, so this is the strongest emphasis the font can express.
 - `green!50!black` is `#008000`, not `#004000`: xcolor defines `green` as
   `rgb(0,1,0)`, so the halved value comes from the 50% mix rather than from the
   base green. CambridgeUS's `alerted text` is `#bd1a1a`.
