@@ -2001,10 +2001,9 @@ const paletteModel = (() => {
           body: "transparent",
           color: toHex(EXAMPLE_TEXT),
         },
-        // Alert is a warning sign: a yellow FIELD with near-black text, because
-        // yellow as a foreground on this background is unreadable (#ffd700 is
-        // 1.38:1). This is the only filled block title we ship.
-        Alert: { background: "#ffd700", body: "transparent", color: "#1a1a1a" },
+        // Alert is unfilled yellow text (explicit design choice; measures
+        // 1.48:1 against the slide background, so it reads as washed-out gold).
+        Alert: { background: "transparent", body: "transparent", color: "#ffcd00" },
       },
     },
   };

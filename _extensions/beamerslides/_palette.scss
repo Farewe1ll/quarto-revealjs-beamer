@@ -165,20 +165,14 @@
   --beamer-block-example-title-bg: transparent;
   --beamer-block-example-title-fg: var(--beamer-example);
 
-  /* DELIBERATE DEVIATION, and the only filled block title we ship.
-     A warning sign is legible because it is a yellow FIELD with dark text on
-     it. Yellow as a foreground colour on this light slide background is not:
-     the warning yellow measures 1.38:1 against it, gold 1.60:1 and pure
-     yellow 1.06:1, against the 4.5:1 that body-size text needs. So the title
-     yellow as a background and near-black text over it -- 12.4:1 -- plus a
-     heavier weight than the other titles, which are already ~600 because the
-     bundled Libertinus ships only Regular and Bold.
-
-     Note `--beamer-alert` stays red on purpose: it still drives `.alert`
-     inline emphasis and `h4`, which sit on the light background and would be
-     unreadable in yellow. Only the block title band is yellow. */
-  --beamer-block-alert-title-bg: #ffd700;
-  --beamer-block-alert-title-fg: #1a1a1a;
+  /* Alert title: yellow text on the slide background, unfilled, as requested.
+     NOTE ON CONTRAST: this yellow measures 1.48:1 against the light slide
+     background, against the 4.5:1 that body-size text needs -- it reads as a
+     washed-out gold rather than a warning red. Kept because it is the explicit
+     design decision; `--beamer-alert` below stays red on purpose so `.alert`
+     inline emphasis and `h4` remain legible. */
+  --beamer-block-alert-title-bg: transparent;
+  --beamer-block-alert-title-fg: #ffcd00;
   --beamer-block-alert-title-weight: 700;
 }
 
