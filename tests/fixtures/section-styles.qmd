@@ -1,0 +1,22 @@
+---
+title: "Section styles"
+author: "Auditor"
+date: "2026"
+format: beamerslides-revealjs
+---
+
+# Default band {#sec-default}
+
+Text.
+
+# Centred badge {#sec-badge .section-badge}
+
+Text.
+
+# Minimal {#sec-minimal .section-minimal}
+
+Text.
+
+## Frame {#sec-frame}
+
+- item

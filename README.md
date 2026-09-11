@@ -151,6 +151,28 @@ format:
 
 `data-subsection` 是可选的；启用 headline 时，如果没有提供该属性，副导航会显示当前 frame title。
 
+### 章节页外观
+
+一级标题生成的章节页有三种外观，用属性**逐页**选择：
+
+```markdown
+# 默认            通栏色带，紧贴页眉下方（Beamer 上游行为）
+
+# 居中徽标 {.section-badge}
+                   居中圆角块 + 阴影，左右内缩 12%，字号 1.62em
+
+# 纯文字 {.section-minimal}
+                   只有文字，无底色；居中，字号 1.4em
+```
+
+- **默认是通栏色带**，与 frame title 同构：文字左边缘与 frame title、正文严格对齐（都在 `x=58`）。这是 Beamer 的行为——`\section` 页复用 frametitle 模板。
+- **`.section-badge`** 是装饰性选择：居中、圆角、带阴影。它放弃了左对齐，换来与普通 frame 更强的区分度，适合章节起首页。
+- **`.section-minimal`** 用于弱化章节页，或在底色与背景冲突时使用——CambridgeUS 的章节底色本就是透明的，此时 badge 只剩圆角与阴影，minimal 反而更干净。
+
+实现上，外观差异全部由 `_extensions/beamerslides/beamer.scss` 里的 `--beamer-section-*` 变量表达；`beamer.js` 只提供它才能算出的数值（色带高度、居中偏移），因此样式本身仍是声明式的。
+
+> **注意**：属性只决定章节页**长什么样**，不能决定它**是否存在**。Reveal.js 按 `slide-level` 在渲染前就把 `#` 切成了独立的 `<section>`，扩展运行时页面已经存在。另外 CambridgeUS 下 badge 的阴影是刻意保留的——该变体的章节底色透明，没有阴影的方块会直接消失在浅色背景里。
+
 ## Beamer 组件
 
 ```markdown

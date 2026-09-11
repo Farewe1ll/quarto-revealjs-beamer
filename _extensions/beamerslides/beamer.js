@@ -333,6 +333,45 @@
     return wrapper;
   };
 
+  // A centred badge has to move down to sit in the middle of the space between
+  // the headline and the footline. That depends on the heading's rendered height
+  // -- a badge is taller than the default band because it carries a larger font
+  // -- so only the browser can work it out. The CSS reads the result back as a
+  // custom property, which keeps the styling itself declarative.
+  const placeSectionPages = () => {
+    document
+      .querySelectorAll(".reveal .slides section.beamer-section-slide")
+      .forEach((slide) => {
+        slide.style.removeProperty("--beamer-section-offset");
+        if (!slide.classList.contains("section-badge")) {
+          return;
+        }
+        const heading = directHeading(slide, "h1");
+        if (!heading) {
+          return;
+        }
+        const headingHeight = heading.getBoundingClientRect().height;
+        const slideHeight = slide.clientHeight;
+        const headline = slide.querySelector(":scope > .beamer-headline");
+        const footline = slide.querySelector(":scope > .beamer-footline");
+        if (headingHeight <= 0 || slideHeight <= 0) {
+          return;
+        }
+        const top = headline?.getBoundingClientRect().bottom ?? 0;
+        const bottom = footline?.getBoundingClientRect().top ?? slideHeight;
+        // The heading is absolutely positioned, so its current top is the
+        // headline's bottom edge (or 0 when there is no headline).
+        const offset = Math.max(
+          0,
+          (bottom - top - headingHeight) / 2
+        );
+        slide.style.setProperty(
+          "--beamer-section-offset",
+          `${offset.toFixed(2)}px`
+        );
+      });
+  };
+
   const centerTitleInk = () => {
     const titles = document.querySelectorAll(
       ".reveal .slides section.beamer-section-slide > h1:first-of-type, " +
@@ -930,6 +969,7 @@
     arrangeTitleSlide();
     alignInlineLabels();
     alignOrderedMarkers();
+    placeSectionPages();
     centerTitleInk();
     return true;
   };
@@ -1059,11 +1099,13 @@
     const realignOpticalLabels = () => {
       window.requestAnimationFrame(alignInlineLabels);
       window.requestAnimationFrame(alignOrderedMarkers);
+      window.requestAnimationFrame(placeSectionPages);
       window.requestAnimationFrame(centerTitleInk);
     };
     const realignForPrint = () => {
       alignInlineLabels();
       alignOrderedMarkers();
+      placeSectionPages();
       centerTitleInk();
       slides.forEach(measureFrameTitle);
     };

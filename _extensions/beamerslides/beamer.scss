@@ -292,38 +292,77 @@ $border-radius: 4px !default;
 /* Beamer renders a \section page through the same frametitle template as an
    ordinary frame, so the section title is a full-text-width band pinned under
    the headline -- not a centred badge floating in the middle of the slide. */
+/* Section pages come in three looks, chosen per heading with an attribute on
+   the `#` line -- Quarto copies heading classes onto the <section>, so nothing
+   has to be rewritten in the AST:
+
+     # Title                    full-bleed band under the headline (default)
+     # Title {.section-badge}   centred rounded badge
+     # Title {.section-minimal} plain text, no fill
+
+   The look is expressed entirely in custom properties so beamer.js only has to
+   supply the numbers it alone can know (the band's height and where the body
+   starts); the geometry itself stays declarative here. */
 .reveal .slides section.beamer-section-slide {
+  --beamer-section-inset: 0;
+  --beamer-section-radius: 0;
+  --beamer-section-shadow: none;
+  --beamer-section-align: left;
+  --beamer-section-size: 1.08em;
+  --beamer-section-margin: 0;
+  --beamer-section-offset: 0px;
   flex-direction: column;
-  padding: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) + 22px) 58px calc(var(--beamer-footline-height) + 34px);
+  /* The heading is absolutely positioned, so this padding only reserves room
+     for the body: the frame-title height, plus wherever a centred badge has
+     been pushed down to. */
+  padding: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) +
+        var(--beamer-section-offset, 0px) + 22px)
+    58px calc(var(--beamer-footline-height) + 34px);
+}
+
+.reveal .slides section.beamer-section-slide.section-badge {
+  --beamer-section-inset: 12%;
+  --beamer-section-radius: 5px;
+  --beamer-section-shadow: 0 3px 0 rgba(0, 0, 0, 0.12);
+  --beamer-section-align: center;
+  --beamer-section-size: 1.62em;
+  --beamer-section-margin: 0 auto;
+}
+
+/* No fill at all: just the title text, so it reads as a quiet divider. */
+.reveal .slides section.beamer-section-slide.section-minimal {
+  --beamer-section-shadow: none;
+  --beamer-section-align: center;
+  --beamer-section-size: 1.4em;
+}
+
+.reveal .slides section.beamer-section-slide.section-minimal > h1:first-of-type {
+  background: transparent;
 }
 
 .reveal .slides section.beamer-section-slide > h1:first-of-type {
   position: absolute;
   transform-origin: center center;
-  top: var(--beamer-active-headline-height);
-  /* Built exactly like the frame title above: a full-bleed band whose text is
-     inset by the body margin. Insets on the band itself would put the section
-     text flush against the band edge -- 58px left of where every frame title
-     starts -- so the two would not line up. */
-  left: 0;
-  right: 0;
+  top: calc(var(--beamer-active-headline-height) + var(--beamer-section-offset));
+  left: var(--beamer-section-inset);
+  right: var(--beamer-section-inset);
   z-index: 2;
   display: flex;
   align-items: center;
+  justify-content: var(--beamer-section-align);
   box-sizing: border-box;
-  width: 100%;
   min-height: var(--beamer-frame-height);
-  margin: 0;
+  margin: var(--beamer-section-margin);
   padding: 10px 58px;
   color: var(--beamer-section-title-fg);
   background: var(--beamer-section-title-bg);
   border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  font-size: 1.08em;
+  border-radius: var(--beamer-section-radius);
+  box-shadow: var(--beamer-section-shadow);
+  font-size: var(--beamer-section-size);
   font-weight: 650;
   line-height: 1.16;
-  text-align: left;
+  text-align: var(--beamer-section-align);
   overflow-wrap: anywhere;
   letter-spacing: 0;
 }
@@ -460,8 +499,15 @@ $border-radius: 4px !default;
   margin: 0;
 }
 
+/* CambridgeUS paints the section band with no fill of its own, so a shadow
+   would draw a floating rectangle around nothing. The centred badge is the
+   exception: it is a deliberate self-contained element, and without its shadow
+   it would vanish into the light background entirely. */
 .reveal.beamer-cambridgeus .beamer-title-box,
-.reveal.beamer-cambridgeus .slides section.beamer-section-slide > h1:first-of-type {
+.reveal.beamer-cambridgeus
+  .slides
+  section.beamer-section-slide:not(.section-badge)
+  > h1:first-of-type {
   border: 0;
   box-shadow: none;
 }

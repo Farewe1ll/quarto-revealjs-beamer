@@ -2172,6 +2172,125 @@ const testPaletteAlgebra = async (connection, origin) => {
   }
 };
 
+// Section pages come in three looks, selected per heading with an attribute on
+// the `#` line. Quarto copies heading classes onto the <section>, so this is a
+// pure presentation choice -- it cannot decide whether the page exists, because
+// Reveal has already split the sections by the time any of this runs.
+const testSectionStyles = async (connection, origin) => {
+  for (const variant of ["madrid", "cambridgeus"]) {
+    renderFixture("section-styles", { metadata: { "beamer-variant": variant } });
+    const page = await BrowserPage.create(
+      connection,
+      `${origin}/section-styles.html`
+    );
+    const state = await page.evaluate(`(() => {
+      const headlineHeight = (slide) => {
+        const headline = slide.querySelector(":scope > .beamer-headline");
+        const rect = headline ? headline.getBoundingClientRect() : null;
+        return rect && rect.height > 0
+          ? rect.bottom - slide.getBoundingClientRect().top
+          : 0;
+      };
+      const read = (id) => {
+        const slide = document.getElementById(id);
+        if (!slide) return null;
+        const heading = slide.querySelector(":scope > h1");
+        const body = slide.querySelector(":scope > p");
+        const style = getComputedStyle(heading);
+        const headingRect = heading.getBoundingClientRect();
+        const slideRect = slide.getBoundingClientRect();
+        return {
+          isSectionSlide: slide.classList.contains("beamer-section-slide"),
+          headlineHeight: headlineHeight(slide),
+          left: headingRect.left - slideRect.left,
+          width: headingRect.width,
+          top: headingRect.top - slideRect.top,
+          height: headingRect.height,
+          radius: parseFloat(style.borderTopLeftRadius),
+          hasShadow: style.boxShadow !== "none" && style.boxShadow !== "",
+          align: style.textAlign,
+          fontSize: parseFloat(style.fontSize),
+          background: style.backgroundColor,
+          bodyTop: body ? body.getBoundingClientRect().top - slideRect.top : null,
+          bodyBelowHeading: body
+            ? body.getBoundingClientRect().top >= headingRect.bottom - 0.5
+            : null,
+        };
+      };
+      return {
+        band: read("sec-default"),
+        badge: read("sec-badge"),
+        minimal: read("sec-minimal"),
+        // An H2 is an ordinary frame: it must NOT pick up a section look, which
+        // is what keeps the attribute meaningful rather than universal.
+        frameIsSection: document
+          .getElementById("sec-frame")
+          .classList.contains("beamer-section-slide"),
+      };
+    })()`);
+
+    assert.equal(
+      state.frameIsSection,
+      false,
+      `${variant}: an ordinary frame must not become a section page`
+    );
+    for (const kind of ["band", "badge", "minimal"]) {
+      const look = state[kind];
+      assert(look, `${variant}: the ${kind} section page was not rendered`);
+      assert.equal(
+        look.isSectionSlide,
+        true,
+        `${variant}: ${kind} must still be a section page`
+      );
+      assert.equal(
+        look.bodyBelowHeading,
+        true,
+        `${variant}: ${kind} body must clear the title`
+      );
+    }
+    assert.equal(state.band.align, "left", `${variant}: default band alignment`);
+
+    // Default: full-bleed band flush under the headline.
+    assert.equal(state.band.left, 0, `${variant}: default band inset`);
+    assert(
+      Math.abs(state.band.top - state.band.headlineHeight) < 1,
+      `${variant}: default band must sit flush under the headline`
+    );
+    assert.equal(state.band.radius, 0, `${variant}: default band radius`);
+    assert.equal(state.band.hasShadow, false, `${variant}: default band shadow`);
+
+    // Badge: inset, rounded, shadowed, centred, larger text.
+    assert(state.badge.left > 0, `${variant}: badge must be inset`);
+    assert(state.badge.width < state.band.width, `${variant}: badge must be narrower`);
+    assert(
+      state.badge.top > state.badge.headlineHeight + 1,
+      `${variant}: badge must be pushed below the headline`
+    );
+    assert(state.badge.radius > 0, `${variant}: badge radius`);
+    assert.equal(state.badge.hasShadow, true, `${variant}: badge shadow`);
+    assert.equal(state.badge.align, "center", `${variant}: badge alignment`);
+    assert(
+      state.badge.fontSize > state.band.fontSize,
+      `${variant}: badge must be set larger than the default band`
+    );
+
+    // Minimal: centred text, no fill at all.
+    assert.equal(state.minimal.align, "center", `${variant}: minimal alignment`);
+    assert.equal(
+      state.minimal.background,
+      "rgba(0, 0, 0, 0)",
+      `${variant}: minimal must have no fill`
+    );
+    assert.equal(state.minimal.hasShadow, false, `${variant}: minimal shadow`);
+    assert(
+      Math.abs(state.minimal.top - state.minimal.headlineHeight) < 1,
+      `${variant}: minimal stays flush under the headline`
+    );
+
+    await page.close();
+  }
+};
+
 // Block titles are real text nodes built from an attribute value: they must
 // survive UTF-8, escaping, and multiple words without being split or dropped.
 const testBlockTitles = async (connection, origin) => {
@@ -2285,6 +2404,7 @@ try {
   await testPaletteOverrides(chrome.connection, local.origin);
   await testBlockTitles(chrome.connection, local.origin);
   await testPaletteAlgebra(chrome.connection, local.origin);
+  await testSectionStyles(chrome.connection, local.origin);
   assertNoBrowserErrors(chrome.connection);
 
   console.log("All beamerslides regression tests passed.");
