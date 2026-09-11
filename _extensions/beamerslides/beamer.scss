@@ -113,7 +113,11 @@ $border-radius: 4px !default;
 .beamer-headline {
   top: 0;
   height: var(--beamer-headline-height);
-  box-shadow: 0 1px 0 var(--beamer-line);
+  /* No rule under the headline: infolines butts the two colour boxes straight
+     against the frametitle band, and a 1px line here read as a coloured seam
+     cutting across the slide rather than as a separation -- the frame title
+     already provides one. */
+  box-shadow: none;
 }
 
 .beamer-headline > span,
@@ -166,9 +170,13 @@ $border-radius: 4px !default;
 }
 
 .beamer-footline-date {
+  position: relative;
   width: 33.333334%;
-  justify-content: space-between;
-  gap: 14px;
+  /* infolines centres the short date in the third box
+     (`\hfill\insertshortdate{}\hfill`) and pins the page number to the right
+     edge with `leftskip=2ex,rightskip=2ex`. The date text is therefore centred
+     against the whole box, not pushed left by the page number. */
+  justify-content: center;
   padding: 0 22px;
   color: var(--beamer-footline-date-fg);
   background: var(--beamer-footline-date-bg);
@@ -183,6 +191,8 @@ $border-radius: 4px !default;
 }
 
 .beamer-footline-number {
+  position: absolute;
+  right: 22px;
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
 }
@@ -232,7 +242,10 @@ $border-radius: 4px !default;
   overflow-wrap: anywhere;
   color: var(--beamer-frame-fg);
   background: var(--beamer-frame-bg);
-  border-bottom: 1px solid var(--beamer-line);
+  /* Beamer's frametitle is a flat colour block with no border or rule of its
+     own -- neither Madrid (structure) nor CambridgeUS (gray!10!white) draws
+     one, and beaver's `frametitle right` is unused by the default template. */
+  border: 0;
   font-size: 1.08em;
   font-weight: 650;
   line-height: 1.16;
@@ -268,22 +281,41 @@ $border-radius: 4px !default;
   letter-spacing: 0;
 }
 
+/* Beamer renders a \section page through the same frametitle template as an
+   ordinary frame, so the section title is a full-text-width band pinned under
+   the headline -- not a centred badge floating in the middle of the slide. */
 .reveal .slides section.beamer-section-slide {
   flex-direction: column;
-  padding: calc(var(--beamer-active-headline-height) + 34px) 12% calc(var(--beamer-footline-height) + 34px);
+  padding: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) + 22px) 58px calc(var(--beamer-footline-height) + 34px);
 }
 
 .reveal .slides section.beamer-section-slide > h1:first-of-type {
+  position: absolute;
+  top: var(--beamer-active-headline-height);
+  /* Built exactly like the frame title above: a full-bleed band whose text is
+     inset by the body margin. Insets on the band itself would put the section
+     text flush against the band edge -- 58px left of where every frame title
+     starts -- so the two would not line up. */
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--beamer-frame-height);
   margin: 0;
-  padding: 0.52em 0.8em 0.58em;
+  padding: 10px 58px;
   color: var(--beamer-section-title-fg);
   background: var(--beamer-section-title-bg);
-  border-radius: 5px;
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.12);
-  font-size: 1.62em;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 1.08em;
   font-weight: 650;
-  line-height: 1.15;
-  text-align: center;
+  line-height: 1.16;
+  text-align: left;
+  overflow-wrap: anywhere;
   letter-spacing: 0;
 }
 
@@ -296,7 +328,10 @@ $border-radius: 4px !default;
 
 .reveal .slides #title-slide {
   flex-direction: column;
-  padding: calc(var(--beamer-active-headline-height) + 36px) 10% calc(var(--beamer-footline-height) + 36px);
+  /* 58px matches the frame-title and body text margin, so the Madrid title band
+     spans exactly the same text width as the frames instead of a narrower
+     percentage inset. */
+  padding: calc(var(--beamer-active-headline-height) + 36px) 58px calc(var(--beamer-footline-height) + 36px);
   text-align: center;
 }
 
@@ -1023,10 +1058,10 @@ html.print-pdf .reveal .slides section.beamer-center-slide {
 
 html.reveal-print .reveal .slides section.beamer-section-slide,
 html.print-pdf .reveal .slides section.beamer-section-slide {
-  padding: calc(var(--beamer-active-headline-height) + 34px) 12% calc(var(--beamer-footline-height) + 34px) !important;
+  padding: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) + 22px) 58px calc(var(--beamer-footline-height) + 34px) !important;
 }
 
 html.reveal-print .reveal .slides section#title-slide,
 html.print-pdf .reveal .slides section#title-slide {
-  padding: calc(var(--beamer-active-headline-height) + 36px) 10% calc(var(--beamer-footline-height) + 36px) !important;
+  padding: calc(var(--beamer-active-headline-height) + 36px) 58px calc(var(--beamer-footline-height) + 36px) !important;
 }

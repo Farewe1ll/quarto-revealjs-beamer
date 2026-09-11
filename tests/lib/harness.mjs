@@ -962,6 +962,22 @@ const printLayoutMeasurementSource = `(() => {
           (footerRect?.top ?? slideRect.bottom)) /
         2
       : null;
+    // A \section page renders its title through the frametitle template: a band
+    // pinned directly under the headline, spanning \textwidth. It is not
+    // vertically centred, so that is what print layout must preserve.
+    const sectionBand = slide.classList.contains("beamer-section-slide")
+      ? slide.querySelector(":scope > h1")
+      : null;
+    const sectionBandRect = sectionBand?.getBoundingClientRect();
+    const sectionBandTop = headlineRect?.bottom ?? slideRect.top;
+    const frameHeading =
+      !sectionBand &&
+      document.querySelector(
+        ".slides section.beamer-frame-slide > h2:first-of-type"
+      );
+    const sectionExpectedWidth = frameHeading
+      ? frameHeading.getBoundingClientRect().width
+      : null;
     return {
       id: slide.id,
       frameContentBelowTitle:
@@ -974,8 +990,14 @@ const printLayoutMeasurementSource = `(() => {
         !footerRect ||
         (footerRect.top >= slideRect.top - 0.5 &&
           footerRect.bottom <= slideRect.bottom + 0.5),
+      sectionBandPinned:
+        !sectionBandRect ||
+        (Math.abs(sectionBandRect.top - sectionBandTop) < 1 &&
+          (sectionExpectedWidth === null ||
+            Math.abs(sectionBandRect.width - sectionExpectedWidth) < 1)),
       specialSlideCentered:
         !isSpecialSlide ||
+        Boolean(sectionBand) ||
         (getComputedStyle(slide).display === "flex" &&
           specialContentCenter !== null &&
           Math.abs(specialContentCenter - availableCenter) < 12)
@@ -995,7 +1017,8 @@ const assertPrintLayout = async (page) => {
       (slide) =>
         !slide.headlineContained ||
         !slide.footerContained ||
-        !slide.specialSlideCentered
+        !slide.specialSlideCentered ||
+        !slide.sectionBandPinned
     ),
     [],
     JSON.stringify(printLayout)

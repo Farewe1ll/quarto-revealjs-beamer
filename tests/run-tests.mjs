@@ -271,30 +271,55 @@ const testMadrid = async (connection, origin) => {
       .getBoundingClientRect();
     const headline = slide.querySelector(":scope > .beamer-headline");
     const headlineRect = headline?.getBoundingClientRect();
-    const contentRects = Array.from(slide.children)
-      .filter(
-        (node) =>
-          !node.matches(
-            ".beamer-headline, .beamer-footline, .aside-footnotes, aside.notes"
-          ) && getComputedStyle(node).display !== "none"
-      )
-      .map((node) => node.getBoundingClientRect());
-    const contentCenter =
-      (Math.min(...contentRects.map((rect) => rect.top)) +
-        Math.max(...contentRects.map((rect) => rect.bottom))) /
-      2;
-    const availableCenter =
-      ((headlineRect?.bottom ?? slideRect.top) + footerRect.top) / 2;
+    // Beamer routes a \section page through the frametitle template, so the
+    // title is a full-bleed band pinned under the headline, with its text on
+    // the body margin.
+    const band = slide.querySelector(":scope > h1");
+    const bandRect = band.getBoundingClientRect();
+    const bandText = document.createRange();
+    bandText.selectNodeContents(band);
+    const frameTitle = document.querySelector(
+      ".slides section.beamer-frame-slide > h2:first-of-type"
+    );
+    const frameText = document.createRange();
+    frameText.selectNodeContents(frameTitle);
+    const body = document.getElementById("lists");
+    const bodyList = body.querySelector("ul").getBoundingClientRect();
     return {
       display: getComputedStyle(slide).display,
-      verticalCenterDelta: contentCenter - availableCenter,
+      bandLeft: bandRect.left,
+      bandTop: bandRect.top,
+      bandTextAlign: getComputedStyle(band).textAlign,
+      bandTextLeft: bandText.getBoundingClientRect().left,
+      frameTitleTextLeft: frameText.getBoundingClientRect().left,
+      bodyTextLeft: bodyList.left,
+      // Madrid hides the headline (height 0), so the band starts at the active
+      // headline height; a visible headline would end exactly there.
+      headlineBottom: headlineRect?.bottom || slideRect.top,
       slideStartsAtViewportTop: Math.abs(slideRect.top) <= 1,
       footerVisible:
         footerRect.top >= -1 && footerRect.bottom <= window.innerHeight + 1
     };
   })()`);
   assert.equal(sectionState.display, "flex");
-  assert(Math.abs(sectionState.verticalCenterDelta) < 12, JSON.stringify(sectionState));
+  // The band is built exactly like the frame title: full-bleed, with its text
+  // inset by the body margin. Insetting the band itself would push the section
+  // title 58px left of where every frame title starts.
+  assert.equal(sectionState.bandLeft, 0, JSON.stringify(sectionState));
+  // Section title, frame title and body text must all start on the same edge:
+  // the bands are full-bleed and carry the margin as padding.
+  for (const edge of ["bodyTextLeft", "frameTitleTextLeft"]) {
+    assert(
+      Math.abs(sectionState.bandTextLeft - sectionState[edge]) < 1,
+      `section title must align with ${edge}: ${JSON.stringify(sectionState)}`
+    );
+  }
+  // It sits immediately below the headline rather than centred on the slide.
+  assert(
+    Math.abs(sectionState.bandTop - sectionState.headlineBottom) < 1,
+    JSON.stringify(sectionState)
+  );
+  assert.equal(sectionState.bandTextAlign, "left");
   assert.equal(sectionState.slideStartsAtViewportTop, true);
   assert.equal(sectionState.footerVisible, true);
   await sectionPage.screenshot("madrid-section");
@@ -725,29 +750,41 @@ const testCambridgeUs = async (connection, origin) => {
     const footerRect = slide
       .querySelector(":scope > .beamer-footline")
       .getBoundingClientRect();
-    const contentRects = Array.from(slide.children)
-      .filter(
-        (node) =>
-          !node.matches(
-            ".beamer-headline, .beamer-footline, .aside-footnotes, aside.notes"
-          ) && getComputedStyle(node).display !== "none"
-      )
-      .map((node) => node.getBoundingClientRect());
-    const contentCenter =
-      (Math.min(...contentRects.map((rect) => rect.top)) +
-        Math.max(...contentRects.map((rect) => rect.bottom))) /
-      2;
-    const availableCenter = (headlineRect.bottom + footerRect.top) / 2;
+    // Same frametitle-template contract as Madrid: a full-bleed band pinned
+    // directly under the headline, with its text on the body margin.
+    const band = slide.querySelector(":scope > h1");
+    const bandRect = band.getBoundingClientRect();
+    const bandText = document.createRange();
+    bandText.selectNodeContents(band);
+    const frameTitle = document.querySelector(
+      ".slides section.beamer-frame-slide > h2:first-of-type"
+    );
+    const frameText = document.createRange();
+    frameText.selectNodeContents(frameTitle);
     return {
       display: getComputedStyle(slide).display,
-      verticalCenterDelta: contentCenter - availableCenter,
+      bandLeft: bandRect.left,
+      bandTop: bandRect.top,
+      bandTextAlign: getComputedStyle(band).textAlign,
+      bandTextLeft: bandText.getBoundingClientRect().left,
+      frameTitleTextLeft: frameText.getBoundingClientRect().left,
+      headlineBottom: headlineRect.bottom,
       contained:
         headlineRect.top >= slideRect.top - 1 &&
         footerRect.bottom <= slideRect.bottom + 1
     };
   })()`);
   assert.equal(sectionState.display, "flex");
-  assert(Math.abs(sectionState.verticalCenterDelta) < 12, JSON.stringify(sectionState));
+  assert(
+    Math.abs(sectionState.bandTop - sectionState.headlineBottom) < 1,
+    JSON.stringify(sectionState)
+  );
+  assert.equal(sectionState.bandTextAlign, "left");
+  assert.equal(sectionState.bandLeft, 0, JSON.stringify(sectionState));
+  assert(
+    Math.abs(sectionState.bandTextLeft - sectionState.frameTitleTextLeft) < 1,
+    `section title must align with the frame title text: ${JSON.stringify(sectionState)}`
+  );
   assert.equal(sectionState.contained, true);
   await sectionPage.screenshot("cambridgeus-section");
   await sectionPage.close();

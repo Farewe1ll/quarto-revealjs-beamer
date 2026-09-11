@@ -41,13 +41,24 @@ Earlier releases predate this file; their history is in the git log.
   `rgb(0,1,0)`, so the halved value comes from the 50% mix rather than from the
   base green. CambridgeUS's `alerted text` is `#bd1a1a`.
 - Section pages now use the frame-title template, as Beamer does: the section
-  title is a full-text-width band pinned under the headline instead of a
-  centred rounded badge with a drop shadow. `--beamer-section-title-bg`/`-fg`
-  remain separately overridable, but on the stock themes they now hold the same
-  values as `--beamer-frame-bg`/`-fg`.
-- The title page band and section band now span the same text width as the
-  frame bodies (`58px` inset), instead of `10%` / `12%` (1024px and 973px
-  against a 1164px measure).
+  title is a band pinned under the headline instead of a centred rounded badge
+  with a drop shadow. `--beamer-section-title-bg`/`-fg` remain separately
+  overridable, but on the stock themes they now hold the same values as
+  `--beamer-frame-bg`/`-fg`.
+- The section band is now built exactly like the frame title -- full-bleed with
+  its text inset by the 58px body margin -- instead of being inset at both
+  edges with no internal padding. The old form put the section title flush
+  against its own band edge, 58px left of where every frame title starts, so
+  the two never lined up. Section title, frame title and body text now all
+  start on the same edge.
+- The title page band now uses the 58px body inset instead of `10%`, so it
+  spans the body measure (`\textwidth`) rather than 1024px against a 1164px
+  measure.
+- The headline no longer draws a separator. It had
+  `box-shadow: 0 1px 0`, a 1px coloured line spanning the slide at the
+  headline/frametitle boundary; infolines butts the two colour boxes straight
+  against the frametitle band and draws no such rule, and the line read as a
+  seam cutting the slide in half.
 - Frame titles no longer draw a `border-bottom`. Neither Madrid's `structure`
   band nor CambridgeUS's `gray!10!white` band has a rule, and beaver's
   `frametitle right` is unused by the default frametitle template.
@@ -76,6 +87,9 @@ Earlier releases predate this file; their history is in the git log.
   keyring) plus startup logging. A launch that used to fail after 30s with
   `(no stderr output)` now retries and, if it still fails, leaves per-attempt
   diagnostics in the uploaded artifacts.
+- Print-layout validation now asserts that a section title band is pinned under
+  the headline and spans the frame-title width, rather than that section content
+  is vertically centred.
 
 ## [0.3.0] - 2026-09-08
 
