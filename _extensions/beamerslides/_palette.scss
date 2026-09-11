@@ -1,42 +1,79 @@
 /* The base palette (Madrid) is declared on `:root` only. Declaring the same
    variables on `.reveal.beamer-madrid` used to shadow document-level
    overrides, so `:root { --beamer-primary: ... }` silently did nothing.
-   Custom properties inherit, so every element still sees them. */
+   Custom properties inherit, so every element still sees them.
+
+   Colour roles follow Beamer's own colour algebra rather than taste. Madrid
+   loads `whale` + `orchid` + `beamerouterthemeinfolines`, whose values are all
+   derived from `structure` (= `beamer@blendedblue` = rgb(0.2,0.2,0.7)).
+   xcolor's `A!p!B` means p% of A mixed with (100-p)% of B per channel:
+
+     structure              = rgb(0.2,0.2,0.7)      = #3333b2  (178/255)
+     structure!75!black     =                        #262686
+     structure!50!black     =                        #1a1a59
+     block title  bg        = structure!75!black     = #262686        (orchid)
+     block body   bg        = block title bg!10!bg   = #e9e9f3
+     block title alerted bg = red!75!black           = #bf0000        (orchid)
+     block title example bg = (green!50!black)!75!black = #006000     (orchid)
+
+   The body tint is not a fixed value: it is derived per block kind from that
+   kind's own title band, so beamer.scss computes it rather than reading it
+   from here. `--beamer-soft` below is a separate theme surface, not the block
+   body.
+*/
 :root {
-  --beamer-primary: #3333b3;
+  /* `structure` is the colour Beamer derives bullets, block titles and other
+     structural furniture from. It is NOT the same thing as the variant's
+     headline/frametitle text colour, which is what `--beamer-primary`
+     carries: in CambridgeUS those differ (structure stays blue while
+     titlelike becomes dark red). */
+  --beamer-structure: #3333b2;
+  --beamer-structure-2: #262686;
+  --beamer-structure-3: #1a1a59;
+
+  /* beamer@blendedblue = rgb(0.2, 0.2, 0.7) quantises to 51/51/178, i.e.
+     #3333b2 -- not #3333b3. */
+  --beamer-primary: #3333b2;
   --beamer-primary-2: #262686;
   --beamer-primary-3: #1a1a59;
-  --beamer-frame-bg: #3333b3;
+  --beamer-frame-bg: #3333b2;
   --beamer-frame-fg: #ffffff;
   --beamer-soft: #eaeaf4;
   --beamer-line: #b8b8d8;
-  --beamer-alert: #b22b31;
-  --beamer-example: #2c7550;
+  /* colorthemedefault: alert = red, example = green!50!black. xcolor's
+     `green` is rgb(0,1,0), so the halved green is (0,0.5,0) = #008000.
+     These are the *base* colours; orchid derives each block title band from
+     its base at !75!black, so the bands below are the darkened forms. */
+  --beamer-alert: #ff0000;
+  --beamer-example: #008000;
   --beamer-ink: #202124;
   --beamer-muted: #5f6670;
 
-  --beamer-title-bg: #3333b3;
+  --beamer-title-bg: #3333b2;
   --beamer-title-fg: #ffffff;
   --beamer-title-subtitle-fg: rgba(255, 255, 255, 0.9);
-  --beamer-section-title-bg: #3333b3;
+  --beamer-section-title-bg: #3333b2;
   --beamer-section-title-fg: #ffffff;
 
   --beamer-headline-section-bg: #1a1a59;
   --beamer-headline-section-fg: #ffffff;
-  --beamer-headline-subsection-bg: #3333b3;
+  --beamer-headline-subsection-bg: #3333b2;
   --beamer-headline-subsection-fg: #ffffff;
 
   --beamer-footline-author-bg: #1a1a59;
   --beamer-footline-author-fg: #ffffff;
   --beamer-footline-title-bg: #262686;
   --beamer-footline-title-fg: #ffffff;
-  --beamer-footline-date-bg: #3333b3;
+  --beamer-footline-date-bg: #3333b2;
   --beamer-footline-date-fg: #ffffff;
   --beamer-progress: rgba(255, 255, 255, 0.8);
 
   --beamer-block-title-bg: #262686;
   --beamer-block-title-fg: #ffffff;
-  --beamer-block-body-bg: #eaeaf4;
+  --beamer-block-example-title-bg: #006000;
+  --beamer-block-example-title-fg: #ffffff;
+  --beamer-block-alert-title-bg: #bf0000;
+  --beamer-block-alert-title-fg: #ffffff;
 
   --beamer-headline-height: 32px;
   --beamer-active-headline-height: var(--beamer-headline-height);
@@ -48,17 +85,34 @@
 /* CambridgeUS overrides the same variables. The variant class is added to
    <html> by the in-header bootstrap script, so this needs no JavaScript.
    `:where()` keeps the specificity at `:root` level, so a document-level
-   `:root { --beamer-... }` override still wins for this variant too. */
+   `:root { --beamer-... }` override still wins for this variant too.
+
+   CambridgeUS loads `beaver`, which does NOT redefine `structure` and does not
+   touch `block title*` at all. Only Madrid pulls in `orchid`, and orchid is
+   what gives blocks their filled title band. Under CambridgeUS the block title
+   consequently keeps its default `parent=structure` and an EMPTY background,
+   so `beamerinnerthemedefault`'s `\ifbeamercolorempty[bg]{block title}` branch
+   renders the title as coloured text with no fill -- which is why the three
+   `--beamer-block-*-title-bg` values below are `transparent`. */
 :where(:root).beamer-cambridgeus {
-  --beamer-primary: #a30000;
+  /* beaver never defines `structure`, so it stays beamer@blendedblue: this is
+     the colour bullets, block titles and other structural furniture use. */
+  --beamer-structure: #3333b2;
+  --beamer-structure-2: #262686;
+  --beamer-structure-3: #1a1a59;
+
+  --beamer-primary: #cc0000;
   --beamer-primary-2: #8f0000;
   --beamer-primary-3: #7a0000;
   --beamer-frame-bg: #f2f2f2;
   --beamer-frame-fg: #cc0000;
   --beamer-soft: #f8f2f2;
   --beamer-line: #d7b9bc;
-  --beamer-alert: #a30000;
-  --beamer-example: #316e50;
+  /* beaver: alerted text = darkred!80!gray. xcolor mixes in the decimal rgb
+     model: 0.8*(0.8,0,0) + 0.2*(0.5,0.5,0.5) = (0.74,0.1,0.1) -> #bd1a1a.
+     Example text keeps the default green!50!black = #008000. */
+  --beamer-alert: #bd1a1a;
+  --beamer-example: #008000;
 
   --beamer-title-bg: transparent;
   --beamer-title-fg: #cc0000;
@@ -79,9 +133,15 @@
   --beamer-footline-date-fg: #7a0000;
   --beamer-progress: #cc0000;
 
-  --beamer-block-title-bg: #a30000;
-  --beamer-block-title-fg: #f2f2f2;
-  --beamer-block-body-bg: #f8f2f2;
+  /* `block title` has no bg here, so the title text falls back to `structure`
+     -- which beaver leaves at `beamer@blendedblue`. Same for the example and
+     alert variants, which inherit `example text` / `alerted text` as fg only. */
+  --beamer-block-title-bg: transparent;
+  --beamer-block-title-fg: var(--beamer-structure);
+  --beamer-block-example-title-bg: transparent;
+  --beamer-block-example-title-fg: var(--beamer-example);
+  --beamer-block-alert-title-bg: transparent;
+  --beamer-block-alert-title-fg: var(--beamer-alert);
 }
 
 .reveal.beamer-no-headline {

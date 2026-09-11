@@ -465,21 +465,23 @@ $border-radius: 4px !default;
   width: 0.34em;
   height: 0.34em;
   transform: translateY(-50%);
-  background: var(--beamer-primary);
+  /* Beamer paints itemize projectors with `structure`; in CambridgeUS that
+     stays `beamer@blendedblue` while the frametitle goes dark red. */
+  background: var(--beamer-structure);
   border-radius: 1px;
 }
 
 .reveal .slides section:where(:not(.footnotes)) ul ul > li::before {
   width: 0.46em;
   height: 0.12em;
-  background: var(--beamer-primary-2);
+  background: var(--beamer-structure-2);
 }
 
 .reveal .slides section:where(:not(.footnotes)) ul ul ul > li::before {
   width: 0.28em;
   height: 0.28em;
   background: transparent;
-  border: 2px solid var(--beamer-primary-3);
+  border: 2px solid var(--beamer-structure-3);
 }
 
 .reveal .slides section:where(:not(.footnotes)) ul.task-list > li::before {
@@ -517,7 +519,9 @@ $border-radius: 4px !default;
   height: 1.35em;
   padding: 0 0 var(--beamer-marker-padding-bottom, 0.1em);
   color: #fff;
-  background: var(--beamer-primary);
+  /* Numbered markers have no Beamer counterpart, so they track `structure`
+     alongside the itemize bullets rather than the variant accent. */
+  background: var(--beamer-structure);
   border-radius: 2px;
   font-size: 0.7em;
   font-weight: 700;
@@ -526,9 +530,9 @@ $border-radius: 4px !default;
 }
 
 .reveal .slides section:where(:not(.footnotes)) ol:where(:not(.aside-footnotes)) ol:where(:not(.aside-footnotes)) > li::before {
-  color: var(--beamer-primary);
+  color: var(--beamer-structure);
   background: transparent;
-  border-left: 3px solid var(--beamer-primary-2);
+  border-left: 3px solid var(--beamer-structure-2);
   border-radius: 0;
 }
 
@@ -574,16 +578,49 @@ $border-radius: 4px !default;
   bottom: calc(var(--beamer-footline-height) + 8px);
 }
 
-/* Beamer blocks and callouts */
+/* Beamer blocks and callouts.
+
+   Whether a block has a fill is a property of the loaded colour theme, not a
+   styling choice: `beamercolorthemedefault` sets `block title{parent=structure}`
+   with an EMPTY background, and only `orchid` gives it a background. Madrid
+   loads orchid, CambridgeUS does not, so under CambridgeUS Beamer renders all
+   three block kinds with the title as coloured text and no band. The palette
+   expresses that by leaving the three `--beamer-block-*-title-bg` values
+   `transparent` for CambridgeUS.
+
+   `--beamer-block-title-band` re-points at the current kind's band so that the
+   single `color-mix()` below can derive that kind's body tint the way orchid
+   does (`block title bg!10!bg`). */
 
 .beamer-block {
+  --beamer-block-title-band: var(--beamer-block-title-bg);
+  --beamer-block-body-bg: color-mix(
+    in srgb,
+    var(--beamer-block-title-band) 10%,
+    #fff
+  );
   margin: 0.7em 0;
   padding: 0.62em 0.76em 0.68em;
   overflow: hidden;
   background: var(--beamer-block-body-bg);
-  border: 1px solid var(--beamer-line);
-  border-radius: 5px;
-  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.07);
+  /* Beamer's `rounded` inner theme draws a shadow, not a border. */
+  border: 0;
+  border-radius: 2px;
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.12);
+}
+
+.beamer-block.beamer-example {
+  --beamer-block-title-band: var(--beamer-block-example-title-bg);
+}
+
+.beamer-block.beamer-alert {
+  --beamer-block-title-band: var(--beamer-block-alert-title-bg);
+}
+
+/* CambridgeUS loads no colour theme that fills `block title`, so Beamer leaves
+   the whole block unfilled -- the derived tint would be a groundless wash. */
+.reveal.beamer-cambridgeus .beamer-block {
+  background: transparent;
 }
 
 /* The block title is real text: it stays selectable, searchable, and exposed
@@ -595,7 +632,7 @@ $border-radius: 4px !default;
   margin: -0.62em -0.76em 0.5em;
   padding: 0.36em 0.76em 0.24em;
   color: var(--beamer-block-title-fg);
-  background: var(--beamer-block-title-bg);
+  background: var(--beamer-block-title-band);
   font-size: 0.82em;
   font-weight: 650;
   line-height: 1.2;
@@ -605,14 +642,19 @@ $border-radius: 4px !default;
   content: attr(data-title);
 }
 
+/* Beamer keeps a separate colour for each block kind. When the theme fills
+   the band (Madrid) that only changes the background; when it does not
+   (CambridgeUS) the difference shows up as the title text colour instead. */
 .beamer-block.beamer-example > .beamer-block-title,
 .beamer-block.beamer-example[data-title]::before {
-  background: var(--beamer-example);
+  color: var(--beamer-block-example-title-fg, var(--beamer-block-title-fg));
+  background: var(--beamer-block-example-title-bg);
 }
 
 .beamer-block.beamer-alert > .beamer-block-title,
 .beamer-block.beamer-alert[data-title]::before {
-  background: var(--beamer-alert);
+  color: var(--beamer-block-alert-title-fg, var(--beamer-block-title-fg));
+  background: var(--beamer-block-alert-title-bg);
 }
 
 .beamer-block > :first-child {

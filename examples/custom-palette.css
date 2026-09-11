@@ -25,6 +25,7 @@
 
   /* palette primary = structure */
   --beamer-primary: var(--beamer-seed);
+  --beamer-structure: var(--beamer-seed);
   --beamer-frame-bg: var(--beamer-seed);
   --beamer-title-bg: var(--beamer-seed);
   --beamer-section-title-bg: var(--beamer-seed);
@@ -36,20 +37,19 @@
   .reveal.beamer-madrid {
     /* palette secondary = structure!75!black */
     --beamer-primary-2: color-mix(in srgb, var(--beamer-seed) 75%, black);
+    --beamer-structure-2: color-mix(in srgb, var(--beamer-seed) 75%, black);
     --beamer-footline-title-bg: color-mix(in srgb, var(--beamer-seed) 75%, black);
     --beamer-block-title-bg: color-mix(in srgb, var(--beamer-seed) 75%, black);
 
     /* palette tertiary = structure!50!black */
     --beamer-primary-3: color-mix(in srgb, var(--beamer-seed) 50%, black);
+    --beamer-structure-3: color-mix(in srgb, var(--beamer-seed) 50%, black);
     --beamer-headline-section-bg: color-mix(in srgb, var(--beamer-seed) 50%, black);
     --beamer-footline-author-bg: color-mix(in srgb, var(--beamer-seed) 50%, black);
 
-    /* orchid block body = block title background!10!white */
-    --beamer-block-body-bg: color-mix(
-      in srgb,
-      color-mix(in srgb, var(--beamer-seed) 75%, black) 10%,
-      white
-    );
+    /* The block bodies are NOT set here: beamer.scss derives each kind's body
+       from its own title band (`block title bg!10!bg`), so seeding the three
+       band colours above is enough. */
 
     /* Theme-only surfaces. */
     --beamer-soft: color-mix(in srgb, var(--beamer-seed) 8%, white);

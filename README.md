@@ -73,10 +73,19 @@ beamer-progress: true
 
 ## 自定义配色
 
-整套外观由 CSS 自定义属性驱动，默认值写在 `_extensions/beamerslides/_palette.scss`，并且**严格等于 Beamer 的混色代数**（`structure`、`structure!75!black`、`structure!50!black` 等）。覆盖时请注意两点：
+整套外观由 CSS 自定义属性驱动，默认值写在 `_extensions/beamerslides/_palette.scss`，并且**按 Beamer 的混色代数取值**（`structure`、`structure!75!black`、`structure!50!black` 等），而不是按观感挑选。需要注意 `--beamer-structure` 与 `--beamer-primary` 是**两个不同的角色**：
+
+- `--beamer-structure` 是 Beamer 的 `structure` 色，即 `beamer@blendedblue` = `rgb(0.2,0.2,0.7)`，量化为 `#3333b2`。列表符号、block 标题等都从它派生。
+- `--beamer-primary` 是当前变体的强调色：Madrid 下与 `structure` 相同，CambridgeUS 下是 beaver 的 `darkred` `#cc0000`（用于 frame title 文字、标题页等）。
+
+**CambridgeUS 的 `structure` 仍是蓝色**：beaver 从不重定义 `structure`，所以它的列表符号和 block 标题是 `#3333b2`，只有 frame title 与标题页转为酒红。这是真实 Beamer 的行为，不是遗漏。
+
+覆盖时请注意两点：
 
 1. 变量可以写在 `.reveal`、`.reveal.beamer-madrid` / `.reveal.beamer-cambridgeus` 上，也可以直接写在 `:root` 上——两个变体的调色板都按 `:root` 级选择器声明（CambridgeUS 用 `:where(:root).beamer-cambridgeus` 保持同等特异性），因此文档级 `:root` 覆盖对两种变体都生效。
-2. `--beamer-primary` 只影响正文强调色与列表标记；frame title、标题页色块、页眉页脚各自有独立变量，需要一并覆盖。
+2. `--beamer-primary` 只影响正文强调色；frame title、标题页色块、页眉页脚、`--beamer-structure` 各自有独立变量，需要一并覆盖。
+
+`--beamer-alert`（`red` / beaver 的 `darkred!80!gray`）与 `--beamer-example`（`green!50!black`，注意 xcolor 的 `green` 是 `rgb(0,1,0)`，故为 `#008000` 而非 `#004000`）是**基础色**；三种 block 的标题底色由它们按 `!75!black` 派生，block 正文底色再由标题底色按 `!10!bg` 派生。因此覆盖基础色即可联动整套 block 配色。
 
 最简单的做法是复制仓库里的 `examples/custom-palette.css`，只改一个种子色，其余由 `color-mix()` 按 Beamer 的关系派生：
 
@@ -94,7 +103,9 @@ format:
     css: examples/custom-palette.css
 ```
 
-该文件以 `/*-- scss:rules --*/` 开头：Quarto 要求 `theme:` 里的样式文件带 SCSS 层标记，这一行对 `css:` 路径无害。三条路径（`css:`、`theme:`、随仓库提供的示例文件）与两种变体都由回归测试覆盖（`palette-css` / `palette-theme` / `palette-example` / `palette-cambridgeus` fixture）；`color-mix()` 派生结果与字面量最多相差 1/255，需要逐通道完全一致时请直接覆盖字面量。
+该文件以 `/*-- scss:rules --*/` 开头：Quarto 要求 `theme:` 里的样式文件带 SCSS 层标记，这一行对 `css:` 路径无害。三条路径（`css:`、`theme:`、随仓库提供的示例文件）与两种变体都由回归测试覆盖（`palette-css` / `palette-theme` / `palette-example` / `palette-cambridgeus` fixture）；`color-mix()` 派生结果与 xcolor 的字面量最多相差 1/255（`color-mix()` 逢半进一，xcolor 在 sp 量化后逢半截断），需要逐通道完全一致时请直接覆盖字面量。
+
+`testPaletteAlgebra` 会从上游主题源码推导期望色值并与浏览器实测比对，因此「调色板是否真的等于 Beamer」是可回归的事实——只靠截图基线做不到这一点，因为基线由本实现自身生成，无法发现自洽的错误。
 
 标题页会显示可点击的邮箱地址；ORCID 使用内嵌矢量 iD 图标，并以作者名右上方的小角标呈现，避免位图缩放模糊。多位作者继续使用同一组 `name`、`email`、`orcid` 和 `affiliations` 字段。
 
@@ -137,6 +148,34 @@ format:
 ```
 
 block 标题会渲染为真实文本节点（而不是 CSS 伪元素），因此在浏览器里可以被 Ctrl+F 搜索、选中复制，也能被读屏软件读取。标题保持字面文本（不解析 markdown，避免 `a_b_c` 之类的标题被误当作强调）。手写 HTML 时仍可用 `data-title` 属性，此时由 CSS 伪元素兜底。
+
+**两种变体的 block 外观不同，这同样是 Beamer 的行为**：
+
+- **Madrid** 加载 `orchid` colortheme，它给 `block title` 设了底色，所以三种 block 都有实色标题条，正文是标题色的 10% 淡染：普通块深蓝 `#262686`、示例块深绿 `#006000`、警示块深红 `#bf0000`。
+- **CambridgeUS** 只加载 `beaver`，**不加载 `orchid`**；beaver 也不碰 `block title`，于是底色为空，三种 block 都**没有填充**，只有圆角与阴影，靠**标题文字颜色**区分（普通块 `#3333b2`、示例块 `#008000`、警示块 `#bd1a1a`）。这是上游主题的真实渲染结果，不是本扩展的取舍。
+
+若希望在 CambridgeUS 下也得到实色标题条，覆盖对应变量即可：
+
+```yaml
+format:
+  beamerslides-revealjs:
+    css: filled-blocks.css
+```
+
+```css
+/* filled-blocks.css */
+.reveal.beamer-cambridgeus {
+  --beamer-block-title-bg: #a30000;
+  --beamer-block-title-fg: #f2f2f2;
+  --beamer-block-example-title-bg: #006000;
+  --beamer-block-example-title-fg: #ffffff;
+  --beamer-block-alert-title-bg: #bf0000;
+  --beamer-block-alert-title-fg: #ffffff;
+}
+.reveal.beamer-cambridgeus .beamer-block {
+  background: color-mix(in srgb, var(--beamer-block-title-band) 10%, #fff);
+}
+```
 
 行内辅助类包括：
 

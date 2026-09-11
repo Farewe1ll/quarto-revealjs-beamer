@@ -1,0 +1,20 @@
+---
+title: "Block colour audit"
+author: "Auditor"
+date: "2026"
+format: beamerslides-revealjs
+---
+
+## All three block types {#blocks}
+
+::: {.block title="Plain"}
+Plain block body.
+:::
+
+::: {.exampleblock title="Example"}
+Example block body.
+:::
+
+::: {.alertblock title="Alert"}
+Alert block body.
+:::
