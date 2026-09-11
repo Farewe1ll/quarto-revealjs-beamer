@@ -2023,7 +2023,7 @@ const paletteModel = (() => {
           body: "transparent",
           color: "#ffcd00",
           weight: "700",
-          strokeWidth: 4,
+          strokeWidth: 3,
         },
       },
     },

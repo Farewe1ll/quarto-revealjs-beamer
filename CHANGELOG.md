@@ -57,9 +57,10 @@ Earlier releases predate this file; their history is in the git log.
   own, while the stroke gives every glyph a 20.7:1 edge. Implemented with
   `-webkit-text-stroke` plus `paint-order: stroke fill`, without which the
   stroke centres on the glyph outline and eats into the yellow. Width was
-  chosen by rendering a sweep at presentation size: 2px and 3px read as a
-  timid hairline beside the plain block, 5px starts to read as a black bar and
-  thins the fill, and 4px is the boldest that still shows the yellow clearly. Tunable via `--beamer-block-alert-title-stroke`;
+  chosen by rendering a sweep at presentation size and comparing side by side in
+  the deck: 2px reads as a timid hairline beside the plain block and 5px starts
+  to read as a black bar that thins the yellow, leaving 3-4px usable; shipped at
+  3px. Tunable via `--beamer-block-alert-title-stroke`;
   Madrid sets it to 0 because white on its `#bf0000` band is already 7.6:1.
   `--beamer-alert` stays red on purpose so `.alert` inline emphasis and `h4`
   remain legible.

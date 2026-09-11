@@ -156,12 +156,13 @@
   --beamer-footline-date-fg: #7a0000;
   --beamer-progress: #cc0000;
 
-  /* Block titles. The plain and example kinds are unfilled and coloured by
-     text alone, as upstream; the alert kind is the exception -- see below.
+  /* Block titles. All three are unfilled and coloured by text alone, as
+     upstream; the alert kind additionally carries a stroke and a heavier
+     weight -- see below.
 
-       plain    #cc0000  red    -- `structure`, same as the list markers
-       example  #008000  green  -- `example text`, pinned by beamer
-       alert    yellow band + near-black bold text  (a warning sign) */
+       plain    #cc0000  red             `structure`, same as the list markers
+       example  #008000  green           `example text`, pinned by beamer
+       alert    #ffcd00  yellow + black  stroke, weight 700 */
   --beamer-block-title-bg: transparent;
   --beamer-block-title-fg: var(--beamer-structure);
   --beamer-block-example-title-bg: transparent;
@@ -181,11 +182,12 @@
      letterforms read against the background while the fill stays the yellow
      that was asked for. `paint-order: stroke fill` in beamer.scss keeps the
      stroke behind the fill, so the yellow body is not eaten away.
-     Width tuned by rendering a sweep at presentation size (2/3/4/5px): 2px and
-     3px read as a timid hairline next to the plain block, 5px starts to read as
-     a black bar and thins the yellow, and 4px is the boldest that still shows
-     the fill clearly on every stroke. */
-  --beamer-block-alert-title-stroke: 4px;
+     Width chosen by rendering a sweep at presentation size (2/3/4/5px) and
+     looking at them side by side in the deck: 2px reads as a timid hairline
+     next to the plain block and 5px starts to read as a black bar that thins
+     the yellow, leaving 3-4px as the usable range. 3px keeps a clearly bolder
+     outline than the neighbouring titles while leaving the most yellow. */
+  --beamer-block-alert-title-stroke: 3px;
   --beamer-block-alert-title-stroke-color: #000000;
 }
 
