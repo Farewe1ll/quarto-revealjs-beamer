@@ -49,6 +49,10 @@
   --beamer-ink: #202124;
   --beamer-muted: #5f6670;
 
+  /* Madrid already fills its bands, so the badge keeps the section fill. */
+  --beamer-section-badge-bg: var(--beamer-section-title-bg);
+  --beamer-section-badge-fg: var(--beamer-section-title-fg);
+
   --beamer-title-bg: #3333b2;
   --beamer-title-fg: #ffffff;
   --beamer-title-subtitle-fg: rgba(255, 255, 255, 0.9);
@@ -163,6 +167,12 @@
        plain    #cc0000  red             `structure`, same as the list markers
        example  #008000  green           `example text`, pinned by beamer
        alert    #ffcd00  yellow + black  stroke, weight 700 */
+  /* CambridgeUS gives the section band no fill, so a shadow would outline an
+     invisible box. The centred badge needs one to be visible at all, so it
+     falls back to the variant accent. */
+  --beamer-section-badge-bg: var(--beamer-primary);
+  --beamer-section-badge-fg: #ffffff;
+
   --beamer-block-title-bg: transparent;
   --beamer-block-title-fg: var(--beamer-structure);
   --beamer-block-example-title-bg: transparent;

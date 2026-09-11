@@ -327,6 +327,12 @@ $border-radius: 4px !default;
   --beamer-section-align: center;
   --beamer-section-size: 1.62em;
   --beamer-section-margin: 0 auto;
+  /* A badge has to be a solid object: it is the only section look whose whole
+     point is the rounded box, and a shadow drawn around a transparent one
+     reads as a stray rule under the text. Variants that leave the section band
+     transparent supply their own fill through these two properties. */
+  --beamer-section-fill: var(--beamer-section-badge-bg, var(--beamer-section-title-bg));
+  --beamer-section-fg: var(--beamer-section-badge-fg, var(--beamer-section-title-fg));
 }
 
 /* No fill at all: just the title text, so it reads as a quiet divider. */
@@ -354,8 +360,8 @@ $border-radius: 4px !default;
   min-height: var(--beamer-frame-height);
   margin: var(--beamer-section-margin);
   padding: 10px 58px;
-  color: var(--beamer-section-title-fg);
-  background: var(--beamer-section-title-bg);
+  color: var(--beamer-section-fg, var(--beamer-section-title-fg));
+  background: var(--beamer-section-fill, var(--beamer-section-title-bg));
   border: 0;
   border-radius: var(--beamer-section-radius);
   box-shadow: var(--beamer-section-shadow);

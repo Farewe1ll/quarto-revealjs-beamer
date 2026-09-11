@@ -20,15 +20,17 @@ format:
     embed-resources: true
 ---
 
-# 设计语言
+# 默认章节页
 
-以 CambridgeUS 为蓝本的白底酒红外观，适配现代浏览器演示。
+以 CambridgeUS 为蓝本的白底酒红外观。一级标题默认生成**通栏色带**，紧贴红灰双色的导航页眉下方。
+
+本变体的章节底色是**透明**的，所以默认外观下只有酒红标题文字 —— 这是 beaver 主题的原始行为。
 
 ## 经典报告版式 {data-subsection="配色"}
 
 ### 正式、克制、适合学术报告与答辩
 
-这套主题默认显示红灰双色的 section / subsection 导航页眉，标题块不带底色，配合三段式 footline 与扁平列表符号。
+页眉左侧显示当前章节、右侧显示 `data-subsection` 指定的子标题；标题、作者、日期与页码自动进入三段式 footline。
 
 - 一级条目使用扁平实心方块
   - 二级条目使用短横线
@@ -39,21 +41,56 @@ format:
 2. 层级清楚，不使用立体小球
 3. 长文本会自然换行并保持对齐
 
-## Beamer Blocks {data-subsection="组件"}
+# 三种章节页外观 {.section-badge}
+
+这一页用了 `{.section-badge}`：居中圆角块 + 阴影，字号更大。
+
+**在本变体下阴影是必须的**：CambridgeUS 的章节底色透明，没有阴影的方块会直接消失在浅色背景里。
+
+## 外观用法 {data-subsection="章节页"}
+
+三种外观用属性**逐页**选择，默认不需要任何属性：
+
+| 写法 | 外观 |
+|:---|:---|
+| `# 标题` | 通栏色带（本变体为透明底 + 酒红字） |
+| `# 标题 {.section-badge}` | 居中圆角块，带阴影 |
+| `# 标题 {.section-minimal}` | 只有文字，无底色 |
+
+: 章节页的三种外观
+
+属性只决定章节页**长什么样**，不能决定它**是否存在** —— Reveal.js 按 `slide-level` 在渲染前就已把 `#` 切成独立页面。
+
+# 最简章节页 {.section-minimal}
+
+`.section-minimal` 只有文字、没有底色。本变体默认就没有底色，所以它主要用来**去掉圆角与阴影**、并把标题居中。
+
+## Beamer 组件 {data-subsection="组件"}
+
+CambridgeUS 的三种 block **都没有填充**（beaver 不加载 orchid colortheme），只靠标题文字颜色区分语义：
 
 ::: {.block title="定义"}
-一个主题不只是配色，也应建立稳定的内容层级和页面节奏。
+普通 block：标题为 `--beamer-structure` 的酒红 `#cc0000`，与列表符号同色。
 :::
 
 ::: {.exampleblock title="示例"}
-使用 `beamer-variant: madrid` 即可切换为 Madrid 深蓝配色。
+Example block：标题为绿色 `#008000`，来自 Beamer 钉死的 `example text`。
 :::
 
 ::: {.alertblock title="注意"}
-内容过多时，可在页面标题后添加 `.smaller`，或主动拆分为两页。
+Alert block：标题为黄字 + 黑色描边，是唯一带描边的标题，语义权重最高。
 :::
 
 # 内容呈现
+
+## 行内样式 {data-subsection="强调"}
+
+除 `.alert` 外，还有 `.fg` 与 `.bg` 两个行内辅助类，颜色用 `--col` 指定：
+
+- [警示文字]{.alert}：使用主题的警示色
+- [自定义前景色]{.fg style="--col: #316e50"}：只改文字颜色
+- [自定义背景色]{.bg style="--col: #f5dfe1"}：给文字加底色
+- [[查看总结]{.button}](#sec-summary)：Beamer 风格的跳转按钮
 
 ## 双栏布局 {data-subsection="布局"}
 
@@ -72,7 +109,7 @@ format:
 
 > 好的幻灯片不是缩小的论文，而是清晰的叙事界面。
 
-[[查看总结]{.button}](#sec-summary)
+右栏适合放对照内容、结论或一张图。
 :::
 
 ::::
@@ -132,15 +169,15 @@ $$
 $$
 :::
 
-结论中的 [关键假设]{.bg style="--col: #f5dfe1"} 可以用 `.bg` 标记，也可用 [自定义前景色]{.fg style="--col: #2c7550"}。
+公式默认使用扩展内置的固定版本 KaTeX，断网打开也能完整渲染；行内公式放大 2%，行间公式放大 6%。
 
 # 总结
 
 ## 两套经典外观，一个现代格式 {#sec-summary data-subsection="总结"}
 
-- `beamer-variant: cambridgeus`：经典的酒红色报告风格，默认显示章节页眉
-- `beamer-variant: madrid`：沉稳的蓝色学术风格，无页眉布局
-- frame、作者、标题、日期和页码自动进入信息栏，页眉可通过 `beamer-secheader` 覆盖
+- `beamer-variant: cambridgeus`：经典的酒红色报告风格，默认显示章节导航页眉
+- `beamer-variant: madrid`：沉稳的蓝色学术风格，默认无页眉
+- frame、作者、标题、日期和页码自动进入信息栏；页眉可用 `beamer-secheader` 覆盖
 - 完整兼容 Quarto Reveal.js 的 fragments、代码、公式与布局能力
 
 ::: {.exampleblock title="开始使用"}

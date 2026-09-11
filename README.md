@@ -166,7 +166,7 @@ format:
 ```
 
 - **默认是通栏色带**，与 frame title 同构：文字左边缘与 frame title、正文严格对齐（都在 `x=58`）。这是 Beamer 的行为——`\section` 页复用 frametitle 模板。
-- **`.section-badge`** 是装饰性选择：居中、圆角、带阴影。它放弃了左对齐，换来与普通 frame 更强的区分度，适合章节起首页。
+- **`.section-badge`** 是装饰性选择：居中、圆角、带阴影。它放弃了左对齐，换来与普通 frame 更强的区分度，适合章节起首页。它是三种外观里**唯一有填充**的——CambridgeUS 的章节底色本身是透明的，若 badge 也透明，阴影就会画在一个看不见的方块上、只表现为文字下方一条多余的横线。该变体下 badge 因此改用 `--beamer-primary`（酒红）填充，可用 `--beamer-section-badge-bg` / `--beamer-section-badge-fg` 覆盖。
 - **`.section-minimal`** 用于弱化章节页，或在底色与背景冲突时使用——CambridgeUS 的章节底色本就是透明的，此时 badge 只剩圆角与阴影，minimal 反而更干净。
 
 实现上，外观差异全部由 `_extensions/beamerslides/beamer.scss` 里的 `--beamer-section-*` 变量表达；`beamer.js` 只提供它才能算出的数值（色带高度、居中偏移），因此样式本身仍是声明式的。

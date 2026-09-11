@@ -2207,6 +2207,7 @@ const testSectionStyles = async (connection, origin) => {
           top: headingRect.top - slideRect.top,
           height: headingRect.height,
           radius: parseFloat(style.borderTopLeftRadius),
+          color: style.color,
           hasShadow: style.boxShadow !== "none" && style.boxShadow !== "",
           align: style.textAlign,
           fontSize: parseFloat(style.fontSize),
@@ -2269,6 +2270,18 @@ const testSectionStyles = async (connection, origin) => {
     assert(state.badge.radius > 0, `${variant}: badge radius`);
     assert.equal(state.badge.hasShadow, true, `${variant}: badge shadow`);
     assert.equal(state.badge.align, "center", `${variant}: badge alignment`);
+    // A badge must be a solid object. If its fill is transparent the shadow is
+    // drawn around nothing and renders as a stray rule under the text.
+    assert.notEqual(
+      state.badge.background,
+      "rgba(0, 0, 0, 0)",
+      `${variant}: badge must have an opaque fill, or its shadow outlines nothing`
+    );
+    assert.notEqual(
+      state.badge.color,
+      state.badge.background,
+      `${variant}: badge text must contrast with its fill`
+    );
     assert(
       state.badge.fontSize > state.band.fontSize,
       `${variant}: badge must be set larger than the default band`
