@@ -54,12 +54,12 @@ Earlier releases predate this file; their history is in the git log.
   are therefore unfilled and distinguished by text colour and weight alone.
   The title also carries a black outline to make that low-contrast fill
   readable: `#ffcd00` is only 1.48:1 against the light slide background on its
-  own, while the 2px stroke gives every glyph a 20.7:1 edge. Implemented with
+  own, while the stroke gives every glyph a 20.7:1 edge. Implemented with
   `-webkit-text-stroke` plus `paint-order: stroke fill`, without which the
   stroke centres on the glyph outline and eats into the yellow. Width was
-  chosen by rendering a sweep: at 16px glyphs, 4px swallows the yellow on thin
-  stems, 3px closes the `e` counter into a blob, and 2px is the widest that
-  keeps every counter open. Tunable via `--beamer-block-alert-title-stroke`;
+  chosen by rendering a sweep at presentation size: 2px and 3px read as a
+  timid hairline beside the plain block, 5px starts to read as a black bar and
+  thins the fill, and 4px is the boldest that still shows the yellow clearly. Tunable via `--beamer-block-alert-title-stroke`;
   Madrid sets it to 0 because white on its `#bf0000` band is already 7.6:1.
   `--beamer-alert` stays red on purpose so `.alert` inline emphasis and `h4`
   remain legible.

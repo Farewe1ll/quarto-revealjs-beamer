@@ -181,11 +181,11 @@
      letterforms read against the background while the fill stays the yellow
      that was asked for. `paint-order: stroke fill` in beamer.scss keeps the
      stroke behind the fill, so the yellow body is not eaten away.
-     Width tuned by rendering a sweep: at 16px glyphs, 4px swallows the yellow
-     on thin stems entirely, 3px closes the `e` counter into a blob, and 3px+
-     turns the title into a black bar at a glance. 2px is the widest that keeps
-     every counter open while still reading as an outline. */
-  --beamer-block-alert-title-stroke: 2px;
+     Width tuned by rendering a sweep at presentation size (2/3/4/5px): 2px and
+     3px read as a timid hairline next to the plain block, 5px starts to read as
+     a black bar and thins the yellow, and 4px is the boldest that still shows
+     the fill clearly on every stroke. */
+  --beamer-block-alert-title-stroke: 4px;
   --beamer-block-alert-title-stroke-color: #000000;
 }
 
