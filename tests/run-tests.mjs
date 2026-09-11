@@ -2194,6 +2194,12 @@ const testSectionStyles = async (connection, origin) => {
       const read = (id) => {
         const slide = document.getElementById(id);
         if (!slide) return null;
+        // Reveal only lays a slide out once it is the current one, so present
+        // it before measuring anything.
+        if (window.Reveal && typeof window.Reveal.slide === "function") {
+          const indices = window.Reveal.getIndices(slide);
+          window.Reveal.slide(indices.h, indices.v);
+        }
         const heading = slide.querySelector(":scope > h1");
         const body = slide.querySelector(":scope > p");
         const style = getComputedStyle(heading);
@@ -2216,6 +2222,36 @@ const testSectionStyles = async (connection, origin) => {
           bodyBelowHeading: body
             ? body.getBoundingClientRect().top >= headingRect.bottom - 0.5
             : null,
+          // Centre of the title together with every body block, and the centre
+          // of the space between the headline and the footline.
+          groupCentre: (() => {
+            const boxes = Array.from(slide.children)
+              .filter(
+                (node) =>
+                  !node.matches(
+                    ".beamer-headline, .beamer-footline, .aside-footnotes, aside.notes"
+                  )
+              )
+              .map((node) => node.getBoundingClientRect())
+              .filter((rect) => rect.height > 0);
+            if (!boxes.length) return null;
+            return (
+              (Math.min(...boxes.map((r) => r.top)) +
+                Math.max(...boxes.map((r) => r.bottom))) /
+              2
+            );
+          })(),
+          areaCentre: (() => {
+            const headline = slide.querySelector(":scope > .beamer-headline");
+            const footline = slide.querySelector(":scope > .beamer-footline");
+            const top = headline
+              ? headline.getBoundingClientRect().bottom
+              : slideRect.top;
+            const bottom = footline
+              ? footline.getBoundingClientRect().top
+              : slideRect.bottom;
+            return (top + bottom) / 2;
+          })(),
         };
       };
       return {
@@ -2266,6 +2302,16 @@ const testSectionStyles = async (connection, origin) => {
     assert(
       state.badge.top > state.badge.headlineHeight + 1,
       `${variant}: badge must be pushed below the headline`
+    );
+    // Title and body are centred as ONE block. Centring the title alone left
+    // the pair bottom-heavy by ~100px once the page carried any prose.
+    assert(
+      Math.abs(state.badge.groupCentre - state.badge.areaCentre) < 12,
+      `${variant}: badge title+body must be centred as a block: ` +
+        JSON.stringify({
+          groupCentre: state.badge.groupCentre,
+          areaCentre: state.badge.areaCentre,
+        })
     );
     assert(state.badge.radius > 0, `${variant}: badge radius`);
     assert.equal(state.badge.hasShadow, true, `${variant}: badge shadow`);

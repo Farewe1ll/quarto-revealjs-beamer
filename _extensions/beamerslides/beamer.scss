@@ -313,14 +313,22 @@ $border-radius: 4px !default;
   --beamer-section-offset: 0px;
   flex-direction: column;
   /* The heading is absolutely positioned, so this padding only reserves room
-     for the body: the frame-title height, plus wherever a centred badge has
-     been pushed down to. */
-  padding: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) +
-        var(--beamer-section-offset, 0px) + 22px)
-    58px calc(var(--beamer-footline-height) + 34px);
+     for the body. The band and minimal looks let the body flow normally here;
+     a centred badge overrides the top padding below. */
+  padding: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) + 22px) 58px
+    calc(var(--beamer-footline-height) + 34px);
 }
 
 .reveal .slides section.beamer-section-slide.section-badge {
+  /* A badge centres the title AND its body as one block. Rather than measure
+     offsets in script, the title joins the normal flow for this look and
+     `justify-content` centres the two together -- which is what flex is for.
+     The padding is deliberately symmetric: flex centres within the content box,
+     and the box runs from the headline down to the slide's bottom edge (the
+     footline overlaps it, as it does for the band). That leaves the block a few
+     pixels above the slide's exact middle, which is not perceptible. */
+  padding: calc(var(--beamer-active-headline-height) + 24px) 12% 24px;
+  justify-content: center;
   --beamer-section-inset: 12%;
   --beamer-section-radius: 5px;
   --beamer-section-shadow: 0 3px 0 rgba(0, 0, 0, 0.12);
@@ -335,6 +343,28 @@ $border-radius: 4px !default;
   --beamer-section-fg: var(--beamer-section-badge-fg, var(--beamer-section-title-fg));
 }
 
+/* In the badge look the title is part of the centred flow, so it must stop
+   being an absolutely-positioned band. Its body then matches the badge's own
+   inset, so the two read as one centred block rather than as a narrow badge
+   with full-width prose hanging off it. */
+.reveal .slides section.beamer-section-slide.section-badge > h1:first-of-type {
+  position: static;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.reveal .slides section.beamer-section-slide.section-badge > :not(h1) {
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* A little air between the badge and the first line of its body. */
+.reveal .slides section.beamer-section-slide.section-badge > h1:first-of-type +
+  :not(h1) {
+  margin-top: 22px;
+}
+
 /* No fill at all: just the title text, so it reads as a quiet divider. */
 .reveal .slides section.beamer-section-slide.section-minimal {
   --beamer-section-shadow: none;
@@ -345,6 +375,8 @@ $border-radius: 4px !default;
 .reveal .slides section.beamer-section-slide.section-minimal > h1:first-of-type {
   background: transparent;
 }
+
+
 
 .reveal .slides section.beamer-section-slide > h1:first-of-type {
   position: absolute;

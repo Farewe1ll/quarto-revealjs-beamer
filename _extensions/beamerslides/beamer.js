@@ -333,45 +333,23 @@
     return wrapper;
   };
 
-  // A centred badge has to move down to sit in the middle of the space between
-  // the headline and the footline. That depends on the heading's rendered height
-  // -- a badge is taller than the default band because it carries a larger font
-  // -- so only the browser can work it out. The CSS reads the result back as a
-  // custom property, which keeps the styling itself declarative.
-  const placeSectionPages = () => {
-    document
-      .querySelectorAll(".reveal .slides section.beamer-section-slide")
-      .forEach((slide) => {
-        slide.style.removeProperty("--beamer-section-offset");
-        if (!slide.classList.contains("section-badge")) {
-          return;
-        }
-        const heading = directHeading(slide, "h1");
-        if (!heading) {
-          return;
-        }
-        const headingHeight = heading.getBoundingClientRect().height;
-        const slideHeight = slide.clientHeight;
-        const headline = slide.querySelector(":scope > .beamer-headline");
-        const footline = slide.querySelector(":scope > .beamer-footline");
-        if (headingHeight <= 0 || slideHeight <= 0) {
-          return;
-        }
-        const top = headline?.getBoundingClientRect().bottom ?? 0;
-        const bottom = footline?.getBoundingClientRect().top ?? slideHeight;
-        // The heading is absolutely positioned, so its current top is the
-        // headline's bottom edge (or 0 when there is no headline).
-        const offset = Math.max(
-          0,
-          (bottom - top - headingHeight) / 2
-        );
-        slide.style.setProperty(
-          "--beamer-section-offset",
-          `${offset.toFixed(2)}px`
-        );
-      });
-  };
-
+  // A centred badge treats the title and any body text as ONE block and centres
+  // that block in the space between the headline and the footline. Centring the
+  // badge alone would leave the block bottom-heavy as soon as the page carried a
+  // line of prose. Both numbers depend on rendered heights -- a badge is taller
+  // than the default band because it carries a larger font, and the body's
+  // height is pure text flow -- so only the browser can work them out. The CSS
+  // reads them back as custom properties, which keeps the styling declarative.
+  //
+  // The band and minimal looks are deliberately left alone: they pin the title
+  // under the headline, which is what Beamer's own section page does, so body
+  // text simply flows after it.
+  // The badge look centres its title together with its body. That is pure CSS
+  // -- the title joins the flow and the section uses `justify-content: center`
+  // -- so nothing has to be measured here. An earlier attempt solved for the
+  // offset in script, but the body's top padding was derived from the block
+  // height, so every measurement fed the solution back into its own input and
+  // the result drifted between passes. Letting flex own it removes that loop.
   const centerTitleInk = () => {
     const titles = document.querySelectorAll(
       ".reveal .slides section.beamer-section-slide > h1:first-of-type, " +
@@ -969,7 +947,6 @@
     arrangeTitleSlide();
     alignInlineLabels();
     alignOrderedMarkers();
-    placeSectionPages();
     centerTitleInk();
     return true;
   };
@@ -1099,13 +1076,11 @@
     const realignOpticalLabels = () => {
       window.requestAnimationFrame(alignInlineLabels);
       window.requestAnimationFrame(alignOrderedMarkers);
-      window.requestAnimationFrame(placeSectionPages);
       window.requestAnimationFrame(centerTitleInk);
     };
     const realignForPrint = () => {
       alignInlineLabels();
       alignOrderedMarkers();
-      placeSectionPages();
       centerTitleInk();
       slides.forEach(measureFrameTitle);
     };

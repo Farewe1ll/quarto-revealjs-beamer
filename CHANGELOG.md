@@ -113,7 +113,13 @@ Earlier releases predate this file; their history is in the git log.
 - Section pages can now take one of three looks, chosen per heading with an
   attribute on the `#` line: the default full-bleed band, `{.section-badge}` for
   a centred rounded badge, and `{.section-minimal}` for plain centred text with
-  no fill. Quarto copies heading classes onto the `<section>`, so no AST
+  no fill. In the badge look the title and any body text are centred as ONE
+  block, and the body is constrained to the badge's own width. Achieving that
+  with script proved to be a trap worth recording: the body's top padding was
+  derived from the block's height, so every measurement of the block fed the
+  solution back into its own input and the layout drifted between passes. The
+  badge now lets flexbox do it -- the title joins the flow for that look and the
+  section centres its children -- so there is nothing to measure. Quarto copies heading classes onto the `<section>`, so no AST
   rewriting is involved and the choice is genuinely per page. The look is
   expressed entirely in `--beamer-section-*` custom properties; `beamer.js` only
   supplies the numbers it alone can know (the band's rendered height and the
