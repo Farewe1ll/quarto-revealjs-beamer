@@ -3,8 +3,9 @@
      `.reveal.beamer-madrid`, which shadowed document-level overrides);
    - `.reveal.beamer-*` overrides must win as well;
    - `--beamer-primary` (the variant accent) and `--beamer-structure` (the
-     colour Beamer derives bullets and block titles from) are separate roles
-     and must both be overridable. */
+     colour bullets and block titles derive from) are separate roles and must
+     both be overridable. The stock values differ per variant: Madrid keeps
+     Beamer's blendedblue, CambridgeUS uses its own darkred. */
 :root {
   --beamer-footline-author-bg: #123456;
 }

@@ -75,10 +75,30 @@ beamer-progress: true
 
 整套外观由 CSS 自定义属性驱动，默认值写在 `_extensions/beamerslides/_palette.scss`，并且**按 Beamer 的混色代数取值**（`structure`、`structure!75!black`、`structure!50!black` 等），而不是按观感挑选。需要注意 `--beamer-structure` 与 `--beamer-primary` 是**两个不同的角色**：
 
-- `--beamer-structure` 是 Beamer 的 `structure` 色，即 `beamer@blendedblue` = `rgb(0.2,0.2,0.7)`，量化为 `#3333b2`。列表符号、block 标题等都从它派生。
+- `--beamer-structure` 是 Beamer 的 `structure` 色，列表符号、无填充 block 的标题文字都从它派生。Madrid 下等于 `beamer@blendedblue` = `rgb(0.2,0.2,0.7)`，量化为 `#3333b2`。
 - `--beamer-primary` 是当前变体的强调色：Madrid 下与 `structure` 相同，CambridgeUS 下是 beaver 的 `darkred` `#cc0000`（用于 frame title 文字、标题页等）。
 
-**CambridgeUS 的 `structure` 仍是蓝色**：beaver 从不重定义 `structure`，所以它的列表符号和 block 标题是 `#3333b2`，只有 frame title 与标题页转为酒红。这是真实 Beamer 的行为，不是遗漏。
+**⚠️ 一处有意偏离 Beamer：CambridgeUS 的 `structure` 是红色，不是蓝色。**
+
+beaver 从不重定义 `structure`，所以上游 CambridgeUS 的列表符号与 block 标题是蓝色 `#3333b2`——那是主题的原样，但在红灰主调的版面里蓝色像个外来色。本扩展把 `structure` 指向该变体自己的 `darkred`，并用与 whale/orchid 相同的代数派生暗阶：
+
+```text
+structure          = darkred          = #cc0000
+structure!75!black = darkred!75!black = #990000
+structure!50!black = darkred!50!black = #660000
+```
+
+受影响的只有列表符号（无序/有序）与无填充 block 的标题文字。若你想恢复上游的蓝色，一行即可：
+
+```css
+.reveal.beamer-cambridgeus {
+  --beamer-structure: #3333b2;
+  --beamer-structure-2: #262686;
+  --beamer-structure-3: #1a1a59;
+}
+```
+
+注意 `example text` 在 Beamer 里是 `green!50!black`，**与 `structure` 无关**（默认颜色主题钉死，beaver/orchid 都不重定义），所以它的蓝/红变体取值相同。
 
 覆盖时请注意两点：
 

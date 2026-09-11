@@ -95,11 +95,21 @@
    renders the title as coloured text with no fill -- which is why the three
    `--beamer-block-*-title-bg` values below are `transparent`. */
 :where(:root).beamer-cambridgeus {
-  /* beaver never defines `structure`, so it stays beamer@blendedblue: this is
-     the colour bullets, block titles and other structural furniture use. */
-  --beamer-structure: #3333b2;
-  --beamer-structure-2: #262686;
-  --beamer-structure-3: #1a1a59;
+  /* DELIBERATE DEVIATION FROM BEAMER.
+     beaver never defines `structure`, so upstream CambridgeUS keeps
+     beamer@blendedblue and paints bullets and block titles blue -- correct for
+     the theme as written, but a blue accent reads as a stray colour inside an
+     otherwise red-and-grey deck. We re-point `structure` at the variant's own
+     darkred and step it down with the same algebra whale/orchid use
+     (`structure!75!black`, `structure!50!black`), so the accent stays
+     internally consistent:
+       darkred            = #cc0000
+       darkred!75!black   = #990000
+       darkred!50!black   = #660000
+     This changes bullets, numbered markers and unfilled block titles. */
+  --beamer-structure: #cc0000;
+  --beamer-structure-2: #990000;
+  --beamer-structure-3: #660000;
 
   --beamer-primary: #cc0000;
   --beamer-primary-2: #8f0000;
@@ -108,9 +118,12 @@
   --beamer-frame-fg: #cc0000;
   --beamer-soft: #f8f2f2;
   --beamer-line: #d7b9bc;
-  /* beaver: alerted text = darkred!80!gray. xcolor mixes in the decimal rgb
-     model: 0.8*(0.8,0,0) + 0.2*(0.5,0.5,0.5) = (0.74,0.1,0.1) -> #bd1a1a.
-     Example text keeps the default green!50!black = #008000. */
+  /* beaver: alerted text = darkred!80!gray ->
+     0.8*(0.8,0,0) + 0.2*(0.5,0.5,0.5) = (0.74,0.1,0.1) -> #bd1a1a.
+     `example text` is NOT derived from `structure` -- beamercolorthemedefault
+     pins it to green!50!black, and neither beaver nor orchid redefines it -- so
+     it keeps the same value here as in Madrid even though `structure` moved to
+     darkred. */
   --beamer-alert: #bd1a1a;
   --beamer-example: #008000;
 
@@ -134,7 +147,7 @@
   --beamer-progress: #cc0000;
 
   /* `block title` has no bg here, so the title text falls back to `structure`
-     -- which beaver leaves at `beamer@blendedblue`. Same for the example and
+     (the deliberate red above, not beaver's blue). Same for the example and
      alert variants, which inherit `example text` / `alerted text` as fg only. */
   --beamer-block-title-bg: transparent;
   --beamer-block-title-fg: var(--beamer-structure);

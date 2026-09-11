@@ -32,11 +32,23 @@ Earlier releases predate this file; their history is in the git log.
   was painting a solid `#a30000` band with a `#f8f2f2` body, which is not what
   the theme does. Blocks are now unfilled with coloured titles
   (`#3333b2` / `#008000` / `#bd1a1a`).
-- `--beamer-structure` is now a separate role from `--beamer-primary`. Beaver
-  never redefines `structure`, so CambridgeUS bullets and block titles stay
-  `beamer@blendedblue`; previously the single `--beamer-primary` variable made
-  them red. `structure` also now quantises to `#3333b2`, matching
-  `rgb(0.2,0.2,0.7)`, rather than `#3333b3`.
+- `--beamer-structure` is now a separate role from `--beamer-primary`.
+  Previously the single `--beamer-primary` variable drove bullets and block
+  titles as well as the accent, which conflated two different Beamer colours.
+  `structure` also now quantises to `#3333b2`, matching `rgb(0.2,0.2,0.7)`,
+  rather than `#3333b3`.
+- **Deliberate deviation from upstream:** CambridgeUS sets `structure` to its
+  own `darkred` (`#cc0000`, with `!75!black`/`!50!black` steps) instead of
+  keeping beamer's `blendedblue`. Upstream paints CambridgeUS bullets and
+  unfilled block titles blue because beaver never redefines `structure`; in a
+  red-and-grey deck that reads as a stray colour. Override
+  `--beamer-structure` to restore the upstream blue.
+- `example text` is `green!50!black` in `beamercolorthemedefault` and is NOT
+  derived from `structure` -- neither beaver nor orchid redefines it -- so both
+  variants keep the same value (`#008000`, band `#006000`) even though
+  CambridgeUS moves `structure`.
+- `testPaletteAlgebra` now also asserts that the bullet and numbered-list
+  markers use `--beamer-structure`, so the two roles cannot be conflated again.
 - `green!50!black` is `#008000`, not `#004000`: xcolor defines `green` as
   `rgb(0,1,0)`, so the halved value comes from the 50% mix rather than from the
   base green. CambridgeUS's `alerted text` is `#bd1a1a`.

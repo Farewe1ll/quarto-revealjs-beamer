@@ -1893,10 +1893,11 @@ const testPaletteOverrides = async (connection, origin) => {
     );
     // Overriding the variant accent must not drag `structure` with it: they are
     // separate roles, and `structure` is what bullets and block titles use.
+    // Madrid keeps Beamer's blendedblue; CambridgeUS stocks its own darkred.
     assert.equal(
       state.structure,
-      "#3333b2",
-      `${label} must leave --beamer-structure at beamer@blendedblue`
+      label.startsWith("cambridgeus") ? "#cc0000" : "#3333b2",
+      `${label} must leave --beamer-structure at the variant's stock value`
     );
     if (expectedAuthorBox) {
       assert.equal(
@@ -1948,7 +1949,10 @@ const paletteModel = (() => {
   const DARKRED = [0.8, 0, 0]; // beaver \definecolor{darkred}
   const RED = [1, 0, 0]; // xcolor red
   const GREEN = [0, 1, 0]; // xcolor green -- NOT (0, 128, 0)
-  const EXAMPLE_TEXT = mix(GREEN, 0.5, BLACK); // green!50!black
+  // green!50!black. NOT derived from `structure`: beamercolorthemedefault
+  // pins it, and no theme in either chain redefines it, so it is the same
+  // value for both variants even though CambridgeUS moves `structure`.
+  const EXAMPLE_TEXT = mix(GREEN, 0.5, BLACK);
 
   const structure = toHex(BLENDED_BLUE);
   const bodyOf = (band) => toHex(mix(band, 0.1, WHITE));
@@ -1959,7 +1963,13 @@ const paletteModel = (() => {
   const madridAlertBand = mix(RED, 0.75, BLACK);
 
   return {
-    structure,
+    // Madrid keeps Beamer's `structure`; CambridgeUS deliberately re-points it
+    // at its own darkred instead of beaver's blendedblue (documented deviation
+    // -- see _palette.scss), stepped down with the same algebra.
+    structureByVariant: {
+      madrid: structure,
+      cambridgeus: toHex(DARKRED),
+    },
     madrid: {
       frameTitle: structure,
       blocks: {
@@ -1986,7 +1996,8 @@ const paletteModel = (() => {
       blocks: {
         // No orchid -> `block title` keeps parent=structure with an empty bg,
         // so every kind is unfilled and the parent colour shows as text.
-        Plain: { background: "transparent", body: "transparent", color: structure },
+        // `structure` here is the deliberate darkred, not beaver's blue.
+        Plain: { background: "transparent", body: "transparent", color: toHex(DARKRED) },
         Example: {
           background: "transparent",
           body: "transparent",
@@ -2044,10 +2055,18 @@ const testPaletteAlgebra = async (connection, origin) => {
       });
       const root = getComputedStyle(document.documentElement);
       const frame = document.querySelector(".slides section.beamer-frame-slide > h2");
+      const bullet = document.querySelector(".slides section ul > li");
+      const numbered = document.querySelector(".slides section ol > li");
       return {
         kinds,
         structure: root.getPropertyValue("--beamer-structure").trim(),
         frameTitle: hex(getComputedStyle(frame).backgroundColor),
+        bulletMarker: bullet
+          ? hex(getComputedStyle(bullet, "::before").backgroundColor)
+          : null,
+        numberMarker: numbered
+          ? hex(getComputedStyle(numbered, "::before").backgroundColor)
+          : null,
       };
     })()`);
 
@@ -2066,14 +2085,31 @@ const testPaletteAlgebra = async (connection, origin) => {
       // Chrome >= 118 interpolating color-mix() in oklab rather than srgb.
       assert(Math.max(...delta) <= 2, `${label}: got ${got}, Beamer gives ${want}`);
     };
-    // `structure` must stay beamer@blendedblue in BOTH variants: beaver never
-    // redefines it, so CambridgeUS bullets are blue even though its frametitle
-    // is dark red. The value is the decimal 0.2/0.2/0.7, which renders as
-    // #3333b2 under Poppler/xcolor and #3333b3 under Ghostscript.
+    // List markers track `structure`: blue on Madrid, the deliberate darkred on
+    // CambridgeUS. They used to follow the variant accent instead, which is how
+    // CambridgeUS ended up with red bullets while its `structure` stayed blue.
+    for (const [label, actual] of [
+      ["bullet marker", state.bulletMarker],
+      ["numbered marker", state.numberMarker],
+    ]) {
+      if (actual == null) continue;
+      closeTo(
+        actual,
+        paletteModel.structureByVariant[variant],
+        `${variant}: ${label} must use --beamer-structure`
+      );
+    }
+    // Madrid keeps beamer@blendedblue (0.2/0.2/0.7, which renders as #3333b2
+    // under Poppler/xcolor and #3333b3 under Ghostscript). CambridgeUS is a
+    // DELIBERATE DEVIATION: upstream leaves `structure` at blendedblue, and we
+    // re-point it at the variant's darkred so bullets and unfilled block titles
+    // are not a stray blue inside a red-and-grey deck.
     closeTo(
       state.structure,
-      paletteModel.structure,
-      `${variant}: --beamer-structure must stay beamer@blendedblue`
+      paletteModel.structureByVariant[variant],
+      variant === "madrid"
+        ? "--beamer-structure must stay beamer@blendedblue"
+        : "--beamer-structure deviates to CambridgeUS darkred (documented)"
     );
     closeTo(
       state.frameTitle,
