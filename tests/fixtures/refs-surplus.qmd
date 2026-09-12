@@ -1,0 +1,34 @@
+---
+title: "References surplus"
+author: "Pagination Author"
+date: "2026"
+short-title: "Refs surplus"
+short-author: "Pagination Author"
+short-institute: "Pagination Institute"
+short-date: "2026"
+beamer-variant: madrid
+bibliography: tests/fixtures/refs-pagination.bib
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+# Section
+
+## Body {#surplus-body}
+
+Six entries are cited, so the bibliography needs two pages: five on the first, one on
+the second [@ref1] [@ref2] [@ref3] [@ref4] [@ref5] [@ref6].
+
+## First {#surplus-first item="5"}
+
+::: {#refs}
+:::
+
+## Second {#surplus-second item="5"}
+
+## Third {#surplus-third item="5"}
+
+## Last normal {#surplus-last}
+
+The page count must ignore every reference page, including the declared-but-unused one.

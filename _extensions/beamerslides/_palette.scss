@@ -63,6 +63,12 @@
      instead, which also makes it read consistently in both variants. */
   --beamer-section-minimal-fg: var(--beamer-structure);
 
+  /* Reference lists are the one place where a document can put an unbounded
+     amount of text on a slide, so they get their own size knob. Lowering it lets
+     the pagination fit more entries per page; the automatic page breaks measure
+     the result either way. */
+  --beamer-refs-font-size: 0.9em;
+
   --beamer-headline-section-bg: #1a1a59;
   --beamer-headline-section-fg: #ffffff;
   --beamer-headline-subsection-bg: #3333b2;

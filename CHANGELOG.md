@@ -10,6 +10,35 @@ Earlier releases predate this file; their history is in the git log.
 
 ### Fixed
 
+- **A `.scrollable` frame no longer scrolls its own chrome away.** The frame used
+  to be the scroll container itself (`overflow: auto` on the `<section>`), and the
+  headline and footline are its absolutely-positioned children, so they travelled
+  with the content: scrolled to the end the footline moved from `top:690` to
+  `-201` — off the top of the slide — and the last line of content stayed
+  permanently hidden behind it. The frame now clips and the body scrolls inside a
+  `.beamer-scroll` layer, so the chrome stays put. This also covers the `.smaller`
+  and `.beamer-long-frame-title` frames, which shared the same rule, and it applies
+  to Quarto's document-level footnotes and bibliography slides, which carry
+  `.smaller .scrollable` by default. Pinning the chrome with `position: fixed`
+  fixes the screen too, but it needs a `position: absolute` reset in print/PDF
+  layout (the print assertion reports `footerContained: false` without it) and it
+  only lines up while the viewport box and the slide box coincide.
+  **No visual baseline changed** — the layer is inset to the same padding box the
+  body already occupied. Two probes and one assertion had to learn about the new
+  layer: they measured `scrollHeight`/direct children on the frame, which is now
+  the layer's job.
+  The layer is inset from the frame's own padding, and *both* of the inputs it
+  depends on are rewritten after the decoration pass — the reserved frame height is
+  re-measured on every resize, font load and slide change, and
+  `beamer-long-frame-title` is only ever added by that measurement. So the layer is
+  re-fitted whenever either moves, and removed again when a frame stops scrolling.
+  Without that, a frame whose title took several lines kept the inset measured for a
+  one-line title (layer top 80px where the body starts at 108px), and a frame that
+  only became scrollable after decoration got no layer at all: `overflow: hidden`
+  with nothing to scroll, and no overflow warning either, because a scrolling frame
+  is exempt from it. That was silent, unreachable content — on the `scroll-layers`
+  fixture the last paragraph sat 558px past the bottom of the slide.
+
 - **`h4` now takes the variant's structural accent, not the alert colour.** It
   was coloured with `--beamer-alert`, which under Madrid is Beamer's `alerted
   text` red `#ff0000` — only **3.93:1** against the light slide, below the 4.5:1
@@ -138,6 +167,53 @@ Earlier releases predate this file; their history is in the git log.
   and shadow rather than a custom 5px radius.
 
 ### Added
+
+- **Reference lists now paginate, and can follow the `.bib` order.** A
+  bibliography has no upper bound, so the references frame is the one slide that
+  routinely overflows in practice.
+
+  - `## References {item="6"}` declares a page of six entries. Page 1 also carries
+    the `::: {#refs}` div; continuation pages carry nothing and are filled in.
+    `item` is a *cap*, not a promise: the break is also bounded by the measured
+    height, because one long entry can take twice the height of a short one, so a
+    page that would still overflow is cut shorter and the surplus spills onto
+    following pages (generated if the declared ones run out). Short entries do not
+    pack past the cap either. Each generated page copies the declared page's layout
+    and title.
+    Continuation pages must follow the bibliography page with no frame in between:
+    only the page holding `::: {#refs}` and the `item` pages contiguous with it are
+    treated as reference pages, so an unrelated `## Frame {item="3"}` elsewhere in
+    the deck is left alone. Taking every `item` page instead either handed the
+    bibliography to that frame (no `#refs`, so nothing paginated at all) or moved
+    entries into it.
+  - Every reference page is marked `uncounted`, so the footline's page count does
+    not move no matter how many pages the bibliography needs.
+  - The declared page count is reconciled with what the bibliography actually needs,
+    in both directions. Too few pages: the console reports how many were added and
+    **which entry moved first**, so the author can move a break rather than hunt for
+    it. Too many: the console names the pages left empty. A surplus page is **not**
+    removed — deleting it could delete whatever the author put there — so the report
+    is the whole remedy.
+  - `refs-title: "…"` sets the base title for generated pages; without it they take
+    the first declared page's heading. A page's own `##` heading always wins.
+  - `refs-order: declaration` reorders the list into the order the keys appear in
+    the `.bib` file(s). citeproc sorts by author, and nothing in the rendered HTML
+    records the declaration order, so `beamer.lua` reads the keys out of the files
+    and ships them; the default (`citation`) leaves citeproc's order alone, so
+    existing documents do not change. If the key count and the rendered entry count
+    disagree, the reorder is skipped with a warning rather than guessing — the
+    `.bib` scan is a conservative pattern match and cannot read every legal file.
+    Ordering runs **before** the page breaks are measured, so the split follows the
+    declared order as well; applied afterwards it only reordered entries inside
+    pages that had already been cut in citeproc's order.
+  - `--beamer-refs-font-size` (default `0.9em`) is the one size knob for the list;
+    lowering it fits more entries per page and the automatic breaks follow.
+
+  The pagination fixture gives entry `N` the author `Surname(14 - N)`, so citeproc
+  sorts it into the exact reverse of the declared order. Without that the two orders
+  agreed and the ordering assertion passed with the feature disabled. A second
+  fixture (`refs-surplus`) declares one page more than the bibliography needs, which
+  is what pins the "too many pages" report down.
 
 - Section pages can now take one of three looks, chosen per heading with an
   attribute on the `#` line: the default full-bleed band, `{.section-badge}` for

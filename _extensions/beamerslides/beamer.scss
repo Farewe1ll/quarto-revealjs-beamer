@@ -71,9 +71,24 @@ $border-radius: 4px !default;
   display: flex !important;
 }
 
+/* A scrollable frame must not scroll its own chrome -- see `wrapScrollableSlide`
+   in beamer.js. Making the section itself the scroll container carried the
+   absolutely-positioned headline/footline along with the content: scrolled to the
+   end the footline went from top:690 to -201, permanently covering the last line.
+   The section clips instead and the body scrolls in an inner layer. */
 .reveal .slides section.beamer-leaf-slide.scrollable,
 .reveal .slides section.beamer-leaf-slide.smaller,
 .reveal .slides section.beamer-leaf-slide.beamer-long-frame-title {
+  overflow: hidden;
+}
+
+/* The inset is set inline by beamer.js from the section's own padding: absolute
+   offsets resolve against the padding box's OUTER edge, which with no border is
+   the border box, so `top: 0` would put the layer at the slide's corner instead
+   of inside the reserved chrome. */
+.reveal .slides section.beamer-leaf-slide > .beamer-scroll {
+  position: absolute;
+  box-sizing: border-box;
   overflow: auto;
 }
 
@@ -1146,7 +1161,7 @@ $border-radius: 4px !default;
 }
 
 .reveal #refs {
-  font-size: 0.9em;
+  font-size: var(--beamer-refs-font-size, 0.9em);
   line-height: 1.3;
 }
 

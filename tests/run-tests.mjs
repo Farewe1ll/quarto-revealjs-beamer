@@ -1739,7 +1739,11 @@ const readDocumentFootnoteStateWithRetry = async (page, context) => {
 
 const readDocumentFootnoteState = `(() => {
   const slide = document.querySelector("section.footnotes");
-  const list = slide?.querySelector(":scope > ol");
+  // A scrollable slide keeps its chrome still by moving the body into a
+  // \`.beamer-scroll\` layer, so the footnote list may be one level down. The
+  // list itself is unchanged by that.
+  const scope = slide?.querySelector(":scope > .beamer-scroll") || slide;
+  const list = scope?.querySelector(":scope > ol");
   const item = list?.querySelector(":scope > li");
   const marker = item ? getComputedStyle(item, "::before") : null;
   return {
@@ -1963,11 +1967,17 @@ const testOverflowDiagnostics = async (connection, origin) => {
     await visit("overfull");
     const slide = document.getElementById("overfull");
     const scrollable = document.getElementById("scrollable-frame");
+    // A scrollable frame keeps its chrome still by moving the body into a
+    // \`.beamer-scroll\` layer, so that layer is what overflows now -- the frame
+    // itself no longer does. Measure whichever element actually scrolls.
+    const scrollBody =
+      scrollable.querySelector(":scope > .beamer-scroll") || scrollable;
+    const overflowBody = slide.querySelector(":scope > .beamer-scroll") || slide;
     return {
       warnings: window.__beamerWarnings,
-      overflows: slide.scrollHeight > slide.clientHeight + 2,
-      overflowBy: slide.scrollHeight - slide.clientHeight,
-      scrollableOverflow: scrollable.scrollHeight - scrollable.clientHeight
+      overflows: overflowBody.scrollHeight > overflowBody.clientHeight + 2,
+      overflowBy: overflowBody.scrollHeight - overflowBody.clientHeight,
+      scrollableOverflow: scrollBody.scrollHeight - scrollBody.clientHeight
     };
   })()`);
   assert.equal(state.overflows, true, "fixture must actually overflow");
@@ -1986,6 +1996,109 @@ const testOverflowDiagnostics = async (connection, origin) => {
     /scrollable-frame/,
     "a `.scrollable` frame must not warn"
   );
+
+  // Scrolling a `.scrollable` frame must not carry its chrome away. The frame
+  // used to be the scroll container itself, and because the headline/footline are
+  // its absolutely-positioned children they scrolled with the content: the
+  // footline moved from top:690 to top:490 and permanently covered the last line.
+  // Nothing asserted this before, which is why the bug survived.
+  const scrollPage = await BrowserPage.create(
+    connection,
+    `${origin}/overflow.html#/scrollable-frame`
+  );
+  const scrollState = await scrollPage.evaluate(`(() => {
+    const slide = document.getElementById("scrollable-frame");
+    const footer = slide.querySelector(":scope > .beamer-footline");
+    const body = slide.querySelector(":scope > .beamer-scroll") || slide;
+    const before = footer.getBoundingClientRect().top;
+    body.scrollTop = body.scrollHeight;
+    const footerRect = footer.getBoundingClientRect();
+    const slideRect = slide.getBoundingClientRect();
+    // The last piece of content must not end up permanently hidden behind the
+    // footline once the frame is scrolled to the end.
+    const blocks = Array.from(
+      body.querySelectorAll("p, ul, ol, h1, h2, h3, h4, h5, h6, table, pre")
+    );
+    const last = blocks.length ? blocks[blocks.length - 1].getBoundingClientRect() : null;
+    return {
+      scrolled: Math.round(body.scrollTop),
+      footerTopBefore: Math.round(before),
+      footerTopAfter: Math.round(footerRect.top),
+      footerStillInFrame:
+        footerRect.top >= slideRect.top - 1 && footerRect.bottom <= slideRect.bottom + 1,
+      lastBlockBottom: last ? Math.round(last.bottom) : null,
+      lastBlockClear: last ? last.bottom <= footerRect.top + 1 : null
+    };
+  })()`);
+  assert(scrollState.scrolled > 2, `the fixture must scroll: ${JSON.stringify(scrollState)}`);
+  assert.equal(
+    scrollState.footerStillInFrame,
+    true,
+    `the footline must stay inside the frame while scrolling: ${JSON.stringify(scrollState)}`
+  );
+  assert(
+    Math.abs(scrollState.footerTopAfter - scrollState.footerTopBefore) < 1,
+    `the footline must not move with the content: ${JSON.stringify(scrollState)}`
+  );
+  assert.equal(
+    scrollState.lastBlockClear,
+    true,
+    `scrolled to the end, no content may stay hidden behind the footline: ${JSON.stringify(scrollState)}`
+  );
+  await scrollPage.close();
+
+
+  // Reveal's overview grid scales every slide down and lays them out together. A
+  // chrome pinned with `position: fixed` is not part of that transform, so it
+  // detaches from its own thumbnail -- the reason this fix keeps the chrome on the
+  // slide and scrolls an inner layer instead. The invariant is scale-free: the
+  // footline must stay within its own slide's box, and in its lower half.
+  const overviewPage = await BrowserPage.create(
+    connection,
+    `${origin}/overflow.html#/scrollable-frame`
+  );
+  const overviewState = await overviewPage.evaluate(`(async () => {
+    const measure = () => {
+      const slide = document.getElementById("scrollable-frame");
+      const footer = slide.querySelector(":scope > .beamer-footline");
+      const slideRect = slide.getBoundingClientRect();
+      const footerRect = footer.getBoundingClientRect();
+      return {
+        slide: [slideRect.left, slideRect.top, slideRect.right, slideRect.bottom],
+        footer: [footerRect.left, footerRect.top, footerRect.right, footerRect.bottom],
+        position: getComputedStyle(footer).position
+      };
+    };
+    const before = measure();
+    window.Reveal.toggleOverview(true);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const inOverview = measure();
+    window.Reveal.toggleOverview(false);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    return { before, inOverview, isOverview: window.Reveal.isOverview() };
+  })()`);
+  const ov = overviewState.inOverview;
+  const [sl, st, sr, sb] = ov.slide;
+  const [fl, ft, fr, fb] = ov.footer;
+  assert.equal(ov.position, "absolute", "the footline must not be viewport-pinned");
+  assert(
+    fl >= sl - 0.5 && fr <= sr + 0.5,
+    `in overview the footline must stay within its own slide horizontally: ${JSON.stringify(overviewState)}`
+  );
+  assert(
+    ft >= st - 0.5 && fb <= sb + 0.5,
+    `in overview the footline must stay within its own slide vertically: ${JSON.stringify(overviewState)}`
+  );
+  assert(
+    ft > st + (sb - st) / 2,
+    `in overview the footline must still sit in the lower half of its slide: ${JSON.stringify(overviewState)}`
+  );
+  assert.equal(
+    Math.round(overviewState.isOverview),
+    0,
+    "the overview probe must leave overview mode"
+  );
+  await overviewPage.close();
 
   // Reveal paginates the deck in print/PDF layout, so a slide's client height no
   // longer describes its content box: the check must stay silent there. The
@@ -2353,6 +2466,353 @@ const testPaletteAlgebra = async (connection, origin) => {
 // the `#` line. Quarto copies heading classes onto the <section>, so this is a
 // pure presentation choice -- it cannot decide whether the page exists, because
 // Reveal has already split the sections by the time any of this runs.
+const testReferencesPagination = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/refs-pagination.html#/refs-grouped`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  // The decoration pass that paginates the references is synchronous, and
+  // `BrowserPage.create` already waits for the document to report
+  // `data-beamer-decorated`, so this delay is not waiting out a reverter -- it only
+  // lets layout and fonts settle before the heights below are read.
+  await delay(400);
+  const state = await page.evaluate(`(() => {
+    const pages = [];
+    document.querySelectorAll(".beamer-leaf-slide").forEach((slide) => {
+      const container = slide.querySelector("#refs");
+      if (!container) return;
+      const layer = slide.querySelector(":scope > .beamer-scroll") || slide;
+      const style = getComputedStyle(layer);
+      const available =
+        layer.clientHeight -
+        parseFloat(style.paddingTop || "0") -
+        parseFloat(style.paddingBottom || "0");
+      const list = Array.from(container.querySelectorAll(".csl-entry"));
+      const used = list.length
+        ? list[list.length - 1].getBoundingClientRect().bottom -
+          list[0].getBoundingClientRect().top
+        : 0;
+      pages.push({
+        id: slide.id,
+        visibility: slide.dataset.visibility || null,
+        title: (slide.querySelector(":scope > h2") || {}).textContent || null,
+        isScrollable: slide.classList.contains("scrollable"),
+        hasScrollLayer: Boolean(slide.querySelector(":scope > .beamer-scroll")),
+        available: Math.round(available),
+        used: Math.round(used),
+        entries: list.length,
+        keys: Array.from(container.querySelectorAll(".csl-entry")).map((entry) =>
+          entry.id.replace(/^ref-/, "")
+        ),
+        // The fixture gives entry N the author "Surname(14 - N)", so citeproc sorts
+        // it in the exact reverse of the declared order. Reading the author back is
+        // what proves the assertion below is not passing by accident.
+        authors: list.map((entry) => {
+          const at = entry.textContent.indexOf("Surname");
+          return at < 0 ? null : Number(entry.textContent.slice(at + 7, at + 9));
+        }),
+        hasNumber: Boolean(
+          slide.querySelector(":scope > .beamer-footline .beamer-footline-number")
+        )
+      });
+    });
+    const ids = Array.from(document.querySelectorAll(".csl-entry")).map((e) => e.id);
+    const unrelated = document.getElementById("body");
+    return {
+      pages,
+      totalEntries: ids.length,
+      uniqueEntries: new Set(ids).size,
+      // A frame that declares "item" on its own account sits directly before the
+      // bibliography in this fixture. It must keep its content and stay out of the
+      // pagination entirely.
+      unrelated: {
+        entries: unrelated.querySelectorAll(".csl-entry").length,
+        keepsText: unrelated.textContent.includes("keeps its own text"),
+        visibility: unrelated.dataset.visibility || null
+      },
+      lastNormal: (
+        document.querySelector(
+          "#last-normal > .beamer-footline .beamer-footline-number"
+        ) || {}
+      ).textContent || null,
+      warnings: window.__beamerWarnings
+    };
+  })()`);
+
+  // The author declared two pages of five; the third is generated.
+  assert.equal(state.pages.length, 3, JSON.stringify(state));
+  assert.deepEqual(
+    state.pages.map((entry) => entry.entries),
+    [5, 5, 3],
+    `declared \`item="5"\` must cut at five, and the rest must spill: ${JSON.stringify(state)}`
+  );
+  // No entry may appear twice, and none may be dropped.
+  assert.equal(state.totalEntries, 13, JSON.stringify(state));
+  assert.equal(state.uniqueEntries, 13, JSON.stringify(state));
+  assert.deepEqual(
+    state.pages.flatMap((entry) => entry.keys),
+    Array.from({ length: 13 }, (unused, index) => `ref${index + 1}`),
+    `\`refs-order: declaration\` must keep the .bib order: ${JSON.stringify(state)}`
+  );
+  // ...and the split must follow that order too, not just the list. With ordering
+  // applied after pagination the pages came out as `ref13..ref9 / ref8..ref4 /
+  // ref3..ref1`: the lists were reordered inside pages that had already been cut in
+  // citeproc's order.
+  //
+  // The authors are read back because this fixture's citeproc order is the exact
+  // reverse of its declared order (entry N is authored by `Surname(14 - N)`). So the
+  // authors must descend while the keys ascend, and the assertion above can actually
+  // fail: while the fixture's two orders agreed, it passed even with reordering
+  // disabled entirely.
+  assert.deepEqual(
+    state.pages.flatMap((entry) => entry.authors),
+    Array.from({ length: 13 }, (unused, index) => 13 - index),
+    `the rendered order must be the declared order, not citeproc's: ${JSON.stringify(state)}`
+  );
+  // An author heading survives; a generated page falls back to \`refs-title\`.
+  assert.equal(state.pages[0].title, "Grouped pages");
+  assert.equal(state.pages[1].title, "Continues");
+  assert.equal(state.pages[2].title, "参考文献");
+  // Every page must carry the same layout, or the entry height differs per page and
+  // the split is measured against the wrong capacity. Quarto gives `.smaller
+  // .scrollable` only to the page holding `::: {#refs}`, so this is on the theme.
+  for (const entry of state.pages) {
+    assert.equal(entry.isScrollable, true, JSON.stringify(entry));
+    assert.equal(entry.hasScrollLayer, true, JSON.stringify(entry));
+  }
+  // The real invariant: no page may clip. Measured per page, because the entry
+  // height is not the same on every page until the classes are unified.
+  for (const entry of state.pages) {
+    assert(
+      entry.used <= entry.available + 1,
+      `no reference page may overflow: ${JSON.stringify(entry)}`
+    );
+  }
+  // Reference pages never join the page count or show a number of their own.
+  assert.equal(state.lastNormal, "4 / 4", JSON.stringify(state));
+  // `item` is a generic attribute name, so the frame that uses it for its own
+  // reasons must be left alone: taking every `item` page in the deck made that frame
+  // the master (it has no `#refs`, so nothing paginated) and, had it come after the
+  // bibliography, entries would have been moved into it.
+  assert.deepEqual(
+    state.unrelated,
+    {
+      entries: 0,
+      keepsText: true,
+      visibility: null
+    },
+    `a frame using \`item\` for its own reasons must not join the bibliography: ${JSON.stringify(state)}`
+  );
+  for (const entry of state.pages) {
+    assert.equal(entry.visibility, "uncounted", JSON.stringify(entry));
+    assert.equal(entry.hasNumber, false, JSON.stringify(entry));
+  }
+  // Two pages were declared and the bibliography needs three, so the theme has to say
+  // so and name the first entry it moved. The message was dead code until the
+  // declared count was recorded before `ensurePage` started appending to `pages`:
+  // measuring the spill as `slices.length - pages.length` afterwards is always 0.
+  const refsWarnings = state.warnings.filter((line) =>
+    line.includes("[beamerslides] the references")
+  );
+  assert.deepEqual(
+    refsWarnings,
+    [
+      "[beamerslides] the references need 3 pages but 2 were declared, so 1 page " +
+        "was added; the first entry moved is ref11. Move a page break earlier, or " +
+        "lower --beamer-refs-font-size."
+    ],
+    `a short declaration must be reported: ${JSON.stringify(state.warnings)}`
+  );
+  await page.close();
+
+  // The mirror case: more pages declared than the bibliography needs. The unused page
+  // is left in the deck -- removing it would delete whatever the author put there --
+  // but it renders as an empty frame, so it has to be reported.
+  const surplusPage = await BrowserPage.create(
+    connection,
+    `${origin}/refs-surplus.html#/surplus-first`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  await delay(400);
+  const surplus = await surplusPage.evaluate(`(() => {
+    const pages = [];
+    document.querySelectorAll(".beamer-leaf-slide").forEach((slide) => {
+      const container = slide.querySelector("#refs");
+      if (!container) return;
+      pages.push({
+        id: slide.id,
+        visibility: slide.dataset.visibility || null,
+        entries: container.querySelectorAll(".csl-entry").length,
+        hasNumber: Boolean(
+          slide.querySelector(":scope > .beamer-footline .beamer-footline-number")
+        )
+      });
+    });
+    const unusedSlide = document.getElementById("surplus-third");
+    return {
+      pages,
+      // The page the bibliography does not need must be left exactly as written: no
+      // entries, no manufactured list, its own heading, and not counted.
+      unused: {
+        exists: Boolean(unusedSlide),
+        entries: unusedSlide.querySelectorAll(".csl-entry").length,
+        hasRefsContainer: Boolean(unusedSlide.querySelector("#refs")),
+        title: (unusedSlide.querySelector(":scope > h2") || {}).textContent || null,
+        visibility: unusedSlide.dataset.visibility || null
+      },
+      lastNormal: (
+        document.querySelector(
+          "#surplus-last > .beamer-footline .beamer-footline-number"
+        ) || {}
+      ).textContent || null,
+      warnings: window.__beamerWarnings
+    };
+  })()`);
+  assert.deepEqual(
+    surplus.pages.map((entry) => entry.entries),
+    [5, 1],
+    `declared pages are consumed in order: ${JSON.stringify(surplus)}`
+  );
+  assert.deepEqual(
+    surplus.unused,
+    {
+      exists: true,
+      entries: 0,
+      hasRefsContainer: false,
+      title: "Third",
+      visibility: "uncounted"
+    },
+    `a page the bibliography does not need is left alone: ${JSON.stringify(surplus)}`
+  );
+  assert.equal(
+    surplus.pages.every((entry) => entry.visibility === "uncounted"),
+    true,
+    JSON.stringify(surplus)
+  );
+  // An empty frame must not shift the page count either.
+  assert.equal(surplus.lastNormal, "4 / 4", JSON.stringify(surplus));
+  assert.deepEqual(
+    surplus.warnings.filter((line) => line.includes("[beamerslides] the references")),
+    [
+      "[beamerslides] the references fit on 2 pages but 3 were declared; " +
+        "surplus-third is empty. Delete the unused page, or lower `item` so the " +
+        "entries spread over every declared page."
+    ],
+    `a surplus declaration must be reported once: ${JSON.stringify(surplus.warnings)}`
+  );
+  await surplusPage.close();
+};
+
+// The scroll layer is built once, but both of its inputs are rewritten later: the
+// reserved frame height is re-measured on every resize, font load and slide change, and
+// `beamer-long-frame-title` is only ever added by that measurement. A layer built
+// against the wrong one of those two is either inset for a one-line title on a frame
+// whose title takes several lines -- the body ends up under the title band -- or missing
+// altogether on a frame that became scrollable after the decoration pass, which leaves
+// `overflow: hidden` with nothing to scroll, and because a scrolling frame is exempt
+// from the overflow warning, silently.
+const testScrollLayers = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/scroll-layers.html#/wrapped-scroll`
+  );
+  // The frame title is measured after the decoration pass, on a `requestAnimationFrame`
+  // that follows `document.fonts.ready`, so the layers are only final once that ran.
+  await delay(600);
+  const state = await page.evaluate(`(() => {
+    const measure = (id) => {
+      const slide = document.getElementById(id);
+      const layer = slide.querySelector(":scope > .beamer-scroll");
+      const heading = slide.querySelector(":scope > h2");
+      const footer = slide.querySelector(":scope > .beamer-footline");
+      const blocks = layer ? Array.from(layer.querySelectorAll("p")) : [];
+      const last = blocks.length ? blocks[blocks.length - 1] : null;
+      const report = {
+        hasLayer: Boolean(layer),
+        longFrameTitle: slide.classList.contains("beamer-long-frame-title"),
+        titleHeight: Math.round(heading.getBoundingClientRect().height),
+        paddingTop: Math.round(parseFloat(getComputedStyle(slide).paddingTop)),
+        layerTop: layer ? Math.round(layer.getBoundingClientRect().top) : null,
+        overflows: layer ? layer.scrollHeight > layer.clientHeight + 1 : false
+      };
+      if (layer && last) {
+        layer.scrollTop = layer.scrollHeight;
+        const rect = last.getBoundingClientRect();
+        report.lastBlockReachable =
+          rect.bottom <= slide.getBoundingClientRect().bottom + 1;
+        report.lastBlockClearOfFooter = footer
+          ? rect.bottom <= footer.getBoundingClientRect().top + 1
+          : null;
+        layer.scrollTop = 0;
+      }
+      return report;
+    };
+    return { wrapped: measure("wrapped-scroll"), late: measure("late-scroll") };
+  })()`);
+
+  // Case 1: the layer exists (`.scrollable` was in the source), but its inset has to
+  // follow the measured title height. Before the fix the inset was the one measured for
+  // a one-line title: layer top 80px against the 108px the body actually starts at.
+  assert.equal(state.wrapped.hasLayer, true, JSON.stringify(state));
+  assert(
+    state.wrapped.titleHeight > 58,
+    `the fixture title must span several lines: ${JSON.stringify(state)}`
+  );
+  assert.equal(
+    state.wrapped.layerTop,
+    state.wrapped.paddingTop,
+    `the scroll layer must be inset to the measured title height, not the default one: ${JSON.stringify(state)}`
+  );
+  assert.equal(state.wrapped.overflows, true, JSON.stringify(state));
+
+  // Case 2: the frame only becomes scrollable when the title is measured, which happens
+  // after the decoration pass created the layers. It must get one anyway, and the body
+  // it holds must be reachable.
+  assert.equal(state.late.longFrameTitle, true, JSON.stringify(state));
+  assert.equal(
+    state.late.hasLayer,
+    true,
+    `a frame that becomes scrollable after decoration still needs its layer: ${JSON.stringify(state)}`
+  );
+  assert.equal(state.late.layerTop, state.late.paddingTop, JSON.stringify(state));
+  assert.equal(state.late.overflows, true, JSON.stringify(state));
+  assert.equal(state.late.lastBlockReachable, true, JSON.stringify(state));
+  assert.equal(state.late.lastBlockClearOfFooter, true, JSON.stringify(state));
+
+  // The other direction: a frame that stops scrolling gets its body back. Left inside an
+  // absolutely positioned layer, the content no longer contributes to the section's
+  // scroll height, so the overflow check could never see it again.
+  const unwrapped = await page.evaluate(`(async () => {
+    const slide = document.getElementById("late-scroll");
+    slide.querySelector(":scope > h2").textContent = "Short again";
+    window.dispatchEvent(new Event("resize"));
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const layer = slide.querySelector(":scope > .beamer-scroll");
+    return {
+      longFrameTitle: slide.classList.contains("beamer-long-frame-title"),
+      hasLayer: Boolean(layer),
+      directParagraphs: Array.from(slide.children).filter(
+        (child) => child.tagName === "P"
+      ).length,
+      paddingTop: Math.round(parseFloat(getComputedStyle(slide).paddingTop))
+    };
+  })()`);
+  assert.equal(unwrapped.longFrameTitle, false, JSON.stringify(unwrapped));
+  assert.equal(
+    unwrapped.hasLayer,
+    false,
+    `a frame that stopped scrolling must get its body back: ${JSON.stringify(unwrapped)}`
+  );
+  assert(
+    unwrapped.directParagraphs > 0,
+    `the body must be a direct child again: ${JSON.stringify(unwrapped)}`
+  );
+  await page.close();
+};
+
 const testSectionStyles = async (connection, origin) => {
   // Both variants are measured twice, with the section header on and off, so
   // the header's effect on section-page geometry is actually covered. It was
@@ -2746,6 +3206,9 @@ try {
     "offline",
     "centering",
     "behavior",
+    "refs-pagination",
+    "refs-surplus",
+    "scroll-layers",
   ]) {
     renderFixture(fixture);
   }
@@ -2800,6 +3263,8 @@ try {
   await testOverflowDiagnostics(chrome.connection, local.origin);
   await testPaletteOverrides(chrome.connection, local.origin);
   await testBlockTitles(chrome.connection, local.origin);
+  await testReferencesPagination(chrome.connection, local.origin);
+  await testScrollLayers(chrome.connection, local.origin);
   await testPaletteAlgebra(chrome.connection, local.origin);
   await testSectionStyles(chrome.connection, local.origin);
   assertNoBrowserErrors(chrome.connection);

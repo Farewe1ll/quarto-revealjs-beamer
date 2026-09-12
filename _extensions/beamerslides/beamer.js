@@ -562,6 +562,325 @@
     });
   };
 
+  // citeproc gives every entry the id `ref-<key>`; the key is what the .bib shipped
+  // and therefore what an author recognises in a warning.
+  const entryKey = (entry) => {
+    const id = entry.id || "";
+    return id.startsWith("ref-") ? id.slice(4) : id;
+  };
+
+  // `refs-order: declaration` ships the .bib entry keys in declaration order (see
+  // beamer.lua), because citeproc sorts the rendered list by author and nothing in
+  // the HTML records where an entry sat in the file.
+  //
+  // The count check is the safety net: a key the Lua scan failed to match would
+  // otherwise silently produce a wrong order, so a mismatch between the shipped
+  // keys and the rendered entries falls back to citeproc's order and says so.
+  const reorderReferences = () => {
+    const raw = meta("beamer-refs-keys");
+    if (!raw) {
+      return;
+    }
+    const keys = raw
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean);
+    if (keys.length === 0) {
+      return;
+    }
+
+    const containers = Array.from(document.querySelectorAll("#refs"));
+    const entries = containers.flatMap((container) =>
+      Array.from(container.querySelectorAll(".csl-entry"))
+    );
+    if (entries.length === 0) {
+      return;
+    }
+    if (entries.length !== keys.length) {
+      console.warn(
+        "[beamerslides] refs-order: declaration is ignored: the bibliography " +
+          `files declare ${keys.length} entries but ${entries.length} were ` +
+          "rendered. Check for an entry the .bib scan cannot read."
+      );
+      return;
+    }
+
+    const rank = new Map(keys.map((key, index) => [key, index]));
+    if (entries.some((entry) => !rank.has(entryKey(entry)))) {
+      console.warn(
+        "[beamerslides] refs-order: declaration is ignored: a declared key has " +
+          "no matching rendered entry."
+      );
+      return;
+    }
+
+    // Each container is sorted among its own entries instead of all of them being
+    // filled from one shared key list. Filling from a shared list is only correct
+    // while a single `#refs` container exists: with one container per reference page
+    // it appends every key into the first list, empties the rest and leaves the whole
+    // bibliography on page one -- measured as `13 / 0 / 0` on a three-page fixture.
+    // Sorting in place makes re-running this a no-op; that it *runs first* is what
+    // makes the page breaks follow the declared order (see the caller).
+    containers.forEach((container) => {
+      const list = container.querySelector(".csl-entry")?.parentElement;
+      if (!list) {
+        return;
+      }
+      Array.from(list.querySelectorAll(":scope > .csl-entry"))
+        .sort((left, right) => rank.get(entryKey(left)) - rank.get(entryKey(right)))
+        .forEach((entry) => list.appendChild(entry));
+    });
+  };
+
+  // ---- Reference pagination -------------------------------------------------
+  //
+  // A bibliography has no upper bound, so the references frame is the one slide that
+  // routinely overflows in practice. The author declares page breaks with
+  // `item="N"` on the heading (`## References {item="6"}`); page 1 also carries the
+  // `::: {#refs}` div, and continuation pages carry nothing and are filled in here.
+  //
+  // `item` is a *density*: how many entries the author expects per page. The real
+  // break is decided by the browser -- entries are appended one at a time and the
+  // page is closed as soon as its scroll layer would overflow. Capacity was computed
+  // from a measured entry height first, and that was wrong four times over (29, 12,
+  // 11 where the page fitted 5-10): the entries sit in an inner list, their height
+  // depends on which page's font size they currently inherit, and the gap between
+  // them is not part of any single box. `scrollHeight > clientHeight` is the browser
+  // answering the question directly.
+  //
+  // Surplus entries go to generated pages, which are made uncounted so the
+  // footline's page count does not move.
+  //
+  // Which pages belong to the bibliography: the one holding `::: {#refs}`, plus the
+  // `item`-declared pages that follow it with no gap. Taking every `item` page in the
+  // deck instead would hand the bibliography to an unrelated `## Frame {item="3"}`
+  // anywhere else -- either by making that frame the master (no `#refs`, so nothing
+  // paginates at all) or, when it comes after, by moving entries into it.
+  const refsPages = () => {
+    const order = leafSlides();
+    const first = order.findIndex((slide) => slide.querySelector("#refs"));
+    if (first === -1) {
+      return [];
+    }
+    const pages = [order[first]];
+    for (let index = first + 1; index < order.length; index += 1) {
+      const slide = order[index];
+      if (!slide.querySelector("#refs") && slide.dataset.item === undefined) {
+        break;
+      }
+      pages.push(slide);
+    }
+    return pages;
+  };
+
+  const refsItemCount = (slide) => {
+    const parsed = Number.parseInt(slide.dataset.item, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+
+  // Does this page's scroll layer have room for the entries currently in it?
+  const layerOverflows = (slide) => {
+    const layer = slide.querySelector(":scope > .beamer-scroll");
+    if (layer) {
+      return layer.scrollHeight > layer.clientHeight + 1;
+    }
+    return slide.scrollHeight > slide.clientHeight + 1;
+  };
+
+  const cloneEntry = (entry) => {
+    const copy = entry.cloneNode(true);
+    copy.style.visibility = "hidden";
+    return copy;
+  };
+
+  // The list that holds the entries, creating it when the page does not have one yet.
+  // A continuation page declared with `item` but without `::: {#refs}` starts empty,
+  // and the fill loop needs somewhere to put its entries.
+  //
+  // The copy keeps the `refs` id even though the document then has several: the
+  // stylesheet addresses the list as `#refs`, and nothing here resolves it globally --
+  // every lookup is scoped to a slide, and duplicate ids are only a validity wart, not
+  // a lookup hazard, in this direction.
+  const entryList = (slide, master) => {
+    let container = slide.querySelector("#refs");
+    if (!container) {
+      container = document.createElement("div");
+      container.id = "refs";
+      container.className = master.className;
+      container.setAttribute("role", master.getAttribute("role") || "list");
+      const before = slide.querySelector(":scope > .beamer-footline");
+      if (before) {
+        slide.insertBefore(container, before);
+      } else {
+        slide.appendChild(container);
+      }
+    }
+    return container.querySelector(".csl-entry")?.parentElement || container;
+  };
+
+  const paginateReferences = () => {
+    const pages = refsPages();
+    if (pages.length === 0) {
+      return;
+    }
+    const master = pages[0].querySelector("#refs");
+    if (!master) {
+      return;
+    }
+    const all = Array.from(master.querySelectorAll(".csl-entry"));
+    if (all.length === 0) {
+      return;
+    }
+
+    // Quarto gives `.smaller .scrollable` only to the page that actually contains
+    // `::: {#refs}`; a declared continuation page is left bare. Left alone the same
+    // entry is 49px on one page and 105px on the next (measured), and the generated
+    // pages get no scroll layer at all. Every page takes page 1's layout classes, so
+    // the author declares the look once.
+    // `.beamer-leaf-slide` is added later in the decoration pass, so it is not in the
+    // class list read here -- assigning `className` outright would strip it from any
+    // page that already had it and leave that page without its scroll layer.
+    const layoutClasses = master.closest("section").className
+      .split(/\s+/)
+      .filter((name) => name && name !== "beamer-leaf-slide");
+    pages.forEach((slide) => {
+      slide.className = layoutClasses.join(" ");
+      // The scroll layer is what makes `layerOverflows` meaningful, and this runs
+      // before the decoration pass that would normally create it, so it is created
+      // here. Without it the overflow check falls back to measuring the slide, which
+      // is 720/720 on every page and therefore never reports an overflow.
+      slide.classList.add("beamer-leaf-slide");
+      wrapScrollableSlide(slide);
+    });
+
+    const declared = pages.map(refsItemCount);
+    const baseTitle =
+      meta("beamer-refs-title") ||
+      text(directHeading(pages[0], "h2")) ||
+      "References";
+
+    // Page `index` may not exist yet; the class unification above makes page 1 a
+    // faithful template for it.
+    const ensurePage = (index) => {
+      if (pages[index]) {
+        return pages[index];
+      }
+      const template = pages[pages.length - 1];
+      const slide = document.createElement("section");
+      slide.className = template.className;
+      slide.id = `${template.id || "references"}-${index + 1}`;
+      if (baseTitle) {
+        const heading = document.createElement("h2");
+        heading.textContent = baseTitle;
+        slide.appendChild(heading);
+      }
+      const container = document.createElement("div");
+      container.id = "refs";
+      container.className = master.className;
+      container.setAttribute("role", master.getAttribute("role") || "list");
+      slide.appendChild(container);
+      template.parentElement.insertBefore(slide, template.nextElementSibling);
+      slide.classList.add("beamer-leaf-slide");
+      wrapScrollableSlide(slide);
+      pages.push(slide);
+      return slide;
+    };
+
+    // Which entries each page will hold, decided by filling the real pages.
+    //
+    // `pages` grows while this runs -- `ensurePage` appends the pages it creates -- so
+    // the number the author declared has to be recorded first. Measuring the spill as
+    // `slices.length - pages.length` after the loop always gives 0, which silently
+    // killed the "pages were added" warning below.
+    const declaredCount = pages.length;
+    const slices = [];
+    let index = 0;
+    let pageIndex = 0;
+    while (index < all.length) {
+      const slide = ensurePage(pageIndex);
+      const list = entryList(slide, master);
+      // Start from an emptied list: the clones are the only content while measuring.
+      // Only the entries are removed -- clearing `textContent` also deletes the list
+      // element itself when the container has no inner wrapper, which was measured as
+      // the whole bibliography collapsing onto one page.
+      Array.from(list.querySelectorAll(".csl-entry")).forEach((entry) =>
+        entry.remove()
+      );
+      const wanted = (() => {
+        const value = declared[Math.min(pageIndex, declared.length - 1)];
+        return value === null || value === undefined ? null : value;
+      })();
+
+      const slice = [];
+      while (index + slice.length < all.length) {
+        if (wanted !== null && slice.length >= wanted) {
+          break;
+        }
+        const clone = cloneEntry(all[index + slice.length]);
+        list.appendChild(clone);
+        if (layerOverflows(slide) && slice.length > 0) {
+          clone.remove();
+          break;
+        }
+        slice.push(all[index + slice.length]);
+      }
+      // Progress guard. With the overflow test above requiring a non-empty slice the
+      // first entry is always kept, so this cannot trigger today -- it is here so that
+      // a future change to that test fails one page late instead of hanging the tab.
+      if (slice.length === 0) {
+        slice.push(all[index]);
+      }
+      slices.push(slice);
+      index += slice.length;
+      pageIndex += 1;
+    }
+
+    const added = slices.length - declaredCount;
+    if (added > 0) {
+      const firstMoved = slices[declaredCount]
+        ? entryKey(slices[declaredCount][0])
+        : "";
+      console.warn(
+        `[beamerslides] the references need ${slices.length} pages but ` +
+          `${declaredCount} ${declaredCount === 1 ? "was" : "were"} declared, so ` +
+          `${added} ${added === 1 ? "page was" : "pages were"} added` +
+          (firstMoved ? `; the first entry moved is ${firstMoved}` : "") +
+          ". Move a page break earlier, or lower --beamer-refs-font-size."
+      );
+    } else if (declaredCount > slices.length) {
+      // The mirror case: a declared continuation page the bibliography does not need.
+      // It is left in the deck (removing it would delete whatever the author put
+      // there) but it renders as an empty frame, so the author gets told.
+      const unused = pages
+        .slice(slices.length)
+        .map((slide) => slide.id || "(unnamed)")
+        .join(", ");
+      console.warn(
+        `[beamerslides] the references fit on ${slices.length} ` +
+          `${slices.length === 1 ? "page" : "pages"} but ${declaredCount} were ` +
+          `declared; ${unused} ${declaredCount - slices.length === 1 ? "is" : "are"} ` +
+          "empty. Delete the unused page, or lower `item` so the entries spread " +
+          "over every declared page."
+      );
+    }
+
+    // Real entries are moved into place; the measuring clones are discarded. Each
+    // page keeps only its own entries, so nothing is duplicated. A page with no slice
+    // is not touched at all -- only marked uncounted -- so a declared page the
+    // bibliography does not need stays exactly as the author wrote it.
+    pages.forEach((slide, i) => {
+      const slice = slices[i];
+      if (slice) {
+        const list = entryList(slide, master);
+        Array.from(list.querySelectorAll(".csl-entry")).forEach((entry) =>
+          entry.remove()
+        );
+        slice.forEach((entry) => list.appendChild(entry));
+      }
+      slide.dataset.visibility = "uncounted";
+    });
+  };
+
   const appendSpan = (parent, className, value) => {
     const node = document.createElement("span");
     node.className = className;
@@ -678,6 +997,106 @@
     slide.classList.contains("smaller") ||
     slide.classList.contains("beamer-long-frame-title");
 
+  const isScrollLayer = (node) => node.classList.contains("beamer-scroll");
+  const isChrome = (node) =>
+    node.classList.contains("beamer-headline") ||
+    node.classList.contains("beamer-footline");
+  const isFrameTitle = (node) => node.tagName === "H2";
+
+  // A scrollable slide used to scroll itself (`overflow: auto` on the <section>),
+  // and because the headline/footline are its absolutely-positioned children they
+  // scrolled away with the content -- measured at top:690 before scrolling and
+  // top:490 at the bottom, where the footline sat in the middle of the viewport
+  // and permanently covered the last line. Scrolled fully it reached -201, off the
+  // top of the slide altogether.
+  //
+  // Pinning the chrome with `position: fixed` also fixes the screen, but it needs a
+  // `position: absolute` reset in print/PDF layout -- the print-layout assertion
+  // caught that as `footerContained: false` -- and it only lines up while the
+  // viewport box and the slide box coincide, which holds because `.reveal` is
+  // `width/height: 100%` today, not by contract.
+  //
+  // So the body moves into an inner scroll layer, inset to the section's padding
+  // box so it lands exactly where the body used to be and sits clear of the
+  // chrome. The inset must be explicit: for an absolutely positioned box,
+  // `top: 0` resolves to the *padding box's outer edge*, which with no border is
+  // the border box -- measured as `0,0` on a section with `padding: 80px 58px`,
+  // not the expected `58,80`.
+  //
+  // The frame title must stay ON the slide, never in the layer: it is fixed UI
+  // like the chrome, and both `section > h2:first-of-type` (the band's full-bleed
+  // width and 58px min-height) and the frame-title measurement read it as a
+  // direct child.
+  const wrapScrollableSlide = (slide) => {
+    if (!slideScrolls(slide)) {
+      // A frame can stop scrolling again -- `beamer-long-frame-title` is toggled on
+      // every measurement -- and then its body has to come back out of the layer. Left
+      // in an absolutely positioned child, the content no longer contributes to the
+      // section's scroll height, so `reportOverflow` would report nothing no matter
+      // how far the body overflowed.
+      const stale = slide.querySelector(":scope > .beamer-scroll");
+      if (stale) {
+        for (const child of Array.from(stale.children)) {
+          slide.insertBefore(child, stale);
+        }
+        stale.remove();
+      }
+      return;
+    }
+
+    // Everything that should live in the layer: the slide's own children except
+    // the chrome and the frame title, plus anything an earlier pass already parked
+    // in a layer.
+    const layer = slide.querySelector(":scope > .beamer-scroll");
+    const content = [];
+    for (const child of Array.from(slide.children)) {
+      if (isScrollLayer(child) || isChrome(child) || isFrameTitle(child)) {
+        continue;
+      }
+      content.push(child);
+    }
+    if (layer) {
+      for (const child of Array.from(layer.children)) {
+        if (!isFrameTitle(child)) {
+          content.push(child);
+        }
+      }
+      layer.remove();
+    }
+    if (content.length === 0) {
+      return;
+    }
+
+    // Build the layer detached, then place it deterministically: after the frame
+    // title, or before the chrome when there is no title. Placing it last is what
+    // makes this order-independent -- moving the content in first and inserting
+    // afterwards left the title inside the layer, which pushed the body down by the
+    // title's height.
+    const built = document.createElement("div");
+    built.className = "beamer-scroll";
+    const title = directHeading(slide, "h2");
+    const style = window.getComputedStyle(slide);
+    built.style.top = style.paddingTop;
+    built.style.right = style.paddingRight;
+    built.style.bottom = style.paddingBottom;
+    built.style.left = style.paddingLeft;
+    content.forEach((child) => built.appendChild(child));
+
+    const footer = slide.querySelector(":scope > .beamer-footline");
+    if (title) {
+      title.after(built);
+    } else if (footer) {
+      slide.insertBefore(built, footer);
+    } else {
+      slide.appendChild(built);
+    }
+
+    // Keep the footline last so the layer cannot paint over it.
+    if (footer && footer !== slide.lastElementChild) {
+      slide.appendChild(footer);
+    }
+  };
+
   // In print/PDF layout Reveal paginates the deck, so a slide's client height no
   // longer describes the space its content has. Measuring there reports phantom
   // overflows, so the check is screen-only.
@@ -718,6 +1137,14 @@
   const measureFrameTitle = (slide) => {
     const heading = directHeading(slide, "h2");
     const minHeight = baseFrameTitleHeight();
+    // Both of the scroll layer's inputs are rewritten below -- the reserved frame
+    // height and the `beamer-long-frame-title` class -- so they are read first. A layer
+    // built earlier is inset from the section's padding, which is
+    // `headline + frame-height + 22px` for a frame slide: leave it alone and a frame
+    // whose title grew past one line keeps the inset measured for a one-line title,
+    // measured at layer top 80px against the 108px the body actually starts at.
+    const wasScrolling = slideScrolls(slide);
+    const previousHeight = slide.style.getPropertyValue("--beamer-frame-height");
     if (!heading || heading.getBoundingClientRect().width <= 0) {
       reportOverflow(slide);
       return;
@@ -746,6 +1173,15 @@
       "beamer-long-frame-title",
       finalHeight > Math.round(minHeight * SCROLLING_FRAME_TITLE_RATIO)
     );
+    // Re-wrap only when one of those inputs actually moved. This runs on every resize
+    // and every slide change, and re-wrapping rebuilds the layer, which would throw
+    // away the reader's scroll position for nothing.
+    if (
+      previousHeight !== `${finalHeight}px` ||
+      slideScrolls(slide) !== wasScrolling
+    ) {
+      wrapScrollableSlide(slide);
+    }
     reportOverflow(slide);
   };
 
@@ -900,6 +1336,19 @@
     reveal.classList.add(`beamer-${variant}`);
     reveal.classList.toggle("beamer-no-headline", !showHeadline);
 
+    // Ordering runs before pagination, and it has to: pagination decides the page
+    // breaks by walking the entries in DOM order, so reordering afterwards reorders
+    // entries inside pages that were already cut in citeproc's order -- measured on
+    // the pagination fixture as `ref13..ref9 / ref8..ref4 / ref3..ref1` where
+    // `refs-order: declaration` had been asked for `ref1..ref5 / ref6..ref10 /
+    // ref11..ref13`.
+    reorderReferences();
+
+    // Pagination runs before anything counts, numbers or measures the slides: it
+    // creates sections, and those pages are marked uncounted before `slideCounts`
+    // reads `data-visibility`, so the footline's total never moves.
+    paginateReferences();
+
     const info = titleMetadata();
     const counts = slideCounts(slides);
     let section = info.title;
@@ -927,6 +1376,8 @@
       if (h2) {
         slide.classList.add("beamer-frame-slide");
       }
+
+      wrapScrollableSlide(slide);
 
       const context = {
         section: slide.dataset.section || section,

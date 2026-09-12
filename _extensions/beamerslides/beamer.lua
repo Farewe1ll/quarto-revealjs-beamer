@@ -58,6 +58,133 @@ local function include_variant_bootstrap(variant)
   )
 end
 
+-- Entry keys of the bibliography files, in the order they are declared. citeproc
+-- sorts the rendered list by the CSL style's own rules (author order for the
+-- styles Quarto ships), so the declaration order is not recoverable from the HTML
+-- -- and citeproc's own API cannot hand it over either: `pandoc.utils.citeproc`
+-- rejects a path, an inlines value and a list, and `pandoc.read(..., "bibtex")`
+-- parses entries but leaves `meta.bibliography` nil. The keys are therefore read
+-- straight out of the files.
+--
+-- This is a deliberately conservative scan: it matches an entry header
+-- (`@type{key,` or `@type(key,`) and nothing else, so `@string`, `@comment` and
+-- cross-line headers are simply not matched. A key that never matches would
+-- silently produce a wrong order, so the caller compares the extracted count with
+-- the number of rendered entries and falls back rather than guessing.
+local function bib_entry_keys(text)
+  local keys = pandoc.List()
+  for key in text:gmatch("@%a+%s*[%{%(%s]*([%w%-%._%+%/:%*]+)%s*,") do
+    keys:insert(key)
+  end
+  return keys
+end
+
+local function read_file(path)
+  local handle = io.open(path, "r")
+  if handle == nil then
+    return nil
+  end
+  local text = handle:read("a")
+  handle:close()
+  return text
+end
+
+-- Resolve a bibliography path the way pandoc does: as given, then relative to the
+-- project directory, then relative to each resource-path entry.
+local function candidate_paths(value)
+  local paths = pandoc.List()
+  local raw = pandoc.utils.stringify(value)
+  -- `quarto.project` only exists from Quarto 1.5, so the older releases fall back
+  -- to the resource path. That fallback used to skip "." -- which is exactly what
+  -- pandoc reports for a project rendered from its own directory -- and the only
+  -- candidate left was the bare relative path, resolved against whatever the Lua
+  -- process happens to have as its working directory. "." is now expanded first.
+  local project = quarto and quarto.project and quarto.project.directory
+  if project and project ~= "" then
+    paths:insert(project .. "/" .. raw)
+  end
+  local resource = PANDOC_STATE and PANDOC_STATE.resource_path
+  if type(resource) == "table" then
+    for _, entry in ipairs(resource) do
+      if entry == "." then
+        paths:insert(raw)
+      elseif entry ~= "" then
+        paths:insert(entry .. "/" .. raw)
+      end
+    end
+  end
+  -- Last, so that a bare relative path still resolves if nothing else did.
+  paths:insert(raw)
+  return paths
+end
+
+local function bibliography_key_list(meta)
+  local bibliography = meta["bibliography"]
+  if bibliography == nil then
+    return nil
+  end
+
+  local values = pandoc.List()
+  if type(bibliography) == "table" and #bibliography > 0 then
+    for _, value in ipairs(bibliography) do
+      values:insert(value)
+    end
+  else
+    values:insert(bibliography)
+  end
+
+  local keys = pandoc.List()
+  for _, value in ipairs(values) do
+    -- `bibliography: ""` and `bibliography: []` pass Quarto's front-matter schema (a
+    -- bare `bibliography:` does not -- it is rejected before any filter runs), and
+    -- they must not be reported as a file that could not be read.
+    local raw = pandoc.utils.stringify(value)
+    if raw ~= "" then
+      local text = nil
+      for _, path in ipairs(candidate_paths(value)) do
+        text = read_file(path)
+        if text ~= nil then
+          break
+        end
+      end
+      if text == nil then
+        warning(
+          "Could not read bibliography '"
+            .. raw
+            .. "'; references keep citeproc's order."
+        )
+        return nil
+      end
+      for _, key in ipairs(bib_entry_keys(text)) do
+        keys:insert(key)
+      end
+    end
+  end
+
+  if #keys == 0 then
+    return nil
+  end
+  return keys
+end
+
+-- `refs-order: declaration` reorders the reference list into the order the keys
+-- appear in the .bib file(s). The default (`citation`) leaves citeproc's order
+-- alone, so existing documents do not change.
+local function declaration_order_enabled(meta)
+  local raw = stringify(meta["refs-order"])
+  if raw == nil or raw == "" then
+    return false
+  end
+  local value = raw:lower()
+  if value == "declaration" then
+    return true
+  end
+  if value ~= "citation" then
+    warning("Unknown refs-order '" .. value .. "'; using 'citation'.")
+  end
+  return false
+end
+
 local dependency_registered = false
 local function register_dependency()
   if dependency_registered then
@@ -124,6 +251,17 @@ function Meta(meta)
   include_meta("beamer-short-date", stringify(meta["short-date"]))
   include_meta("beamer-secheader", normalized_boolean(meta, "beamer-secheader"))
   include_meta("beamer-progress", normalized_boolean(meta, "beamer-progress"))
+  include_meta("beamer-refs-title", stringify(meta["refs-title"]))
+
+  -- Only shipped when the document asks for declaration order, since it costs a
+  -- read of every bibliography file.
+  if declaration_order_enabled(meta) then
+    local keys = bibliography_key_list(meta)
+    if keys ~= nil then
+      include_meta("beamer-refs-keys", table.concat(keys, ","))
+    end
+  end
+
   include_variant_bootstrap(variant)
   return meta
 end

@@ -1,0 +1,35 @@
+---
+title: "References pagination"
+author: "Pagination Author"
+date: "2026"
+short-title: "Refs pagination"
+short-author: "Pagination Author"
+short-institute: "Pagination Institute"
+short-date: "2026"
+beamer-variant: madrid
+bibliography: tests/fixtures/refs-pagination.bib
+refs-title: "参考文献"
+refs-order: declaration
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+# Section
+
+## Body {#body item="3"}
+
+This frame keeps its own text: `item` here is not a bibliography declaration.
+
+Every entry is cited so citeproc renders all of them [@ref1] [@ref2] [@ref3] [@ref4] [@ref5] [@ref6] [@ref7] [@ref8] [@ref9] [@ref10] [@ref11] [@ref12] [@ref13].
+
+## Grouped pages {#refs-grouped item="5"}
+
+::: {#refs}
+:::
+
+## Continues {#refs-grouped-2 item="5"}
+
+## Last normal {#last-normal}
+
+The page number here must ignore every reference page.
