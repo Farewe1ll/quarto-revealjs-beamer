@@ -10,6 +10,35 @@ Earlier releases predate this file; their history is in the git log.
 
 ### Fixed
 
+- **`h4` now takes the variant's structural accent, not the alert colour.** It
+  was coloured with `--beamer-alert`, which under Madrid is Beamer's `alerted
+  text` red `#ff0000` — only **3.93:1** against the light slide, below the 4.5:1
+  that body-size text needs, so a fourth-level heading was the loudest and least
+  legible text on the slide. It also meant the colour of a heading and the colour
+  of `[text]{.alert}` were the same knob. `h4` now uses `--beamer-structure`, the
+  accent the theme's other furniture (list markers, unfilled block titles, the
+  minimal section look) already uses: Madrid `#3333b2` (9.15:1) and CambridgeUS
+  `#cc0000` (5.79:1), both comfortably above AA. CambridgeUS is unchanged in
+  practice because its `structure` and `alert` are the same darkred. `.alert`
+  inline emphasis keeps `--beamer-alert` and is untouched. Beamer defines no
+  heading-level colours at all — it has no `h4` — so this is a web-side choice,
+  and `structure` is the consistent one.
+- **`h5` and `h6` are themed, which fixes an inverted heading ladder.** The
+  theme defined only `h3` and `h4`, so the two deeper levels fell through to
+  Reveal's own `.reveal h1…h6` rule. That rule sets a *single*
+  `--r-heading-font-size` for every level, so `h5`/`h6` rendered at the full
+  30px — larger than `h3` (27.3px) and `h4` (23.4px), making a fifth-level
+  heading look more important than a third-level one. They also inherited
+  `--r-heading-color`, i.e. Quarto's `$presentation-heading-color` (`#1b3761`),
+  which does not follow the variant palette at all — recolouring the deck left
+  `h5`/`h6` on that fixed navy. Both now take `--beamer-structure` like `h3`/`h4`
+  and step down by the same ratio, giving 27.3 / 23.4 / 20.4 / 18.0 px.
+  Beamer has no `h5`/`h6` either, so this is a web-side choice; the reference
+  `quarto-revealjs-clean` theme also stops at `h4` and leaves the same inversion.
+  The `behavior` fixture now renders `h3`-`h6`, and `testBehavior` asserts each
+  level's colour, its AA contrast, and that the sizes descend in order — so
+  neither the `h4` colour nor this ladder can regress silently again.
+
 - Chrome injection now also wins the race against Reveal's own `ready` class.
   Reveal publishes that class from a timer that can fire while the document is
   still loading (its deferred scripts are still being fetched), so waiting for
@@ -201,6 +230,34 @@ Earlier releases predate this file; their history is in the git log.
 - Print-layout validation now asserts that a section title band is pinned under
   the headline and spans the frame-title width, rather than that section content
   is vertically centred.
+
+### Removed
+
+- **Dead CSS variable `--beamer-section-offset`.** It was declared as `0px` and
+  read only by the section-title `top` calc, but nothing ever wrote it, so that
+  calc was always equal to `var(--beamer-active-headline-height)`. The `top`
+  declaration now says that directly. Overriding the variable had no effect
+  before and has no effect now. The README claim that `beamer.js` supplies a
+  section "centring offset" was wrong and has been corrected — the section looks
+  are entirely declarative.
+- **Four classes nothing consumed.** `beamer-title-slide`,
+  `beamer-has-headline`, `beamer-has-progress` and `beamer-uncounted-slide` were
+  emitted by `beamer.js` but selected by no rule in the extension, the shipped
+  examples or any documented hook. The title slide is already addressable as
+  `#title-slide`, an uncounted slide as `[data-visibility="uncounted"]`, and the
+  positive headline/progress states are the defaults — only
+  `beamer-no-headline` encodes a non-default state and is kept. The redundant
+  `beamer-<variant>` class on `<body>` went with them; the variant class stays
+  on `<html>` (set by the in-header bootstrap) and on `.reveal`.
+  Tests that asserted these classes now assert the rendered outcome instead: the
+  headline element is present, and an uncounted slide carries no page number
+  (the following slide reporting "5 / 5" is what proves it was excluded).
+- Unreachable `var()` fallbacks on `--beamer-section-fill` / `--beamer-section-fg`
+  in the badge look. The palette defines both badge variables unconditionally
+  for every variant, so the fallbacks could never be reached. The fallbacks on
+  the shared section-title rule are kept — those *are* reachable, since the
+  minimal look sets no fill.
+- The unused `printLayoutMeasurementSource` import in `run-tests.mjs`.
 
 ## [0.3.0] - 2026-09-08
 
