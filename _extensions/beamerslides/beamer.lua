@@ -185,6 +185,21 @@ local function declaration_order_enabled(meta)
   return false
 end
 
+-- `refs-overflow: scroll` keeps the bibliography on the one page Quarto produces and lets
+-- it scroll instead of paginating. The default (`paginate`) is unchanged.
+local function resolved_refs_overflow(meta)
+  local raw = stringify(meta["refs-overflow"])
+  if raw == nil or raw == "" then
+    return "paginate"
+  end
+  local value = raw:lower()
+  if value == "paginate" or value == "scroll" then
+    return value
+  end
+  warning("Unknown refs-overflow '" .. value .. "'; using 'paginate'.")
+  return "paginate"
+end
+
 local dependency_registered = false
 local function register_dependency()
   if dependency_registered then
@@ -252,6 +267,7 @@ function Meta(meta)
   include_meta("beamer-secheader", normalized_boolean(meta, "beamer-secheader"))
   include_meta("beamer-progress", normalized_boolean(meta, "beamer-progress"))
   include_meta("beamer-refs-title", stringify(meta["refs-title"]))
+  include_meta("beamer-refs-overflow", resolved_refs_overflow(meta))
 
   -- Only shipped when the document asks for declaration order, since it costs a
   -- read of every bibliography file.

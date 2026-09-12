@@ -2590,6 +2590,17 @@ const testReferencesPagination = async (connection, origin) => {
       `no reference page may overflow: ${JSON.stringify(entry)}`
     );
   }
+  // Every reference page must be laid out identically. They are not all present when the
+  // box classes are applied -- `beamer-frame-slide` is what reserves the frame title's
+  // height in the slide's padding -- and a page missing it has 46px more room than the
+  // page it continues (measured 638px against 592px). Pagination that measures pages
+  // against a different box than they end up with cuts them one entry too late, and the
+  // page comes back needing a scrollbar.
+  assert.equal(
+    new Set(state.pages.map((entry) => entry.available)).size,
+    1,
+    `every reference page must reserve the same room: ${JSON.stringify(state.pages)}`
+  );
   // Reference pages never join the page count or show a number of their own.
   assert.equal(state.lastNormal, "4 / 4", JSON.stringify(state));
   // `item` is a generic attribute name, so the frame that uses it for its own
@@ -2704,6 +2715,287 @@ const testReferencesPagination = async (connection, origin) => {
     `a surplus declaration must be reported once: ${JSON.stringify(surplus.warnings)}`
   );
   await surplusPage.close();
+};
+
+// The other half of the reference pagination: no `item` is declared, so every break is
+// measured. This path is also where two defects showed up at once -- the sections the
+// pagination creates were missing from the list the decoration loop walked, so they got no
+// footline, and the box classes were applied after the measurement, so the first page was
+// cut against 46px of room it does not have and came back with a scrollbar.
+const testReferencesAutoPages = async (connection, origin) => {
+  // No hash on purpose: this is the path a reader takes. Reveal renders only the current
+  // slide, so opening the deck at the start leaves the references slide `display: none`
+  // while the theme decorates it -- and a hidden box measures 0x0, which made the overflow
+  // check answer "no" for every entry. Every fixture here used to jump straight to the
+  // references slide, which is the one state where that cannot happen.
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/refs-auto.html`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  await delay(500);
+  // Each page is shown before it is measured for the same reason: a hidden page reports a
+  // zero-height box, so `needsScroll` on one would be meaningless.
+  const state = await page.evaluate(`(async () => {
+    const pages = [];
+    const slides = Array.from(document.querySelectorAll(".beamer-leaf-slide")).filter(
+      (slide) => slide.querySelector("#refs")
+    );
+    // The fixture has to reproduce the state a reader's deck is in, or this test cannot see
+    // the defect it exists for: Reveal renders only the top-level sections within
+    // viewDistance of the current one, so the references stack at the end of a deck is
+    // hidden while the theme decorates it.
+    const firstStack = slides.length ? slides[0].parentElement : null;
+    const hiddenAtLoad = firstStack
+      ? getComputedStyle(firstStack).display === "none"
+      : null;
+    for (const slide of slides) {
+      const indices = window.Reveal.getIndices(slide);
+      window.Reveal.slide(indices.h, indices.v, 0);
+      await new Promise((resolve) => setTimeout(resolve, 90));
+      const container = slide.querySelector("#refs");
+      const layer = slide.querySelector(":scope > .beamer-scroll") || slide;
+      pages.push({
+        id: slide.id,
+        entries: container.querySelectorAll(".csl-entry").length,
+        visibility: slide.dataset.visibility || null,
+        hasFootline: Boolean(slide.querySelector(":scope > .beamer-footline")),
+        available: layer.clientHeight,
+        needsScroll: layer.scrollHeight > layer.clientHeight + 1,
+        // A page appended after Reveal initialised is not in its model, and Quarto's
+        // support.js reads getSlideBackground(currentSlide).classList on every
+        // slidechanged: for an unknown slide that is undefined.classList, which threw
+        // out of the plugin on every navigation into a generated page.
+        knownToReveal: Boolean(window.Reveal.getSlideBackground(slide))
+      });
+    }
+    const ids = Array.from(document.querySelectorAll(".csl-entry")).map((e) => e.id);
+    return {
+      pages,
+      hiddenAtLoad,
+      totalEntries: ids.length,
+      uniqueEntries: new Set(ids).size,
+      warnings: window.__beamerWarnings
+    };
+  })()`);
+
+  assert.equal(
+    state.hiddenAtLoad,
+    true,
+    `the fixture must hide the references stack at load, or it cannot see this defect: ${JSON.stringify(state)}`
+  );
+  // The blind measurement this replaces put all thirteen on one page.
+  assert(
+    state.pages.length >= 2,
+    `thirteen entries must not fit on one page, and the deck must paginate without being opened on the references page: ${JSON.stringify(state)}`
+  );
+  assert.equal(state.totalEntries, 13, JSON.stringify(state));
+  assert.equal(state.uniqueEntries, 13, JSON.stringify(state));
+  for (const entry of state.pages) {
+    // The references page carries Quarto's `.scrollable`, so a page cut too late does not
+    // fail loudly -- it silently becomes a page the reader has to scroll. The whole point
+    // of measuring the break is that the page it produces fits.
+    assert.equal(
+      entry.needsScroll,
+      false,
+      `no reference page may need scrolling: ${JSON.stringify(state)}`
+    );
+    assert.equal(entry.visibility, "uncounted", JSON.stringify(entry));
+    assert(entry.entries > 0, JSON.stringify(entry));
+    // A page created by the pagination is a slide like any other and needs its chrome.
+    assert.equal(
+      entry.hasFootline,
+      true,
+      `a generated reference page must carry the footline: ${JSON.stringify(state)}`
+    );
+    // ...and Reveal has to know about it, or Quarto's footer plugin throws on the way in.
+    assert.equal(
+      entry.knownToReveal,
+      true,
+      `Reveal must know every reference page: ${JSON.stringify(state)}`
+    );
+  }
+  assert.equal(
+    new Set(state.pages.map((entry) => entry.available)).size,
+    1,
+    `every reference page must reserve the same room: ${JSON.stringify(state.pages)}`
+  );
+  const refsWarnings = state.warnings.filter((line) =>
+    line.includes("[beamerslides] the references")
+  );
+  assert.equal(refsWarnings.length, 1, JSON.stringify(state.warnings));
+  // The split itself is measured, so only the shape of the report is pinned here.
+  assert.match(
+    refsWarnings[0],
+    /^\[beamerslides\] the references need 2 pages but 1 was declared, so 1 page was added; the first entry moved is ref\d+\. Move a page break earlier, or lower --beamer-refs-font-size\.$/
+  );
+  await page.close();
+};
+
+// `refs-overflow: scroll` is the opt-out from pagination: the bibliography stays on the one
+// page Quarto produces and scrolls there. The interesting part is that "it scrolls" has to
+// mean the same thing as everywhere else in the theme -- the body moves, the chrome does not
+// -- and that the page still stays out of the footline's page count.
+const testReferencesScroll = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/refs-scroll.html`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  await delay(500);
+  const state = await page.evaluate(`(async () => {
+    const slide = Array.from(document.querySelectorAll(".beamer-leaf-slide")).find(
+      (entry) => entry.querySelector("#refs")
+    );
+    const indices = window.Reveal.getIndices(slide);
+    window.Reveal.slide(indices.h, indices.v, 0);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const container = slide.querySelector("#refs");
+    const layer = slide.querySelector(":scope > .beamer-scroll");
+    const body = layer || slide;
+    const footer = slide.querySelector(":scope > .beamer-footline");
+    const blocks = Array.from(container.querySelectorAll(".csl-entry"));
+    const last = blocks[blocks.length - 1];
+    const footerTopBefore = footer.getBoundingClientRect().top;
+    body.scrollTop = body.scrollHeight;
+    const lastRect = last.getBoundingClientRect();
+    const footerRect = footer.getBoundingClientRect();
+    const result = {
+      refsContainers: document.querySelectorAll("#refs").length,
+      entries: blocks.length,
+      uncounted: slide.dataset.visibility || null,
+      hasLayer: Boolean(layer),
+      overflows: body.scrollHeight > body.clientHeight + 1,
+      scrolled: Math.round(body.scrollTop),
+      lastEntryReachable: lastRect.bottom <= slide.getBoundingClientRect().bottom + 1,
+      lastEntryClearOfFooter: lastRect.bottom <= footerRect.top + 1,
+      footerStayedPut: Math.abs(footerRect.top - footerTopBefore) < 1,
+      footerStillInSlide:
+        footerRect.top >= slide.getBoundingClientRect().top - 1 &&
+        footerRect.bottom <= slide.getBoundingClientRect().bottom + 1,
+      warnings: window.__beamerWarnings
+    };
+    body.scrollTop = 0;
+    return result;
+  })()`);
+
+  assert.equal(state.refsContainers, 1, JSON.stringify(state));
+  assert.equal(state.entries, 13, JSON.stringify(state));
+  assert.equal(state.uncounted, "uncounted", JSON.stringify(state));
+  assert.equal(state.hasLayer, true, JSON.stringify(state));
+  assert(
+    state.overflows,
+    `the fixture must actually overflow, or this test proves nothing: ${JSON.stringify(state)}`
+  );
+  assert(state.scrolled > 2, JSON.stringify(state));
+  assert.equal(state.lastEntryReachable, true, JSON.stringify(state));
+  assert.equal(state.lastEntryClearOfFooter, true, JSON.stringify(state));
+  // Scrolling must not carry the chrome away, exactly as for any other scrolling frame.
+  assert.equal(state.footerStayedPut, true, JSON.stringify(state));
+  assert.equal(state.footerStillInSlide, true, JSON.stringify(state));
+  // No page was added, so there is nothing to report.
+  assert.deepEqual(
+    state.warnings.filter((line) => line.includes("[beamerslides] the references")),
+    [],
+    JSON.stringify(state.warnings)
+  );
+  await page.close();
+
+  // A declared page break contradicts the mode, so it is reported rather than obeyed.
+  const itemPage = await BrowserPage.create(
+    connection,
+    `${origin}/refs-scroll-item.html#/refs-grouped`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  await delay(500);
+  const itemState = await itemPage.evaluate(`(() => ({
+    refsContainers: document.querySelectorAll("#refs").length,
+    entriesOnFirst: document.querySelectorAll("#refs .csl-entry").length,
+    totalEntries: document.querySelectorAll(".csl-entry").length,
+    warnings: window.__beamerWarnings.filter((line) =>
+      line.includes("[beamerslides]")
+    )
+  }))()`);
+  assert.equal(
+    itemState.refsContainers,
+    1,
+    `the mode must not paginate: ${JSON.stringify(itemState)}`
+  );
+  assert.equal(itemState.entriesOnFirst, 13, JSON.stringify(itemState));
+  assert.equal(itemState.totalEntries, 13, JSON.stringify(itemState));
+  assert.deepEqual(
+    itemState.warnings,
+    [
+      "[beamerslides] refs-overflow: scroll keeps the references on one page, so the " +
+        "`item` page breaks are ignored. Remove them, or drop refs-overflow: scroll."
+    ],
+    JSON.stringify(itemState.warnings)
+  );
+  await itemPage.close();
+
+  // An unknown value must land on the default, not on whichever branch happens to be last.
+  // The fixture declares `item="5"`, so a paginating deck shows more than one `#refs`.
+  const bogusPage = await BrowserPage.create(
+    connection,
+    `${origin}/refs-bogus.html#/refs-grouped`
+  );
+  await delay(400);
+  const bogusState = await bogusPage.evaluate(`(() => ({
+    refsContainers: document.querySelectorAll("#refs").length
+  }))()`);
+  assert(
+    bogusState.refsContainers > 1,
+    `an unknown refs-overflow must fall back to paginating: ${JSON.stringify(bogusState)}`
+  );
+  await bogusPage.close();
+
+  // A bibliography with nothing cited is still a references page, and the two modes must not
+  // disagree about what that does to the page count: marking it uncounted only on the
+  // paginated path made the same deck read 5/5 in one mode and 4/4 in the other.
+  const emptyCounts = {};
+  for (const [mode, file] of [
+    ["paginate", "refs-empty.html"],
+    ["scroll", "refs-empty-scroll.html"]
+  ]) {
+    const emptyPage = await BrowserPage.create(
+      connection,
+      `${origin}/${file}#/empty-refs`
+    );
+    await delay(400);
+    emptyCounts[mode] = await emptyPage.evaluate(`(() => {
+      const refs = document.getElementById("empty-refs");
+      return {
+        entries: refs.querySelectorAll(".csl-entry").length,
+        visibility: refs.dataset.visibility || null,
+        lastNormal: (
+          document.querySelector(
+            "#empty-last > .beamer-footline .beamer-footline-number"
+          ) || {}
+        ).textContent || null
+      };
+    })()`);
+    await emptyPage.close();
+  }
+  assert.equal(emptyCounts.paginate.entries, 0, JSON.stringify(emptyCounts));
+  assert.equal(emptyCounts.scroll.entries, 0, JSON.stringify(emptyCounts));
+  assert.equal(
+    emptyCounts.paginate.visibility,
+    "uncounted",
+    `an empty references page is still a references page: ${JSON.stringify(emptyCounts)}`
+  );
+  assert.equal(
+    emptyCounts.scroll.visibility,
+    "uncounted",
+    JSON.stringify(emptyCounts)
+  );
+  assert.equal(
+    emptyCounts.paginate.lastNormal,
+    emptyCounts.scroll.lastNormal,
+    `refs-overflow must not move the page count: ${JSON.stringify(emptyCounts)}`
+  );
 };
 
 // The scroll layer is built once, but both of its inputs are rewritten later: the
@@ -3199,6 +3491,7 @@ try {
   run("node", ["--check", "_extensions/beamerslides/beamer.js"]);
   renderTemplate("template");
   renderTemplate("template-cambridgeus");
+  let bogusRefsOverflowStderr = "";
   for (const fixture of [
     "madrid",
     "cambridgeus",
@@ -3208,10 +3501,33 @@ try {
     "behavior",
     "refs-pagination",
     "refs-surplus",
+    "refs-auto",
+    "refs-empty",
     "scroll-layers",
   ]) {
     renderFixture(fixture);
   }
+  // `refs-overflow: scroll` keeps the bibliography on one page; reused sources keep the
+  // fixtures to a minimum, and one of them declares `item` so the ignored-breaks warning is
+  // covered too.
+  renderFixture("refs-scroll", {
+    source: "refs-auto",
+    metadata: { "refs-overflow": "scroll" },
+  });
+  renderFixture("refs-scroll-item", {
+    source: "refs-pagination",
+    metadata: { "refs-overflow": "scroll" },
+  });
+  // The same deck with nothing cited, in both modes, plus an unknown value: the Lua side has
+  // to warn and fall back to paginating rather than guess.
+  renderFixture("refs-empty-scroll", {
+    source: "refs-empty",
+    metadata: { "refs-overflow": "scroll" },
+  });
+  bogusRefsOverflowStderr = renderFixture("refs-bogus", {
+    source: "refs-pagination",
+    metadata: { "refs-overflow": "bogus", "refs-order": "bogus" },
+  });
   renderFixture("spacing-madrid", {
     source: "spacing",
     metadata: { "beamer-variant": "madrid" },
@@ -3237,6 +3553,16 @@ try {
   assert.doesNotMatch(
     readFileSync(join(outputDir, "offline.html"), "utf8"),
     /https:\/\/cdn\.jsdelivr\.net\/npm\/katex/
+  );
+  // An unusable `refs-overflow` is reported by the filter and falls back to the default; the
+  // test below also checks that the deck really paginated rather than silently scrolling.
+  assert.match(
+    bogusRefsOverflowStderr,
+    /Unknown refs-overflow 'bogus'; using 'paginate'\./
+  );
+  assert.match(
+    bogusRefsOverflowStderr,
+    /Unknown refs-order 'bogus'; using 'citation'\./
   );
 
   // Two suites at once share this checkout: fixed temporary input names in the
@@ -3264,6 +3590,8 @@ try {
   await testPaletteOverrides(chrome.connection, local.origin);
   await testBlockTitles(chrome.connection, local.origin);
   await testReferencesPagination(chrome.connection, local.origin);
+  await testReferencesAutoPages(chrome.connection, local.origin);
+  await testReferencesScroll(chrome.connection, local.origin);
   await testScrollLayers(chrome.connection, local.origin);
   await testPaletteAlgebra(chrome.connection, local.origin);
   await testSectionStyles(chrome.connection, local.origin);

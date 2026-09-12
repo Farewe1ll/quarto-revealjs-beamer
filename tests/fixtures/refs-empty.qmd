@@ -1,0 +1,31 @@
+---
+title: "References with nothing cited"
+author: "Pagination Author"
+date: "2026"
+short-title: "Refs empty"
+short-author: "Pagination Author"
+short-institute: "Pagination Institute"
+short-date: "2026"
+beamer-variant: madrid
+bibliography: tests/fixtures/refs-pagination.bib
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+# Section
+
+## Body
+
+Nothing is cited, so the bibliography renders no entries at all. The page still is a
+references page, and both `refs-overflow` modes have to agree on what that means for the
+page count.
+
+## References {#empty-refs}
+
+::: {#refs}
+:::
+
+## Last normal {#empty-last}
+
+The number here must not depend on `refs-overflow`.

@@ -1,0 +1,42 @@
+---
+title: "References without a declared page size"
+author: "Pagination Author"
+date: "2026"
+short-title: "Refs auto"
+short-author: "Pagination Author"
+short-institute: "Pagination Institute"
+short-date: "2026"
+beamer-variant: madrid
+bibliography: tests/fixtures/refs-pagination.bib
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+# Section
+
+## Body {#auto-body}
+
+No `item` is declared anywhere here, so every break has to be measured. All thirteen
+entries are cited: [@ref1] [@ref2] [@ref3] [@ref4] [@ref5] [@ref6] [@ref7] [@ref8] [@ref9] [@ref10] [@ref11] [@ref12] [@ref13]
+
+# Second
+
+## A frame
+
+The references belong at the end of a deck, which is exactly where Reveal stops laying
+slides out: it renders only the top-level sections within `viewDistance` of the current
+one, and hides the stack that holds a slide beyond that.
+
+# Third
+
+## Another frame
+
+Content.
+
+# Fourth
+
+## 参考文献 {#auto-refs}
+
+::: {#refs}
+:::

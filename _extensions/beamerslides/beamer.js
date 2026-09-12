@@ -718,6 +718,44 @@
     return container.querySelector(".csl-entry")?.parentElement || container;
   };
 
+  // `refs-overflow: scroll` keeps the bibliography on the one page Quarto produces and lets
+  // it scroll, instead of measuring page breaks. Nothing is split and nothing is generated:
+  // the page keeps every entry, the scroll layer (which keeps the chrome still) comes from
+  // the usual pass, and the page is marked uncounted like the paginated ones so switching
+  // modes does not move the footline's page count.
+  const refsOverflowScroll = () => meta("beamer-refs-overflow") === "scroll";
+
+  // The rule both modes share, and the reason switching modes cannot move the footline's
+  // page count: a references page never takes part in it. It has to be applied even when the
+  // bibliography is empty -- `::: {#refs}` with nothing cited is a references page too, and
+  // marking it only on the paginated path made the two modes disagree (measured 5/5 against
+  // 4/4 on the same deck).
+  const markReferencesUncounted = (pages) => {
+    pages.forEach((slide) => {
+      slide.dataset.visibility = "uncounted";
+    });
+  };
+
+  const prepareScrollableReferences = () => {
+    const pages = refsPages();
+    if (pages.length === 0) {
+      return;
+    }
+    // The two are contradictory: `item` asks for breaks, this mode asks for one page.
+    if (pages.some((slide) => slide.dataset.item !== undefined)) {
+      console.warn(
+        "[beamerslides] refs-overflow: scroll keeps the references on one page, so the " +
+          "`item` page breaks are ignored. Remove them, or drop refs-overflow: scroll."
+      );
+    }
+    pages.forEach((slide) => {
+      // Quarto gives the references page `.smaller .scrollable`, but the mode promises a
+      // scrollable page, so it does not depend on that.
+      slide.classList.add("scrollable");
+    });
+    markReferencesUncounted(pages);
+  };
+
   const paginateReferences = () => {
     const pages = refsPages();
     if (pages.length === 0) {
@@ -729,8 +767,45 @@
     }
     const all = Array.from(master.querySelectorAll(".csl-entry"));
     if (all.length === 0) {
+      markReferencesUncounted(pages);
       return;
     }
+
+    // A hidden box has no geometry, and Reveal hides every slide but the current one
+    // (`display: none`). A deck being read from the start therefore has its references
+    // slide hidden while the theme decorates it, and `layerOverflows` -- which asks the
+    // browser `scrollHeight > clientHeight` -- answers "no" for every entry: a 26-entry
+    // bibliography stayed on one page (measured 0/0 on the layer, 909px of content in a
+    // 592px box once its page was shown). So the pages are rendered for the duration of
+    // this pass and put back afterwards. The pass is synchronous, so nothing can paint in
+    // between; the inline value is restored, leaving Reveal's class-driven display in
+    // charge.
+    const previousDisplay = new Map();
+    const renderForMeasurement = (slide) => {
+      // The whole ancestor chain, not just the page. Reveal writes `display` inline on the
+      // stack that holds a slide as well, and it only renders the top-level sections within
+      // `viewDistance` (3 by default) of the current one -- so the references slide at the
+      // end of a deck sits inside a hidden stack, and forcing the page alone still measures
+      // 0x0. Measured on a real deck: layer 0/0 with only the page forced, 560px of room and
+      // 799px of content with its stack forced too.
+      for (
+        let node = slide;
+        node && node.tagName === "SECTION";
+        node = node.parentElement
+      ) {
+        if (!previousDisplay.has(node)) {
+          previousDisplay.set(node, node.style.display);
+          node.style.display = "block";
+        }
+      }
+      return slide;
+    };
+    const restoreDisplay = () => {
+      previousDisplay.forEach((value, slide) => {
+        slide.style.display = value;
+      });
+      previousDisplay.clear();
+    };
 
     // Quarto gives `.smaller .scrollable` only to the page that actually contains
     // `::: {#refs}`; a declared continuation page is left bare. Left alone the same
@@ -750,6 +825,7 @@
       // here. Without it the overflow check falls back to measuring the slide, which
       // is 720/720 on every page and therefore never reports an overflow.
       slide.classList.add("beamer-leaf-slide");
+      renderForMeasurement(slide);
       wrapScrollableSlide(slide);
     });
 
@@ -781,6 +857,7 @@
       slide.appendChild(container);
       template.parentElement.insertBefore(slide, template.nextElementSibling);
       slide.classList.add("beamer-leaf-slide");
+      renderForMeasurement(slide);
       wrapScrollableSlide(slide);
       pages.push(slide);
       return slide;
@@ -794,45 +871,53 @@
     // killed the "pages were added" warning below.
     const declaredCount = pages.length;
     const slices = [];
-    let index = 0;
-    let pageIndex = 0;
-    while (index < all.length) {
-      const slide = ensurePage(pageIndex);
-      const list = entryList(slide, master);
-      // Start from an emptied list: the clones are the only content while measuring.
-      // Only the entries are removed -- clearing `textContent` also deletes the list
-      // element itself when the container has no inner wrapper, which was measured as
-      // the whole bibliography collapsing onto one page.
-      Array.from(list.querySelectorAll(".csl-entry")).forEach((entry) =>
-        entry.remove()
-      );
-      const wanted = (() => {
-        const value = declared[Math.min(pageIndex, declared.length - 1)];
-        return value === null || value === undefined ? null : value;
-      })();
+    // The forced display only has to last as long as the pages are being measured --
+    // the fill below moves the real entries and does not measure anything -- and it is
+    // restored in a `finally`, because a page left rendered that Reveal believes is
+    // hidden would sit on top of the deck.
+    try {
+      let index = 0;
+      let pageIndex = 0;
+      while (index < all.length) {
+        const slide = ensurePage(pageIndex);
+        const list = entryList(slide, master);
+        // Start from an emptied list: the clones are the only content while measuring.
+        // Only the entries are removed -- clearing `textContent` also deletes the list
+        // element itself when the container has no inner wrapper, which was measured as
+        // the whole bibliography collapsing onto one page.
+        Array.from(list.querySelectorAll(".csl-entry")).forEach((entry) =>
+          entry.remove()
+        );
+        const wanted = (() => {
+          const value = declared[Math.min(pageIndex, declared.length - 1)];
+          return value === null || value === undefined ? null : value;
+        })();
 
-      const slice = [];
-      while (index + slice.length < all.length) {
-        if (wanted !== null && slice.length >= wanted) {
-          break;
+        const slice = [];
+        while (index + slice.length < all.length) {
+          if (wanted !== null && slice.length >= wanted) {
+            break;
+          }
+          const clone = cloneEntry(all[index + slice.length]);
+          list.appendChild(clone);
+          if (layerOverflows(slide) && slice.length > 0) {
+            clone.remove();
+            break;
+          }
+          slice.push(all[index + slice.length]);
         }
-        const clone = cloneEntry(all[index + slice.length]);
-        list.appendChild(clone);
-        if (layerOverflows(slide) && slice.length > 0) {
-          clone.remove();
-          break;
+        // Progress guard. With the overflow test above requiring a non-empty slice the
+        // first entry is always kept, so this cannot trigger today -- it is here so that
+        // a future change to that test fails one page late instead of hanging the tab.
+        if (slice.length === 0) {
+          slice.push(all[index]);
         }
-        slice.push(all[index + slice.length]);
+        slices.push(slice);
+        index += slice.length;
+        pageIndex += 1;
       }
-      // Progress guard. With the overflow test above requiring a non-empty slice the
-      // first entry is always kept, so this cannot trigger today -- it is here so that
-      // a future change to that test fails one page late instead of hanging the tab.
-      if (slice.length === 0) {
-        slice.push(all[index]);
-      }
-      slices.push(slice);
-      index += slice.length;
-      pageIndex += 1;
+    } finally {
+      restoreDisplay();
     }
 
     const added = slices.length - declaredCount;
@@ -879,6 +964,11 @@
       }
       slide.dataset.visibility = "uncounted";
     });
+
+    // Reported to the caller: sections appended after Reveal initialised are not in
+    // Reveal's model, and Quarto's `support.js` plugin dereferences
+    // `Reveal.getSlideBackground(currentSlide)` on every `slidechanged`.
+    return added;
   };
 
   const appendSpan = (parent, className, value) => {
@@ -1097,6 +1187,29 @@
     }
   };
 
+  // The classes that decide a slide's box, plus the scroll layer that is inset from
+  // them. This runs over every slide *before* the reference pagination measures anything:
+  // pagination asks the browser how many entries fit, so the pages have to be laid out
+  // the way they will end up. It is not run again afterwards -- the pages pagination
+  // generates copy the classes of the page they are modelled on, and `ensurePage` wraps
+  // them.
+  const applySlideBox = (slide) => {
+    slide.classList.add("beamer-leaf-slide");
+    slide.classList.toggle(
+      "beamer-center-slide",
+      slide.classList.contains("center")
+    );
+    // The title slide needs no marker class of its own: it is `#title-slide`,
+    // and the stylesheet selects it by that id.
+    if (slide.id !== "title-slide" && directHeading(slide, "h1")) {
+      slide.classList.add("beamer-section-slide");
+    }
+    if (directHeading(slide, "h2")) {
+      slide.classList.add("beamer-frame-slide");
+    }
+    wrapScrollableSlide(slide);
+  };
+
   // In print/PDF layout Reveal paginates the deck, so a slide's client height no
   // longer describes the space its content has. Measuring there reports phantom
   // overflows, so the check is screen-only.
@@ -1296,6 +1409,7 @@
   let chromeAttempts = 0;
   let chromeObserver = null;
   let chromeInjected = false;
+  let generatedRefsPages = 0;
 
   const decorateChrome = () => {
     const reveal = document.querySelector(".reveal");
@@ -1306,7 +1420,7 @@
       return true;
     }
 
-    const slides = leafSlides();
+    let slides = leafSlides();
     if (slides.length === 0) {
       return false;
     }
@@ -1342,12 +1456,38 @@
     // the pagination fixture as `ref13..ref9 / ref8..ref4 / ref3..ref1` where
     // `refs-order: declaration` had been asked for `ref1..ref5 / ref6..ref10 /
     // ref11..ref13`.
+    // Every slide gets its box before anything measures one. `beamer-frame-slide` is
+    // what reserves the frame title's height in the slide's padding -- 58px + 22px
+    // against the base 34px -- and this used to be applied in the decoration loop below,
+    // after the references had already been measured. The first reference page was
+    // therefore measured against 46px of room it does not have: it was cut one entry too
+    // late and came back with 37px of overflow, a scrollbar on a page that was supposed
+    // to fit. `wrapScrollableSlide` belongs here too, because the layer's inset is read
+    // from that same padding.
+    // The mode is resolved before the boxes are applied: it is what makes the references page
+    // scrollable, and the scroll layer is built from those classes.
+    const scrollReferences = refsOverflowScroll();
+    if (scrollReferences) {
+      prepareScrollableReferences();
+    }
+
+    slides.forEach(applySlideBox);
+
     reorderReferences();
 
     // Pagination runs before anything counts, numbers or measures the slides: it
     // creates sections, and those pages are marked uncounted before `slideCounts`
     // reads `data-visibility`, so the footline's total never moves.
-    paginateReferences();
+    if (!scrollReferences) {
+      generatedRefsPages = paginateReferences() || 0;
+    }
+
+    // ...but those sections are appended, so the slide list has to be re-read before
+    // they can be counted or decorated. A generated page is a slide like any other: left
+    // out of this list it received no chrome at all -- measured as `hasFootline: false`
+    // on both generated pages of a three-page bibliography, while every other slide had
+    // one.
+    slides = leafSlides();
 
     const info = titleMetadata();
     const counts = slideCounts(slides);
@@ -1357,27 +1497,13 @@
       const h1 = directHeading(slide, "h1");
       const h2 = directHeading(slide, "h2");
 
-      slide.classList.add("beamer-leaf-slide");
-      slide.classList.toggle(
-        "beamer-center-slide",
-        slide.classList.contains("center")
-      );
       // Reveal measures the slide before Beamer's full-height layout is added.
       // Its earlier top offset is stale once flex centering owns the content area.
       slide.style.removeProperty("top");
 
-      // The title slide needs no marker class of its own: it is `#title-slide`,
-      // and the stylesheet selects it by that id.
       if (slide.id !== "title-slide" && h1) {
         section = text(h1) || section;
-        slide.classList.add("beamer-section-slide");
       }
-
-      if (h2) {
-        slide.classList.add("beamer-frame-slide");
-      }
-
-      wrapScrollableSlide(slide);
 
       const context = {
         section: slide.dataset.section || section,
@@ -1490,6 +1616,19 @@
       return;
     }
     reveal.dataset.beamerDecorated = "true";
+
+    // The sections the pagination appended are not in Reveal's model: it builds that when
+    // it initialises, and `paginateReferences` runs earlier than that -- the chrome
+    // injection it belongs to deliberately beats Reveal's first paint. A slide Reveal does
+    // not know has no background, so Quarto's own `support.js` plugin threw on every
+    // `slidechanged` into one of these pages:
+    // `TypeError: Cannot read properties of undefined (reading 'classList')` from
+    // `quarto-support/support.js`, i.e. navigating to a generated reference page logged an
+    // exception and aborted Quarto's footer handling. `Reveal.sync()` re-reads the DOM and
+    // registers them.
+    if (generatedRefsPages > 0 && typeof window.Reveal.sync === "function") {
+      window.Reveal.sync();
+    }
 
     const slides = leafSlides();
     const revealConfig =

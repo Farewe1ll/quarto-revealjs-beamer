@@ -188,6 +188,40 @@ Earlier releases predate this file; their history is in the git log.
     entries into it.
   - Every reference page is marked `uncounted`, so the footline's page count does
     not move no matter how many pages the bibliography needs.
+  - A reference page never needs a scrollbar: the break is measured, so the page the
+    pagination produces fits. Four things had to be true for that to hold.
+    The box classes are applied *before* the measurement — `beamer-frame-slide` is what
+    reserves the frame title's height in the slide's padding, and applying it
+    afterwards left the first page measured against 46px of room it does not have,
+    cut one entry too late, overflowing by 37px on a page that was supposed to fit
+    (and 638px of room on the pages that never got the class, against 592px on the
+    page they continue).
+    The pages *and their ancestor stack* are rendered for the duration of the
+    measurement, and restored afterwards: a hidden box measures 0×0, so
+    `scrollHeight > clientHeight` answered "no" for every entry. That is the state a
+    deck is in when a reader opens it at the start — the references slide is far away
+    — so the automatic path never paginated at all (26 entries left on one page, 909px
+    of content in a 592px box) and a declared `item` larger than what fits was never
+    cut back. Reveal hides these slides by writing `display` inline on the stack that
+    holds them and only lays out the top-level sections within `viewDistance` (3 by
+    default) of the current one, so forcing the page alone is not enough: a deck with
+    its references at the end (h=3) kept measuring 0/0, and 560px of room against
+    799px of content once the stack was forced too. Every fixture used to jump
+    straight to the references slide — the one state where none of this can happen —
+    and the first version of this fixture put the references one section in, still
+    inside the rendered window; `refs-auto` now opens the deck normally, keeps the
+    references four sections in, and asserts that the stack is hidden at load, so the
+    fixture cannot quietly stop reproducing the condition.
+    The slide list is re-read *after* the pagination appends its sections, because a
+    page the pagination creates is a slide like any other: left out of the list, both
+    generated pages of a three-page bibliography had no footline at all while every
+    other slide had one.
+    And `Reveal.sync()` runs before that list is read, because a section appended after
+    Reveal initialised is not in its model: `Reveal.getSlideBackground()` answers
+    `undefined` for it, and Quarto's own `support.js` dereferences that on every
+    `slidechanged`, so navigating into a generated page threw
+    `TypeError: Cannot read properties of undefined (reading 'classList')` out of the
+    plugin and aborted Quarto's footer handling.
   - The declared page count is reconciled with what the bibliography actually needs,
     in both directions. Too few pages: the console reports how many were added and
     **which entry moved first**, so the author can move a break rather than hunt for
@@ -206,6 +240,11 @@ Earlier releases predate this file; their history is in the git log.
     Ordering runs **before** the page breaks are measured, so the split follows the
     declared order as well; applied afterwards it only reordered entries inside
     pages that had already been cut in citeproc's order.
+  - `refs-overflow: scroll` opts out of pagination entirely: the bibliography stays on the
+    one page Quarto produces and scrolls inside it, with the headline, frame title and
+    footline still — the same treatment any `.scrollable` frame gets. The page is marked
+    `uncounted` either way, so switching modes does not move the footline's page count.
+    `item` asks for the opposite, so declaring both is reported and the breaks are ignored.
   - `--beamer-refs-font-size` (default `0.9em`) is the one size knob for the list;
     lowering it fits more entries per page and the automatic breaks follow.
 
