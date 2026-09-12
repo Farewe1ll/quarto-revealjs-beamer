@@ -316,7 +316,7 @@ $border-radius: 4px !default;
      for the body. The band and minimal looks let the body flow normally here;
      a centred badge overrides the top padding below. */
   padding: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) + 22px) 58px
-    calc(var(--beamer-footline-height) + 34px);
+    calc(var(--beamer-footline-height) + 22px);
 }
 
 .reveal .slides section.beamer-section-slide.section-badge {
@@ -327,7 +327,10 @@ $border-radius: 4px !default;
      and the box runs from the headline down to the slide's bottom edge (the
      footline overlaps it, as it does for the band). That leaves the block a few
      pixels above the slide's exact middle, which is not perceptible. */
-  padding: calc(var(--beamer-active-headline-height) + 24px) 12% 24px;
+  /* The same reservation as the band look, so the centred block lands on the
+     slide's optical middle rather than on the middle of the content box. */
+  padding: calc(var(--beamer-active-headline-height) + 24px) 12%
+    calc(var(--beamer-footline-height) + 22px);
   justify-content: center;
   --beamer-section-inset: 12%;
   --beamer-section-radius: 5px;

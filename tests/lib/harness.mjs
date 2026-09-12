@@ -59,6 +59,7 @@ const chromeLaunchAttempts =
   requestedChromeLaunchAttempts > 0
     ? requestedChromeLaunchAttempts
     : 3;
+const pdfAttempts = 3;
 const requestedPageReadyAttempts = Number.parseInt(
   process.env.BEAMERSLIDES_PAGE_READY_ATTEMPTS || "",
   10
@@ -215,6 +216,7 @@ const runCapture = (command, args) => {
 
 const run = (command, args) => runCapture(command, args).stdout;
 
+
 // Quarto's Deno runtime occasionally dies with SIGSEGV part-way through a
 // render. It is not caused by the document -- the same input renders fine on
 // the next attempt, and the crash happens before any of this project's code
@@ -222,11 +224,17 @@ const run = (command, args) => runCapture(command, args).stdout;
 // fails for a real reason still fails, just after the retries.
 const renderAttempts = 3;
 
-const runQuartoRender = (args) => {
+// The retry wraps the THUNK, not the argument list: `renderFixture` deletes its
+// temporary input in a `finally`, so retrying a bare command list would re-run
+// Quarto against a file that no longer exists. That mistake made the suite worse
+// rather than better -- the retries burned all three attempts on "No valid input
+// files passed to render" and turned an intermittent crash into a guaranteed
+// failure.
+const withRenderRetries = (operation) => {
   let lastError = null;
   for (let attempt = 1; attempt <= renderAttempts; attempt += 1) {
     try {
-      return runCapture(quartoCommand, args);
+      return operation();
     } catch (error) {
       lastError = error;
       if (attempt === renderAttempts) {
@@ -258,7 +266,8 @@ const renderFixture = (name, options = {}) => {
   try {
     // Quarto writes extension warnings to stderr; callers that assert on them
     // receive the captured text.
-    return runQuartoRender([
+    return withRenderRetries(() =>
+      runCapture(quartoCommand, [
       "render",
       basename(temporaryInput),
       "--output",
@@ -267,7 +276,8 @@ const renderFixture = (name, options = {}) => {
       "tests/_output",
       "--no-clean",
       ...metadataArgs,
-    ]).stderr;
+      ])
+    ).stderr;
   } finally {
     if (existsSync(temporaryInput)) {
       unlinkSync(temporaryInput);
@@ -277,15 +287,17 @@ const renderFixture = (name, options = {}) => {
 
 const renderTemplate = (source) => {
   const output = `${source}-smoke.html`;
-  runQuartoRender([
-    "render",
-    `${source}.qmd`,
-    "--output",
-    output,
-    "--output-dir",
-    "tests/_output",
-    "--no-clean",
-  ]);
+  withRenderRetries(() =>
+    runCapture(quartoCommand, [
+      "render",
+      `${source}.qmd`,
+      "--output",
+      output,
+      "--output-dir",
+      "tests/_output",
+      "--no-clean",
+    ])
+  );
   assert(
     existsSync(join(outputDir, output)),
     `The template ${source}.qmd did not produce an HTML presentation.`
@@ -898,14 +910,36 @@ class BrowserPage {
   }
 
   async printPdf(name) {
-    const { data } = await this.connection.send(
-      "Page.printToPDF",
-      { printBackground: true, preferCSSPageSize: true },
-      this.sessionId
-    );
-    const bytes = Buffer.from(data, "base64");
-    assert(bytes.subarray(0, 4).equals(Buffer.from("%PDF")), "PDF signature");
-    assert(bytes.length > 20_000, "PDF output is unexpectedly small");
+    // Page.printToPDF intermittently comes back with a near-empty document --
+    // the same page produces ~100x the bytes on the next call. Retrying only
+    // rescues output that failed the sanity checks below; anything else is
+    // written out unchanged.
+    let bytes = null;
+    for (let attempt = 1; attempt <= pdfAttempts; attempt += 1) {
+      const { data } = await this.connection.send(
+        "Page.printToPDF",
+        { printBackground: true, preferCSSPageSize: true },
+        this.sessionId
+      );
+      const candidate = Buffer.from(data, "base64");
+      const isPdf = candidate.subarray(0, 4).equals(Buffer.from("%PDF"));
+      if (isPdf && candidate.length > 20_000) {
+        bytes = candidate;
+        break;
+      }
+      if (attempt === pdfAttempts) {
+        assert(isPdf, "PDF signature");
+        assert(
+          candidate.length > 20_000,
+          `PDF output is unexpectedly small (${candidate.length} bytes)`
+        );
+      }
+      console.warn(
+        `[harness] ${name}: printToPDF returned ${candidate.length} bytes ` +
+          `(attempt ${attempt}/${pdfAttempts}); retrying`
+      );
+      await delay(300 * attempt);
+    }
     writeFileSync(join(artifactsDir, `${name}.pdf`), bytes);
   }
 

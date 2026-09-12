@@ -151,6 +151,16 @@ Earlier releases predate this file; their history is in the git log.
 
 ### Changed
 
+- `testSectionStyles` measures both variants with the section header on and
+  off, and asserts that turning it on moves the pinned looks down by exactly its
+  height and re-centres the badge. The header's effect on section pages was
+  previously uncovered: the two variants merely happened to differ in their
+  default, which made the difference look tested when it was not.
+- The harness retries two more external failures, both outside this project's
+  code. `Page.printToPDF` intermittently returns a near-empty document -- one
+  observed call produced 1,148 bytes where the same page yields ~100 KB -- and
+  the `?print-pdf` footnote section is read before Reveal finishes switching to
+  its print layout.
 - The harness now retries the two external failures that were intermittently
   failing the suite, both of which happen outside this project's code.
   `quarto render` is retried (three attempts): Quarto's Deno runtime dies with

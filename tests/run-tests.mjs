@@ -1566,6 +1566,32 @@ const testSpacing = async (connection, origin) => {
   await testSpacingVariant(connection, origin, "cambridgeus");
 };
 
+// The `?print-pdf` query switches Reveal into its print layout, and the
+// document footnote section is only built as part of that. Reading it the
+// moment the page reports ready sometimes beats the switch; the same page has
+// it a moment later. Retrying the read is enough -- a page that genuinely
+// lacks the section still fails every attempt.
+const footnoteStateAttempts = 5;
+
+const readDocumentFootnoteStateWithRetry = async (page, context) => {
+  let state = null;
+  for (let attempt = 1; attempt <= footnoteStateAttempts; attempt += 1) {
+    state = await page.evaluate(readDocumentFootnoteState);
+    if (state.slidePresent) {
+      return state;
+    }
+    if (attempt < footnoteStateAttempts) {
+      await delay(200 * attempt);
+    }
+  }
+  assert.equal(
+    state.slidePresent,
+    true,
+    `${context}: footnote slide (after ${footnoteStateAttempts} reads)`
+  );
+  return state;
+};
+
 const readDocumentFootnoteState = `(() => {
   const slide = document.querySelector("section.footnotes");
   const list = slide?.querySelector(":scope > ol");
@@ -1607,7 +1633,10 @@ const testDocumentFootnotesVariant = async (connection, origin, variant) => {
     connection,
     `${origin}/spacing-endnotes-${variant}.html`
   );
-  const state = await page.evaluate(readDocumentFootnoteState);
+  const state = await readDocumentFootnoteStateWithRetry(
+    page,
+    `${variant} screen`
+  );
   assertDocumentFootnoteState(state, `${variant} screen`);
 
   if (variant === "madrid") {
@@ -1621,7 +1650,10 @@ const testDocumentFootnotesVariant = async (connection, origin, variant) => {
     `${origin}/spacing-endnotes-${variant}.html?print-pdf`
   );
   await printPage.emulateMedia("print");
-  const printState = await printPage.evaluate(readDocumentFootnoteState);
+  const printState = await readDocumentFootnoteStateWithRetry(
+    printPage,
+    `${variant} print`
+  );
   assertDocumentFootnoteState(printState, `${variant} print`);
   await assertPrintLayout(printPage);
   await printPage.close();
@@ -2177,8 +2209,86 @@ const testPaletteAlgebra = async (connection, origin) => {
 // pure presentation choice -- it cannot decide whether the page exists, because
 // Reveal has already split the sections by the time any of this runs.
 const testSectionStyles = async (connection, origin) => {
+  // Both variants are measured twice, with the section header on and off, so
+  // the header's effect on section-page geometry is actually covered. It was
+  // not: the two variants merely happened to differ in their default, which
+  // made the difference look covered when it was not.
+  const measured = {};
   for (const variant of ["madrid", "cambridgeus"]) {
-    renderFixture("section-styles", { metadata: { "beamer-variant": variant } });
+    for (const secheader of [false, true]) {
+      renderFixture("section-styles", {
+        metadata: {
+          "beamer-variant": variant,
+          "beamer-secheader": String(secheader),
+        },
+      });
+      measured[`${variant}:${secheader}`] = await measureSectionStyles(
+        connection,
+        origin,
+        variant,
+        secheader
+      );
+    }
+    const state = measured[`${variant}:false`];
+    const withHeader = measured[`${variant}:true`];
+    assertSectionStyles(variant, state);
+
+    // Showing the header must move the pinned section looks down by exactly its
+    // height -- both of them read `--beamer-active-headline-height`, so this is
+    // what proves one switch still moves them.
+    const headerHeight = withHeader.band.headlineHeight;
+    assert(
+      headerHeight > 0,
+      `${variant}: enabling beamer-secheader must show a header`
+    );
+    for (const kind of ["band", "minimal"]) {
+      const shift = withHeader[kind].top - state[kind].top;
+      assert(
+        Math.abs(shift - headerHeight) < 1.5,
+        `${variant}: ${kind} must move down by the header height when the ` +
+          `header is shown: ` +
+          JSON.stringify({ shift, headerHeight, kind })
+      );
+      // The stronger claim: the pinned title sits exactly at the header's
+      // bottom edge, so it tracks the header rather than merely shifting with
+      // it. Checking the shift alone passes even if the title ignores the
+      // header entirely and is pushed down by padding meant for something else.
+      assert(
+        Math.abs(withHeader[kind].top - headerHeight) < 1.5,
+        `${variant}: ${kind} title must sit exactly at the header's bottom ` +
+          `edge: ` + JSON.stringify({ top: withHeader[kind].top, headerHeight })
+      );
+    }
+    // The badge is centred, not pinned, so it must NOT move by the full header
+    // height: it re-centres inside a region that just shrank by `headerHeight`,
+    // which moves it by half that. Asserting the full shift here was simply
+    // wrong geometry.
+    const badgeShift = withHeader.badge.top - state.badge.top;
+    assert(
+      Math.abs(badgeShift - headerHeight / 2) < 2,
+      `${variant}: the centred badge must re-centre when the header appears, ` +
+        `moving half its height: ` +
+        JSON.stringify({ badgeShift, headerHeight })
+    );
+    // And it stays centred either way, which is the property that matters.
+    for (const [label, look] of [
+      ["with header", withHeader.badge],
+      ["without header", state.badge],
+    ]) {
+      assert(
+        Math.abs(look.groupCentre - look.areaCentre) < 12,
+        `${variant}: badge title+body must stay centred ${label}: ` +
+          JSON.stringify({
+            groupCentre: look.groupCentre,
+            areaCentre: look.areaCentre,
+          })
+      );
+    }
+  }
+};
+
+const measureSectionStyles = async (connection, origin, variant, secheader) => {
+  {
     const page = await BrowserPage.create(
       connection,
       `${origin}/section-styles.html`
@@ -2284,12 +2394,20 @@ const testSectionStyles = async (connection, origin) => {
         minimal: read("sec-minimal"),
         // An H2 is an ordinary frame: it must NOT pick up a section look, which
         // is what keeps the attribute meaningful rather than universal.
-        frameIsSection: document
-          .getElementById("sec-frame")
-          .classList.contains("beamer-section-slide"),
+        frameIsSection: Boolean(
+          document
+            .getElementById("sec-frame")
+            ?.classList.contains("beamer-section-slide")
+        ),
       };
     })()`);
+    await page.close();
+    return state;
+  }
+};
 
+const assertSectionStyles = (variant, state) => {
+  {
     assert.equal(
       state.frameIsSection,
       false,
@@ -2414,8 +2532,6 @@ const testSectionStyles = async (connection, origin) => {
       Math.abs(state.minimal.top - state.minimal.headlineHeight) < 1,
       `${variant}: minimal stays flush under the headline`
     );
-
-    await page.close();
   }
 };
 
