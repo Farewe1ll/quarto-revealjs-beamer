@@ -2267,13 +2267,15 @@ const testSectionStyles = async (connection, origin) => {
       measured[`${variant}:${secheader}`] = await measureSectionStyles(
         connection,
         origin,
-        variant,
-        secheader
+        variant
       );
     }
     const state = measured[`${variant}:false`];
     const withHeader = measured[`${variant}:true`];
     assertSectionStyles(variant, state);
+    // The same per-style properties must hold with the header showing: measuring
+    // a state and never asserting on it leaves half the coverage nominal.
+    assertSectionStyles(`${variant} + header`, withHeader);
 
     // Showing the header must move the pinned section looks down by exactly its
     // height -- both of them read `--beamer-active-headline-height`, so this is
@@ -2329,7 +2331,7 @@ const testSectionStyles = async (connection, origin) => {
   }
 };
 
-const measureSectionStyles = async (connection, origin, variant, secheader) => {
+const measureSectionStyles = async (connection, origin, variant) => {
   {
     const page = await BrowserPage.create(
       connection,

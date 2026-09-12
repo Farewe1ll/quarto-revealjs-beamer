@@ -333,23 +333,15 @@
     return wrapper;
   };
 
-  // A centred badge treats the title and any body text as ONE block and centres
-  // that block in the space between the headline and the footline. Centring the
-  // badge alone would leave the block bottom-heavy as soon as the page carried a
-  // line of prose. Both numbers depend on rendered heights -- a badge is taller
-  // than the default band because it carries a larger font, and the body's
-  // height is pure text flow -- so only the browser can work them out. The CSS
-  // reads them back as custom properties, which keeps the styling declarative.
-  //
-  // The band and minimal looks are deliberately left alone: they pin the title
-  // under the headline, which is what Beamer's own section page does, so body
-  // text simply flows after it.
   // The badge look centres its title together with its body. That is pure CSS
-  // -- the title joins the flow and the section uses `justify-content: center`
-  // -- so nothing has to be measured here. An earlier attempt solved for the
-  // offset in script, but the body's top padding was derived from the block
-  // height, so every measurement fed the solution back into its own input and
-  // the result drifted between passes. Letting flex own it removes that loop.
+  // -- the title joins the flow for that look and the section uses
+  // `justify-content: center` -- so nothing is measured here. An earlier
+  // attempt solved for the offset in script, but the body's top padding was
+  // derived from the block height, so every measurement fed the solution back
+  // into its own input and the result drifted between passes. Letting flex own
+  // it removes that loop entirely. The band and minimal looks are deliberately
+  // left alone: they pin the title under the headline, which is what Beamer's
+  // own section page does, so body text simply flows after it.
   const centerTitleInk = () => {
     const titles = document.querySelectorAll(
       ".reveal .slides section.beamer-section-slide > h1:first-of-type, " +
