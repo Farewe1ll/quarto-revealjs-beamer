@@ -8,89 +8,136 @@ author:
     affiliations: "机构或院系"
 date: today
 bibliography: references.bib
-link-citations: true
-short-title: "Quarto × Beamer"
-short-author: "演示者姓名"
-short-institute: "机构简称"
 beamer-variant: cambridgeus
 lang: zh
-format:
-  beamerslides-revealjs:
-    incremental: false
-    embed-resources: true
+format: beamerslides-revealjs
 ---
 
-# 默认章节页
+# 默认章节页 {#sec-default}
 
-以 CambridgeUS 为蓝本的白底酒红外观。一级标题默认生成**通栏色带**，紧贴红灰双色的导航页眉下方。
+一级标题默认生成**通栏标题区**，紧贴页眉下方——这是 Beamer 上游的做法（`\section` 页复用 frametitle 模板）。CambridgeUS 的章节底色是透明的，所以这里看到的是深红标题文字直接排在页面上，而不是一条实色带；它的文字左边缘仍与 frame title、正文严格对齐。
 
-本变体的章节底色是**透明**的，所以默认外观下只有酒红标题文字 —— 这是 beaver 主题的原始行为。
+::: {.notes}
+这是 CambridgeUS 变体的**功能总览模板**，与 `template.qmd`（Madrid）逐页对应，便于对照两种外观的差异。正文即说明，复制本文件、替换标题与内容即可开始。
 
-## 经典报告版式 {data-subsection="配色"}
+与 Madrid 的主要差别：上游 CambridgeUS 只加载 `beaver`（不加载 `orchid`），所以章节标题区与标题块**没有填充**，三种 block 也靠标题文字颜色区分而不是靠色条；页眉（headline）默认开启，而不像 Madrid 那样默认关闭。
 
-### 正式、克制、适合学术报告与答辩
+front matter 只留文档本身的信息——标题、作者、日期、文献库、语言，加上 `beamer-variant`；主题的可选开关全部留默认值，集中列在文末「可选开关」一页。演讲者备注本身也是一个被主题支持的 Quarto 特性，就是你现在读到的这一段。
+:::
 
-页眉左侧显示当前章节、右侧显示 `data-subsection` 指定的子标题；标题、作者、日期与页码自动进入三段式 footline。
+## 内容组织 {data-section="排版与组织" data-subsection="排版"}
+
+本页用 `data-section` 覆盖了页眉左半部分显示的章节名（默认取最近一个一级标题的文本），用 `data-subsection` 覆盖右半部分（默认取当前 frame title）。两个属性都可省略。
+
+### 列表、层级与文本
+
+无序列表用扁平符号表示层级：一级实心方块、二级短横线、三级空心方块。
 
 - 一级条目使用扁平实心方块
   - 二级条目使用短横线
     - 三级条目使用空心方块
-- 支持 **粗体**、*强调*、[链接](https://quarto.org) 与 [警示信息]{.alert}
+- 支持 **粗体**、*强调*、`行内代码`、[链接](https://quarto.org) 与 [警示信息]{.alert}
+
+## 编号、嵌套与任务列表 {data-subsection="排版"}
+
+有序列表用紧凑色块编号，并完整支持 HTML 的编号语义：
 
 1. 编号以紧凑色块呈现
 2. 层级清楚，不使用立体小球
 3. 长文本会自然换行并保持对齐
 
-# 三种章节页外观 {.section-badge}
+嵌套编号与 `start` / `value` / `reversed` 都会如实反映：
 
-这一页用了 `{.section-badge}`：居中圆角块 + 阴影，字号更大。
+<ol start="3">
+  <li>起始编号为 3
+    <ol start="12">
+      <li>嵌套列表从 12 开始</li>
+    </ol>
+  </li>
+  <li>下一条自动为 4</li>
+</ol>
 
-**在本变体下阴影是必须的**：CambridgeUS 的章节底色透明，没有阴影的方块会直接消失在浅色背景里。
+- [x] 任务列表的复选框替代项目符号
+- [ ] 未完成项同样不占用项目符号
 
-## 外观用法 {data-subsection="章节页"}
+# 居中徽标 {.section-badge}
+
+这一页用了 `{.section-badge}`：**居中圆角块 + 阴影**，左右内缩 12%，字号更大。
+
+它是三种章节外观里唯一有填充的——CambridgeUS 的章节底色本身透明，徽标若也透明，阴影就会画在一个看不见的方块上、只剩文字下方一条多余的横线。因此这里用变体强调色（酒红 `#cc0000`）填充，可用 `--beamer-section-badge-bg` / `--beamer-section-badge-fg` 覆盖。
+
+## 三种章节页外观 {data-subsection="章节页"}
 
 三种外观用属性**逐页**选择，默认不需要任何属性：
 
 | 写法 | 外观 |
 |:---|:---|
-| `# 标题` | 通栏色带（本变体为透明底 + 酒红字） |
+| `# 标题` | 通栏标题区，紧贴页眉（默认） |
 | `# 标题 {.section-badge}` | 居中圆角块，带阴影 |
 | `# 标题 {.section-minimal}` | 只有文字，无底色 |
 
 : 章节页的三种外观
 
-属性只决定章节页**长什么样**，不能决定它**是否存在** —— Reveal.js 按 `slide-level` 在渲染前就已把 `#` 切成独立页面。
+属性只决定章节页**长什么样**，不能决定它**是否存在**——Reveal.js 按 `slide-level` 在渲染前就已把 `#` 切成独立页面。
 
 # 最简章节页 {.section-minimal}
 
-`.section-minimal` 只有文字、没有底色。本变体默认就没有底色，所以它主要用来**去掉圆角与阴影**、并把标题居中。
+`.section-minimal` 只有文字、没有底色。在 CambridgeUS 下它与默认外观的差别比 Madrid 小——默认外观本来就没有填充——但字号更小、并且居中。
 
 ## Beamer 组件 {data-subsection="组件"}
 
-CambridgeUS 的三种 block **都没有填充**（beaver 不加载 orchid colortheme），只靠标题文字颜色区分语义：
+三种 block 都**没有填充**，靠**标题文字颜色**区分：
 
 ::: {.block title="定义"}
-普通 block：标题为 `--beamer-structure` 的酒红 `#cc0000`，与列表符号同色。
+普通 block：用于定义、命题等中性内容。标题是红色 `#cc0000`，与列表符号同色。
 :::
 
 ::: {.exampleblock title="示例"}
-Example block：标题为绿色 `#008000`，来自 Beamer 钉死的 `example text`。
+Example block：用于示例与成功情形。标题是绿色 `#008000`。
 :::
 
 ::: {.alertblock title="注意"}
-Alert block：标题为黄字 + 黑色描边，是唯一带描边的标题，语义权重最高。
+Alert block：用于警告与需要强调的内容。黄色 `#ffcd00` 对浅色页面只有 1.48:1，故加 3px 黑色描边。
 :::
 
-# 内容呈现
+## 原生 callout 与 data-title {data-subsection="组件"}
+
+Quarto 原生的 callout 同样可用：
+
+::: {.callout-note title="原生 callout"}
+callout 使用 Quarto 自己的配色，与 Beamer block 并存，按内容需要选用。
+:::
+
+手写 HTML 时，`data-title` 属性会被当作标题（由 CSS 伪元素兜底）：
+
+::: {.block data-title="data-title 兜底"}
+这个标题来自 `data-title` 属性，而不是 `title=`，两者效果相同。
+:::
 
 ## 行内样式 {data-subsection="强调"}
 
-除 `.alert` 外，还有 `.fg` 与 `.bg` 两个行内辅助类，颜色用 `--col` 指定：
+除 `.alert` 外，还有 `.fg` 与 `.bg` 两个行内辅助类，颜色用 `--col` 指定；`.button` 生成跳转按钮：
 
-- [警示文字]{.alert}：使用主题的警示色
-- [自定义前景色]{.fg style="--col: #316e50"}：只改文字颜色
+- [警示文字]{.alert}：使用主题的警示色（本变体为酒红）
+- [自定义前景色]{.fg style="--col: #2c7550"}：只改文字颜色
 - [自定义背景色]{.bg style="--col: #f5dfe1"}：给文字加底色
-- [[查看总结]{.button}](#sec-summary)：Beamer 风格的跳转按钮
+- [[跳到总结]{.button}](#sec-summary)：Beamer 风格的跳转按钮
+
+行内标签与有序编号会在字体加载、窗口缩放和切换幻灯片后按当前字体的**可见字形**重新校正基线，所以离线 HTML 与在线预览的对齐一致。
+
+## 标题层级 {data-subsection="标题"}
+
+`h3`–`h6` 取同一个结构色（本变体为酒红）并构成递减阶梯；更深一层用于细分，不会比上一层更醒目：
+
+### 三级标题（0.91em）
+
+#### 四级标题（0.78em）
+
+##### 五级标题（0.68em）
+
+###### 六级标题（0.6em）
+
+正文段落回到正文字色。标题颜色与字号都由顶层变量控制，见 README 的「标题层级用哪个变量」。
 
 ## 双栏布局 {data-subsection="布局"}
 
@@ -121,8 +168,8 @@ Alert block：标题为黄字 + 黑色描边，是唯一带描边的标题，语
 ::: {.column width="52%"}
 | 主题 | 主色 | 气质 |
 |:---|:---|:---|
-| CambridgeUS | 酒红 | 经典、正式 |
 | Madrid | 深蓝 | 稳健、理性 |
+| CambridgeUS | 酒红 | 经典、正式 |
 | 共通设计 | 白与炭黑 | 清爽、易读 |
 
 : 主题配色对照
@@ -140,6 +187,20 @@ quarto_render(
 
 ::::
 
+标签页也是原生支持的：
+
+::: {.panel-tabset}
+### 结果
+
+标签页用来在同一页里并列展示同类内容。
+
+### 代码
+
+```python
+print("每个标签页内部可以使用任意块级内容")
+```
+:::
+
 ## 图片与引用 {data-subsection="图文"}
 
 :::: {.columns}
@@ -151,14 +212,14 @@ quarto_render(
 ::: {.column width="40%"}
 ### 图文关系
 
-图像使用 Quarto 原生 figure 结构，图注与正文保持同一视觉层级。主题结构参考 Reveal.js 的内容组织方式 [@quarto]，简洁组件借鉴 Clean 主题 [@clean-theme]。
+图像使用 Quarto 原生 figure 结构，图注与正文保持同一视觉层级 [@quarto]。图形感知的原则可追溯到 [@cleveland1984]，数据整理可参考 [@wickham2014]，排版本身可以上溯到 [@knuth1984]。
 
 > 引用块保留克制的底色与左侧强调线，适合放置定义、原话或来源说明。
 :::
 
 ::::
 
-## 数学与强调 {data-subsection="公式"}
+## 数学与公式 {data-subsection="公式"}
 
 ::: {.block title="中心极限定理"}
 若 $X_1, X_2, \ldots$ 独立同分布，且方差有限，则
@@ -169,22 +230,76 @@ $$
 $$
 :::
 
-公式默认使用扩展内置的固定版本 KaTeX，断网打开也能完整渲染；行内公式放大 2%，行间公式放大 6%。注意 KaTeX 是按相对路径 `_extensions/beamerslides/katex/` 动态加载的，`embed-resources: true` **不会**把它内联——单独把 HTML 文件搬走会让公式静默失效，请让 `_extensions/beamerslides/` 与它同行。
+公式使用扩展内置的固定版本 KaTeX [@beamer2026]，断网可用；行内放大 2%，行间放大 6%。本主题的内容组织与配色参考了 [@clean-theme]。注意 KaTeX 按相对路径 `_extensions/beamerslides/katex/` 动态加载，即使加上 `embed-resources: true` 也不会内联它——只把 HTML 搬走会让公式静默失效，请让 `_extensions/beamerslides/` 同行。
+
+## 这是一个刻意写得很长的 frame title，用来演示标题折行时主题会先自动缩小字号两档、再增高标题带，而标题高到超过基准高度的 2.28 倍时整页转为可滚动 {#long-frame-title data-subsection="排版控制"}
+
+标题区是绝对定位的固定部件，它增高时正文的位置会跟着让开，因此折行的标题不会压住正文；标题文字本身也会按其真实墨迹做光学居中，中英文标题看起来都居中。
+
+## 超页内容可以选择滚动 {#scrollable-frame .scrollable data-subsection="排版控制"}
+
+给 frame 加 `.scrollable`（或 `.smaller`）后，正文在 frame 内部滚动，页眉、frame title 与页脚固定不动。适合确实需要一页放下较多内容、又不希望内容被静默裁切的情形：
+
+- 滚动层内缩到 frame 的 padding box，所以正文位置与不滚动时完全一致；
+- 页眉与页脚是绝对定位的固定部件，不会被滚动带走；
+- Quarto 的文档级脚注页与参考文献页默认就带 `.smaller .scrollable`，同样适用。
+
+不加这两个类时，超页会在浏览器控制台输出一条包含 frame id 与实际溢出像素的告警，提示你改用 `.smaller`、拆分页面或加 `.scrollable`。告警默认只在屏幕布局下生效，打印布局不会误报。
+
+滚动页的正文长度由你决定：内容不足时它不会滚动，视觉上与普通 frame 无异，因此可以放心先加上类、再逐步补充内容。
+
+需要固定页眉、又要容纳长列表或长段落时，这是代价最小的一种排版控制手段。
+
+## 居中页与附页 {.center data-subsection="特殊页"}
+
+这一页带 `{.center}`，内容整体在可用区域内垂直居中——与 Quarto 给一级章节页的默认居中一致。
+
+主题同时支持 Reveal 的 `visibility` 属性：
+
+## 不计页的附页 {visibility="uncounted" data-subsection="特殊页"}
+
+这一页标记为 `uncounted`：它照常显示，但**不出现在页码里**，也不计入总页数或推进进度条。适合放补充材料或备份页。
 
 # 总结
 
 ## 两套经典外观，一个现代格式 {#sec-summary data-subsection="总结"}
 
-- `beamer-variant: cambridgeus`：经典的酒红色报告风格，默认显示章节导航页眉
-- `beamer-variant: madrid`：沉稳的蓝色学术风格，默认无页眉
-- frame、作者、标题、日期和页码自动进入信息栏；页眉可用 `beamer-secheader` 覆盖
-- 完整兼容 Quarto Reveal.js 的 fragments、代码、公式与布局能力
+- `beamer-variant: cambridgeus`（本模板）：经典的酒红色报告风格，headline 默认开启，三种 block 无填充、靠标题文字颜色区分
+- `beamer-variant: madrid`：沉稳的蓝色学术风格；上游 Madrid 默认无页眉，需要时用 `beamer-secheader: true` 打开
+- frame、作者、标题、日期与页码自动进入信息栏，无需手工维护
+- 完整兼容 Quarto Reveal.js 的 fragments、代码、公式、表格、标签页与分栏
+
+更多细节（配色变量表、参考文献分页、环境变量）见仓库 README。
 
 ::: {.exampleblock title="开始使用"}
-复制模板，替换标题和内容，然后运行 `quarto preview`。
+复制本模板，替换标题与内容，然后运行 `quarto preview`。把 `beamer-variant` 改成 `madrid` 即可切换另一套外观。
 :::
 
-## 参考文献 {data-subsection="来源"}
+## 可选开关 {data-subsection="配置"}
+
+本模板的 front matter 只写文档本身的信息，主题相关的只留 `beamer-variant`，其余全部走默认值——CambridgeUS 默认显示页眉、文献按引用顺序排列并以 `paginate` 模式分页。下面这些开关都是可选的，按需加进 front matter 即可：
+
+```yaml
+beamer-variant: cambridgeus  # madrid 切换到另一套外观
+beamer-secheader: true       # 页眉：Madrid 默认关闭，CambridgeUS 默认开启
+beamer-progress: true        # 顶部进度条
+short-title: "短标题"         # 信息栏用的短标题，默认取 title
+short-author: "短作者"        # 默认取作者名
+short-institute: "机构简称"    # 默认取 affiliations
+short-date: "2026"           # 默认取 date
+refs-title: "参考文献"         # 文献页标题，默认取第一个文献页的 ## 标题
+refs-order: declaration      # 引用顺序（默认 citation）或声明顺序
+refs-overflow: scroll        # 文献装不下时翻页（默认 paginate）或页内滚动
+embed-resources: true        # 输出自包含的单文件 HTML
+```
+
+参考文献页的两种模式见文末：「参考文献」一页用的是默认的 `paginate`，`item="3"` 表示每页三条；`scroll` 模式加上 `refs-overflow: scroll` 即可，其余写法不变。
+
+## 参考文献 {#references data-subsection="来源" item="3"}
 
 ::: {#refs}
 :::
+
+## 参考文献（续） {item="3"}
+
+本页是上一页的续页：它必须**紧跟**在带 `::: {#refs}` 的文献页之后，标题取第一页的 `##` 标题（可用 `refs-title` 覆盖），并且同样标记为不计页——所以文献分成几页不会改变页脚的总页数。

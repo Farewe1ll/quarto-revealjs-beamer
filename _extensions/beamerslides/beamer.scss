@@ -32,6 +32,16 @@ $presentation-block-margin: 0.55em !default;
 $code-block-bg: #f4f6f8 !default;
 $code-block-border-color: #cbd2da !default;
 $code-block-font-size: 0.56em !default;
+/* Inline code. 0.8125em, and declared in the `.reveal code:not(pre code)` rule
+   below rather than left to Quarto, which versions disagree about (see there).
+   The monospace stack this theme asks for (Iosevka, or the system fallback) has
+   an x-height roughly 8% larger than Libertinus Sans, and x-height is what the
+   eye reads as "size". At the 0.875em Quarto 1.10 derives, a chip's lowercase
+   measured 14px against the body's 13px, so code sat in the prose looking bigger
+   than the words around it. 0.8125em (= 0.875 / 1.077) puts the x-height at
+   parity; cap height ends up about a tenth smaller, which is the usual trade for
+   a monospace face. */
+$code-inline-font-size: 0.8125em !default;
 $code-color: #7c2d12 !default;
 $code-bg: #f2f3f5 !default;
 $border-radius: 4px !default;
@@ -455,8 +465,23 @@ $border-radius: 4px !default;
   --beamer-section-fg: var(--beamer-section-minimal-fg, var(--beamer-structure));
 }
 
+/* The minimal look has no band to fill, so its box must not reserve one: the
+   shared 58px `min-height` exists to give a FILLED band its height, and around
+   bare text it only pushed the body away -- with a headline showing, the title had
+   13px of air above it and 43px below (measured), which reads as the title
+   floating upwards out of its own page. Here the air is one value on both sides:
+   the padding carries it inside the box, so the title still starts flush under the
+   headline (which the print and section assertions check), and the body's own top
+   margin is cancelled for this look so it cannot add to the lower gap. */
 .reveal .slides section.beamer-section-slide.section-minimal > h1:first-of-type {
+  min-height: 0;
+  padding: var(--beamer-section-minimal-gap, 18px) 58px;
+  margin-bottom: 0;
   background: transparent;
+}
+
+.reveal .slides section.beamer-section-slide.section-minimal > h1:first-of-type + :not(h1) {
+  margin-top: 0;
 }
 
 .reveal .slides section.beamer-section-slide > h1:first-of-type {
@@ -1100,7 +1125,21 @@ $border-radius: 4px !default;
 }
 
 .reveal code:not(pre code) {
-  padding: 0.06em 0.22em 0.1em;
+  /* The size is stated here rather than left to Quarto, because Quarto versions
+     disagree about it: 1.10 sizes `.reveal code` from `$revealjs-code-inline-font-size`
+     (derived as `$code-font-size * 0.875`), while 1.4 and 1.5 set no size at all and
+     let inline code inherit the body's. Declaring it in the theme's own rule makes
+     the chip the same size on every supported version -- and `$code-inline-font-size`
+     above still feeds the upstream variable where it exists, so both paths agree. */
+  font-size: $code-inline-font-size;
+  /* Symmetric and small. The old `0.06em` top against `0.1em` bottom, combined
+     with the leading the line box adds above an inline, put the chip's top edge
+     2.4px under the line box's top and its bottom edge 0.2px PAST the line box's
+     bottom -- measured -- so the highlight read as sitting low in the line even
+     though the baseline was exact. Symmetric padding contains it again: at the
+     size named above the chip now sits 3.8px under the line top and 1.2px above
+     the line bottom, with the glyphs still on the body's baseline. */
+  padding: 0.05em 0.25em;
   background: $code-bg;
   border: 1px solid #d9dde2;
   border-radius: 2px;

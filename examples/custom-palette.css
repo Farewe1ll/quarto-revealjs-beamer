@@ -16,8 +16,11 @@
  *
  * The literal palette in _palette.scss is kept as exact Beamer colour algebra
  * (structure / structure!75!black / structure!50!black). This example derives
- * the same relationships from one seed with `color-mix()`, which can differ by
- * at most one 8-bit step. Use the literals if you need byte-exact colours.
+ * the same relationships from one seed with `color-mix()`, which can differ from
+ * the xcolor literals by up to two 8-bit steps -- xcolor's sp-quantised rounding,
+ * plus Chrome >= 118 interpolating `color-mix()` in oklab rather than srgb. That is
+ * the tolerance the regression suite asserts. Use the literals if you need
+ * byte-exact colours.
  */
 
 .reveal.beamer-madrid {

@@ -6,6 +6,112 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Earlier releases predate this file; their history is in the git log.
 
+## [Unreleased]
+
+### Changed
+
+- **The two templates became complete feature tours, and their front matter now
+  shows each variant's defaults.** They previously showed the frame title, three
+  blocks and a few inline classes, and the README called them "complete examples"
+  while they demonstrated no YAML option beyond the `short-*` values and the
+  variant. Both now walk the whole surface, page for page in parallel: the three
+  section looks, `data-section` alongside `data-subsection`, the block aliases and
+  the `data-title` fallback, a native callout, a panel tabset, a task list, the
+  `start` / `value` / `reversed` numbering semantics, the `h3`–`h6` ladder,
+  `{.center}`, `visibility="uncounted"`, the auto-shrinking long frame title, and a
+  `.scrollable` frame. The front matter itself keeps only the document's own data —
+  title, author, date, `bibliography`, `lang` — plus `beamer-variant`, so a template
+  opens on the stock look: Madrid without a headline, CambridgeUS with one,
+  references in citation order and paginated. Every optional switch
+  (`beamer-secheader`, `beamer-progress`, the four `short-*`, `refs-title`,
+  `refs-order`, `refs-overflow`, `embed-resources`) moved to a new 「可选开关」 page,
+  whose YAML block is meant to be copied whole, and the summary page and the KaTeX
+  note now describe them as options instead of as settings this template has already
+  applied.
+- **Both templates fit every page.** An audit of all 23 leaves per template — walk
+  every leaf, compare its `scrollHeight` against the 720px content area — found two
+  pages over: Madrid's `#内容组织` by 307px and `#beamer-组件` by 321px, CambridgeUS's
+  by 339px and 430px, the last one with the third block already overlapping the
+  footline. `#内容组织` split into the list-and-hierarchy frame plus a new 「编号、嵌套
+  与任务列表」 frame, and `#beamer-组件` into the three-block frame plus a new 「原生
+  callout 与 data-title」 frame; CambridgeUS's remaining prose lost two lines that
+  only repeated the colour algebra the README documents. Re-audited: **0 overflow
+  warnings on either template**, 21 counted pages each (23 leaves, two reference
+  pages being `uncounted`). The `::: {.notes}` block that sat before the first
+  heading — which Pandoc turns into a slide of its own, so both decks opened on a
+  blank second page — moved onto the first section page, where it still demonstrates
+  `.notes`.
+- The two templates both use the default `paginate` reference mode now
+  (`item="3"`, measured — it really cuts six entries into 3 + 3) instead of splitting
+  the modes between them, because a template that sets `refs-overflow: scroll` is no
+  longer showing defaults. `scroll` is documented in the 可选开关 table, and
+  `references.bib` kept the four extra entries so the pagination actually spills
+  instead of being declared but empty.
+- **The visual baselines were regenerated, and inline code now has visual
+  coverage.** None of the screenshotted pages carried an inline-code span, which is
+  why the chip's size could drift unnoticed; `tests/fixtures/madrid.qmd` gained one
+  on its `#content-formats` page, and that baseline moved by 8% — five times the
+  suite's 1.5% tolerance, so the fixture change could not have landed without
+  regenerating. The rest of the set moved by at most 115 pixels: the fixtures render
+  `date: today`, so their footline date differs by one digit from the run that made
+  the previous baselines. `cambridgeus-content-formats.png` is byte-different with
+  zero changed pixels — Chrome's PNG encoder is not byte-deterministic, which is
+  also why the suite compares pixels rather than files.
+- **README reorganised and recalibrated against the repository.** Facts that were
+  scattered are now tables: `变量参考` lists all 48 `--beamer-*` variables with both
+  variants' values, and the test section lists the six environment variables.
+  Content that had drifted into the wrong section moved — math and the title-page
+  note out of 配色, the palette test coverage into 测试, the page-geometry
+  paragraphs into their own 版面几何 section. The section band's relationship to
+  Beamer's frametitle template, the CambridgeUS badge-shadow rationale, and the
+  alert title's contrast figures were each stated once instead of two or three
+  times. The upstream fidelity claims are now sourced to the theme files they come
+  from, including `\beamer@secheaderfalse` in `beamerthemeMadrid.sty` — which is
+  what makes Madrid's default no-headline layout faithful rather than a deviation.
+
+### Fixed
+
+- **Inline code no longer reads as larger than the sentence around it, and no
+  longer hangs out of its line.** The theme asked for a monospace stack whose
+  x-height is about 8% larger than Libertinus Sans's, so at Quarto's default
+  `0.875em` the chip's lowercase measured 14px against the body's 13px and its box
+  ended 0.2px *below* its line box — a highlight that sits low in the line even
+  though its baseline is exact. `$code-inline-font-size` is now `0.8125em`
+  (= 0.875 / 1.077), which measures at x-height parity (ratio 1.000) with the
+  baseline unmoved and the chip back inside the line (3.8px of air above it, 1.2px
+  below). Cap height ends up about a tenth under the body's, the usual trade for a
+  monospace face. The size is declared in the theme's own rule as well as in
+  `$code-inline-font-size`, because the versions disagree about where it comes from:
+  1.10 derives `.reveal code`'s size as `$code-font-size * 0.875` (so naming a size
+  on the *shared* `$code-font-size` shrinks the chip to 0.7175em instead — which is
+  what the first attempt did, and what the new assertion on the computed ratio now
+  catches), while 1.4 and 1.5 set no inline size at all and let the chip inherit the
+  body's 1em. `tests/fixtures/madrid.qmd` gained an inline-code span on a
+  screenshotted page, so the chip has visual coverage it previously had none of.
+- **The `.section-minimal` section page splits its air evenly instead of leaving
+  the title floating.** The look kept the band's `min-height` and the heading's
+  bottom margin, which around bare text pushed the body away and left 13px of air
+  above the title against 43px below it. It now takes `min-height: 0`,
+  `margin-bottom: 0` and padding on both sides that reads as one value
+  (`--beamer-section-minimal-gap`, default 18px), so the title still starts flush
+  under the headline — which the print and section assertions check — while the
+  gaps to the headline and to the first body line measure 21px and 15px on a probe
+  page with a CJK title and a headline showing, against 13 and 43 before. The suite
+  now asserts that the two gaps match within 10px, an asymmetry the old geometry
+  missed by 30. The optical ink nudge stays: on that probe it moves the title 3px
+  *towards* symmetry (20/29 without it), so cancelling it would have made the
+  reported defect worse.
+- README claimed `color-mix()` differs from xcolor by at most **1/255**; the
+  regression test tolerates **2/255**, and its own comment says why (xcolor's
+  sp-quantised rounding, plus Chrome ≥ 118 interpolating `color-mix()` in oklab
+  rather than srgb). The README now states the tolerance the suite guarantees.
+- Two README claims were made precise: the scroll threshold for a long frame title
+  is 2.28× the base height (not "twice"), and the two shrink steps trigger at 1.59×
+  and 2.03×.
+- Upstream CambridgeUS sets `titlelike`'s background to white, not to nothing; the
+  theme writes `transparent`, which is equivalent on a light page. The README now
+  says that instead of implying upstream leaves it unset.
+
 ## [0.4.0] - 2026-09-12
 
 ### Fixed
@@ -312,8 +418,11 @@ Earlier releases predate this file; their history is in the git log.
 - Section pages now use the frame-title template, as Beamer does: the section
   title is a band pinned under the headline instead of a centred rounded badge
   with a drop shadow. `--beamer-section-title-bg`/`-fg` remain separately
-  overridable, but on the stock themes they now hold the same values as
-  `--beamer-frame-bg`/`-fg`.
+  overridable. On Madrid they now hold the same values as `--beamer-frame-bg`/`-fg`,
+  but on CambridgeUS the background deliberately does not: the section band keeps
+  the variant's transparent-with-coloured-text treatment (see the section-look
+  entries) while the frame title keeps beaver's `gray!10!white` fill (`#f2f2f2`,
+  from `beamercolorthemebeaver.sty`).
 - The section band is now built exactly like the frame title -- full-bleed with
   its text inset by the 58px body margin -- instead of being inset at both
   edges with no internal padding. The old form put the section title flush

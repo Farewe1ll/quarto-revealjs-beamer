@@ -8,8 +8,10 @@ Regular, Italic, and Bold from the official Libertinus 7.051 release:
 https://github.com/alerque/libertinus/releases/tag/v7.051
 
 Libertinus is distributed under the SIL Open Font License 1.1. The complete
-license is included as `fonts/OFL.txt`. The downloaded release archive had the
-SHA-256 digest
+license is included as `fonts/OFL.txt`. The three bundled faces and that license
+file are byte-identical to the copies in the release archive. The archive itself
+-- the `Libertinus-7.051.zip` asset, not the `.tar.zst` one -- has the SHA-256
+digest
 `4d9be29b5cb380c35af8ba967abcc752ad1e07be1f738a9789c33e0dd7478c92`.
 
 ## KaTeX 0.18.1

@@ -557,6 +557,13 @@ const testMadrid = async (connection, origin) => {
     const footer = slide.querySelector(":scope > .beamer-footline");
     const backgroundRect = slide.querySelector(".bg").getBoundingClientRect();
     const buttonRect = slide.querySelector(".button").getBoundingClientRect();
+    // The inline-code chip: its own size against the paragraph's, which is the
+    // quantity the stylesheet variable is trying to control. Reading the
+    // computed size rather than a theme constant is the point -- Quarto derives
+    // the chip from a shared base (\`$code-font-size * 0.875\`), so naming a size
+    // on the wrong variable leaves the page at a size nobody intended.
+    const chip = slide.querySelector("p code");
+    const chipParagraph = chip.closest("p");
     const contentBottom = Math.max(
       slide.querySelector("table").getBoundingClientRect().bottom,
       filename.closest(".code-with-filename").getBoundingClientRect().bottom
@@ -564,6 +571,17 @@ const testMadrid = async (connection, origin) => {
     return {
       backgroundLabel: measureInline(".bg"),
       button: measureInline(".button"),
+      chip: {
+        fontSize: parseFloat(getComputedStyle(chip).fontSize),
+        bodyFontSize: parseFloat(getComputedStyle(chipParagraph).fontSize),
+        ratio:
+          parseFloat(getComputedStyle(chip).fontSize) /
+          parseFloat(getComputedStyle(chipParagraph).fontSize),
+        chipTop: chip.getBoundingClientRect().top,
+        chipBottom: chip.getBoundingClientRect().bottom,
+        lineTop: chipParagraph.getBoundingClientRect().top,
+        lineBottom: chipParagraph.getBoundingClientRect().bottom
+      },
       inlineBoxCenterDelta:
         (buttonRect.top + buttonRect.bottom -
           backgroundRect.top - backgroundRect.bottom) /
@@ -612,6 +630,25 @@ const testMadrid = async (connection, origin) => {
   assert.equal(formatsState.captionAlign, "center");
   assert.equal(formatsState.codeBorderWidth, 1);
   assert.notEqual(formatsState.codeBackground, "rgba(0, 0, 0, 0)");
+  // Inline code is deliberately NOT Quarto's 0.875em: the monospace stack the
+  // theme asks for has an x-height about 8% larger than the body face, so at the
+  // default size the chip read as bigger than the words around it (measured: a
+  // 1.077 x-height ratio against the body, and a chip box whose bottom edge sat
+  // 0.2px past its line box). `$code-inline-font-size` is set to 0.8125em, which
+  // brings the x-height to parity -- and it has to be that variable, not the
+  // shared `$code-font-size`, because Quarto multiplies the latter by 0.875 on
+  // its way here. Asserting the RATIO pins the effect rather than the constant:
+  // the first attempt at this fix named the shared variable and produced 0.7175.
+  assert(
+    Math.abs(formatsState.chip.ratio - 0.8125) < 0.01,
+    `inline code must render at 0.8125em of the body: ` +
+      JSON.stringify(formatsState.chip)
+  );
+  assert(
+    formatsState.chip.fontSize < formatsState.chip.bodyFontSize,
+    `inline code must not be larger than the body text: ` +
+      JSON.stringify(formatsState.chip)
+  );
   assert.notEqual(formatsState.filenameBackground, formatsState.filenameColor);
   assert.equal(formatsState.filenameLabelBorderWidth, 0);
   assert(formatsState.filenameLabelFontSize >= 14);
@@ -3431,9 +3468,21 @@ const measureSectionStyles = async (connection, origin, variant) => {
         const style = getComputedStyle(heading);
         const headingRect = heading.getBoundingClientRect();
         const slideRect = slide.getBoundingClientRect();
+        const headerHeight = headlineHeight(slide);
+        // The line box that carries the title's text. \`centerTitleInk\` transforms
+        // the wrapper (not the heading) so the heading's own box stays the band
+        // for the filled looks; the wrapper's rect is therefore what moves when
+        // the ink is centred, and what the eye reads as the title's edge.
+        const ink = heading.querySelector(":scope > .beamer-title-ink") || heading;
+        const inkRect = ink.getBoundingClientRect();
+        const bodyRect = body ? body.getBoundingClientRect() : null;
         return {
           isSectionSlide: slide.classList.contains("beamer-section-slide"),
-          headlineHeight: headlineHeight(slide),
+          headlineHeight: headerHeight,
+          // Air above the title's text and air below it, both to the next box the
+          // eye sees: the headline's bottom edge, and the first body line.
+          airAbove: inkRect.top - (slideRect.top + headerHeight),
+          airBelow: bodyRect ? bodyRect.top - inkRect.bottom : null,
           left: headingRect.left - slideRect.left,
           width: headingRect.width,
           top: headingRect.top - slideRect.top,
@@ -3674,6 +3723,23 @@ const assertSectionStyles = (variant, state) => {
       Math.abs(state.minimal.top - state.minimal.headlineHeight) < 1,
       `${variant}: minimal stays flush under the headline`
     );
+    // Staying flush is not enough on its own: the look shipped with the title's
+    // air split 13px above / 43px below, because it kept the band's `min-height`
+    // and the heading's bottom margin. The two gaps are what a reader sees, so
+    // they are what has to match. Measured 21/15 with a Latin title and a
+    // headline showing; the tolerance leaves room for font metrics but is far
+    // below the ~30px asymmetry this regressed to. `assertSectionStyles` runs
+    // twice, so this holds with and without the headline.
+    if (state.minimal.airBelow !== null) {
+      assert(
+        Math.abs(state.minimal.airAbove - state.minimal.airBelow) <= 10,
+        `${variant}: the minimal look's air must read as symmetric: ` +
+          JSON.stringify({
+            airAbove: state.minimal.airAbove,
+            airBelow: state.minimal.airBelow,
+          })
+      );
+    }
   }
 };
 
