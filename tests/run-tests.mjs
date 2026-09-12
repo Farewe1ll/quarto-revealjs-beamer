@@ -676,14 +676,16 @@ const testMadrid = async (connection, origin) => {
   // And its box must not sag below the line. A chip is an inline element, so its
   // box is anchored to the baseline and sized by the MONOSPACE font's ascent and
   // descent -- lopsided around the text a reader sees, by 22.98px against 7.98px on
-  // the stack this machine resolves. With equal padding the box's bottom edge sat
-  // 9.4px under the baseline while its top was only 5.1px above the body's cap
-  // line, which reads as the highlight hanging out of the line (reported, then
-  // confirmed on a magnified line). The theme carries all of the air on top
-  // instead, which measures 8.5 against 8.2 here. How much is font-dependent -- the
-  // monospace fallbacks put the balance between 0.13em and 0.29em of top padding --
-  // so the stylesheet value is a compromise and this tolerance admits all of them
-  // while still rejecting the old symmetric padding on every one.
+  // the stack this machine resolves. With equal padding the box's top edge sat only
+  // 5.1px above the body's cap line while its bottom edge reached 9.4px under the
+  // baseline, which reads as the highlight hanging out of the line (reported, then
+  // confirmed on a magnified line). The theme puts its air on top instead, which
+  // measures 6.0 against 7.2 here.
+  // The tolerance is 3px because the tolerance has to leave room for the monospace
+  // fallback's metrics, and because 1.2px of residual is deliberate: a taller box
+  // would balance exactly (0.21em of top padding reaches 0.8px) but it also brought
+  // the chips on consecutive lines of a wrapped list item to 2.3px apart, close
+  // enough that their fills read as one slab -- which is what the slim box is for.
   const chipPosition = formatsState.chipPosition;
   assert.equal(
     chipPosition.lines,

@@ -94,12 +94,22 @@ Earlier releases predate this file; their history is in the git log.
   equal padding the box's top edge sat 5.1px above the body's cap line while its
   bottom edge reached 9.4px under the baseline — measured on the rendered line — so
   the highlight read as hanging out of the line even though the glyphs were exactly
-  on it. All of the air now goes on top (`padding: 0.21em 0.25em 0`), which balances
-  the two margins the eye compares — the body's cap line above the box, the baseline
-  below it — to 8.9px against 8.2px, a difference of 0.8 where it was 4.3. The balance point is font-dependent (0.13em for
-  DejaVu Sans Mono, 0.29em for Liberation Mono, the two fallbacks Linux resolves),
-  so the stylesheet value is a compromise and the new assertion admits all three
-  while rejecting the old symmetric padding on every one of them.
+  on it.
+
+  Balancing that by growing the box was the wrong first answer, and it showed: at
+  0.21em of top padding the box reached 36.1px inside a 38.4px line box, so the chips
+  on two consecutive lines of a wrapped list item sat 2.3px apart and their fills read
+  as a single slab. The box is now kept as slim as the fix allows — `padding: 0.13em
+  0.2em 0` — which is 32.2px, leaves 6.2px between those chips, and still measures
+  6.0px above the body's cap line against 7.2px below the baseline: a sag of 1.2px
+  where the original symmetric padding gave 4.3. Its 1px border became a 1px ring
+  drawn with `box-shadow` (the same definition on a block's or a table's tinted fill,
+  and 2px less height), and `box-decoration-break: clone` gives each fragment of a
+  wrapped chip its own fill, ring and radius instead of one slab sliced across the
+  break. How much top padding balances the box follows the monospace fallback, so the
+  new assertion measures the RENDERED line — see the chip-position capture — rather
+  than trusting a model, and its tolerance admits the fonts in the stack while
+  rejecting the old symmetric padding on every one of them.
   `tests/fixtures/madrid.qmd` gained an inline-code span on a screenshotted page
   plus a deliberately single-line probe paragraph, so the chip now has both visual
   coverage and a measurable box position — it previously had neither.

@@ -44,6 +44,7 @@ $code-block-font-size: 0.56em !default;
 $code-inline-font-size: 0.8125em !default;
 $code-color: #7c2d12 !default;
 $code-bg: #f2f3f5 !default;
+$code-border: #d9dde2 !default;
 $border-radius: 4px !default;
 
 /*-- scss:rules --*/
@@ -1132,25 +1133,35 @@ $border-radius: 4px !default;
      the chip the same size on every supported version -- and `$code-inline-font-size`
      above still feeds the upstream variable where it exists, so both paths agree. */
   font-size: $code-inline-font-size;
-  /* The air goes ABOVE the chip, and none below it, because a chip's box is
-     anchored to the baseline and sized by the MONOSPACE font's own ascent and
-     descent -- which are not symmetric around the text the eye sees. At 0.8125em
-     the stack in use here reports 22.98px of ascent and 7.98px of descent against
-     a body cap height of 20px, so with equal padding the box's top edge sits only
-     5.1px above the cap line while its bottom edge reaches 9.4px under the
-     baseline: the highlight reads as sagging even though the glyphs are exactly on
-     the baseline. All of the air on top balances the two margins the eye actually
-     compares -- the cap line above, the baseline below -- and measures 8.9px
-     against 8.2px on the rendered line.
-     0.21em is a compromise, not a constant: the balance point follows the
-     monospace fallback's metrics, and this value minimises the worst case across
-     the stack -- 0.205em for the SFMono it was measured on, 0.13em for DejaVu Sans
-     Mono and 0.29em for Liberation Mono, the two fonts the Linux CI resolves.
-     Larger values also push the box towards the line above. */
-  padding: 0.21em 0.25em 0;
+  /* A chip is an inline box, so its background is the FONT's box -- ascent plus
+     descent, 1.27em here, which is already 1.8x the body's cap height. Any
+     vertical padding makes that worse, and worse is visible: at 0.21em of top
+     padding the box reached 36.1px inside a 38.4px line box, so the chips on two
+     consecutive lines of a wrapped list item sat 2.3px apart and their fills
+     nearly merged into one slab. The air is therefore kept to the minimum that
+     fixes the sag: the box is bottom-heavy by (ascent - descent) / 2 = 2.3px
+     relative to the line, so 0.13em on top and none below shifts it back to within
+     1.2px of centred and still measures 6.0px above the body's cap line against
+     7.2px below the baseline. That leaves the box at 32.2px, which leaves 6.2px
+     between the chips of consecutive lines.
+     The 1px border becomes a 1px ring drawn with box-shadow, which defines the
+     chip -- including on the tinted fills of blocks and tables -- without adding
+     to the box the way a border does: the ring costs 2px of height that a border
+     would spend, and the chip is 4px slimmer than it was with both.
+     The figures above are for the SFMono stack this was measured on; the balance
+     point follows the monospace fallback, so the suite asserts on the RENDERED line
+     instead of trusting a model -- see the chip-position capture. */
+  padding: 0.13em 0.2em 0;
+  box-shadow: 0 0 0 1px $code-border;
   background: $code-bg;
-  border: 1px solid #d9dde2;
+  border: 0;
   border-radius: 2px;
+  /* A chip that wraps would otherwise be painted as one box sliced across the
+     break -- a tall slab with only its outer edges drawn, which is exactly the
+     shape this slimming is meant to avoid. `clone` gives each fragment its own
+     fill, ring and radius, so a wrapped chip reads as two tidy chips. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .reveal .columns {
