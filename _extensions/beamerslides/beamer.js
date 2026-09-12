@@ -10,6 +10,15 @@
   const SCROLLING_FRAME_TITLE_RATIO = 2.2759;
   const POLL_INTERVAL_MS = 25;
   const MAX_POLL_ATTEMPTS = 200;
+  // Mirrors the `0.1em` fallback in beamer.scss's ordered-marker rule
+  // (`padding: 0 0 var(--beamer-marker-padding-bottom, 0.1em)`), in em of the
+  // marker's own font size. It is deliberately a constant rather than a read-back
+  // of the computed value: `--beamer-marker-padding-bottom` inherits, so a nested
+  // list's marker resolves it to the padding this pass wrote on its ANCESTOR.
+  // Caching that as the nested marker's own baseline is what made its correction
+  // depend on the parent's glyphs -- measured 0.11614em against the outer
+  // marker's 0.1em.
+  const MARKER_PADDING_BASE_EM = 0.1;
 
   const text = (node) => (node ? node.textContent.trim() : "");
   const meta = (name) => {
@@ -492,7 +501,6 @@
       const lineHeight = Number.parseFloat(style.lineHeight);
       const boxHeight = Number.parseFloat(style.height);
       const paddingTop = Number.parseFloat(style.paddingTop);
-      const paddingBottom = Number.parseFloat(style.paddingBottom);
       const borderTop = Number.parseFloat(style.borderTopWidth);
       const borderBottom = Number.parseFloat(style.borderBottomWidth);
       if (
@@ -504,11 +512,7 @@
         return;
       }
 
-      if (!item.dataset.beamerMarkerPaddingEm) {
-        item.dataset.beamerMarkerPaddingEm = String(paddingBottom / fontSize);
-      }
-      const basePaddingBottom =
-        Number.parseFloat(item.dataset.beamerMarkerPaddingEm) * fontSize;
+      const basePaddingBottom = MARKER_PADDING_BASE_EM * fontSize;
 
       context.font = [
         style.fontStyle,
@@ -1091,7 +1095,20 @@
   const isChrome = (node) =>
     node.classList.contains("beamer-headline") ||
     node.classList.contains("beamer-footline");
-  const isFrameTitle = (node) => node.tagName === "H2";
+  // The slide's fixed title: the frame title on a frame, the section band on a
+  // section page. Both are pinned by CSS that only matches a DIRECT child of the
+  // `<section>` -- `section > h2:first-of-type` for a frame, and
+  // `section.beamer-section-slide > h1:first-of-type` for a section page -- so
+  // either one left in the scroll layer silently loses its positioning and its
+  // fill. A section page's title is an `h1` and was not matched here, so
+  // `# Title {.scrollable}` moved the band into the layer: measured with no fill,
+  // `position: static`, and the frame's 32.4px title promoted to 52.5px by
+  // Quarto's `.reveal[data-navigation-mode=linear] .title-slide h1` rule once the
+  // theme's own (more specific) rule stopped matching.
+  const isSlideTitle = (slide, node) =>
+    node.tagName === "H2" ||
+    (node.tagName === "H1" &&
+      slide.classList.contains("beamer-section-slide"));
 
   // A scrollable slide used to scroll itself (`overflow: auto` on the <section>),
   // and because the headline/footline are its absolutely-positioned children they
@@ -1113,10 +1130,11 @@
   // the border box -- measured as `0,0` on a section with `padding: 80px 58px`,
   // not the expected `58,80`.
   //
-  // The frame title must stay ON the slide, never in the layer: it is fixed UI
+  // The slide title must stay ON the slide, never in the layer: it is fixed UI
   // like the chrome, and both `section > h2:first-of-type` (the band's full-bleed
   // width and 58px min-height) and the frame-title measurement read it as a
-  // direct child.
+  // direct child. That applies to a section page's `h1` band as much as to a
+  // frame's `h2` -- see `isSlideTitle`.
   const wrapScrollableSlide = (slide) => {
     if (!slideScrolls(slide)) {
       // A frame can stop scrolling again -- `beamer-long-frame-title` is toggled on
@@ -1140,14 +1158,14 @@
     const layer = slide.querySelector(":scope > .beamer-scroll");
     const content = [];
     for (const child of Array.from(slide.children)) {
-      if (isScrollLayer(child) || isChrome(child) || isFrameTitle(child)) {
+      if (isScrollLayer(child) || isChrome(child) || isSlideTitle(slide, child)) {
         continue;
       }
       content.push(child);
     }
     if (layer) {
       for (const child of Array.from(layer.children)) {
-        if (!isFrameTitle(child)) {
+        if (!isSlideTitle(slide, child)) {
           content.push(child);
         }
       }
@@ -1239,11 +1257,19 @@
       return;
     }
     overflowReported.add(key);
+    // A section page has no frame title, so the frame advice would name something
+    // that does not exist there. The remedies differ because the sections do: a
+    // section page carries prose only because the author put it there.
+    const remedy = slide.classList.contains("beamer-section-slide")
+      ? "Move the prose to the following frame, or add `.scrollable` so the page " +
+        "can scroll."
+      : "Add `.smaller` to the frame title, split the frame, or add `.scrollable` " +
+        "so it can scroll.";
     console.warn(
       `[beamerslides] ${slide.id ? `#${slide.id}` : "a frame"} overflows its ` +
         `content area by ${overflow}px (${slide.scrollHeight}px of content in ` +
-        `${slide.clientHeight}px). Add \`.smaller\` to the frame title, split ` +
-        "the frame, or add `.scrollable` so it can scroll."
+        `${slide.clientHeight}px). ` +
+        remedy
     );
   };
 
@@ -1543,7 +1569,29 @@
     if (chromeInjected) {
       return true;
     }
-    if (!chromeIsSettled() || !decorateChrome()) {
+    if (!chromeIsSettled()) {
+      return false;
+    }
+    let decorated;
+    try {
+      decorated = decorateChrome();
+    } catch (error) {
+      // `decorateChrome` marks the deck decorated before it starts, on purpose:
+      // this pass appends reference pages and rewrites slide structure, so a
+      // half-finished run is not safe to repeat. That makes it fail-stop -- but
+      // fail-stop must not also be silent, or the deck ships with frames that have
+      // no headline, footline or numbering and nobody is told.
+      console.error(
+        "[beamerslides] The slide decoration pass failed part-way, so this deck " +
+          "is only partly decorated: frames after the failure point have no " +
+          "headline, footline or numbering. It is deliberately not retried, " +
+          "because the pass appends reference pages and a second run would " +
+          "duplicate them.",
+        error
+      );
+      throw error;
+    }
+    if (!decorated) {
       return false;
     }
     chromeInjected = true;
@@ -1654,15 +1702,33 @@
     watchFrameTitles(slides);
     positionNativeUi(reveal);
 
-    const realignOpticalLabels = () => {
-      window.requestAnimationFrame(alignInlineLabels);
-      window.requestAnimationFrame(alignOrderedMarkers);
-      window.requestAnimationFrame(centerTitleInk);
-    };
-    const realignForPrint = () => {
+    // One pass per frame, however many events ask for one. Each call used to
+    // schedule its own three rAF callbacks, and a single real resize produces
+    // several calls -- measured 2 native `resize` events plus 1 re-emission from
+    // Reveal, i.e. 3 passes per resize, and a window drag multiplies that by the
+    // event rate. Each pass reads `getComputedStyle` per list item and one
+    // `getImageData` per title (see `fontMetrics`), so the cost is real, not
+    // theoretical. The work is unchanged; only the number of times it runs per
+    // frame is. `realignForPrint` stays synchronous: `beforeprint` has no frame
+    // to wait for.
+    const runRealign = () => {
       alignInlineLabels();
       alignOrderedMarkers();
       centerTitleInk();
+    };
+    let realignScheduled = false;
+    const realignOpticalLabels = () => {
+      if (realignScheduled) {
+        return;
+      }
+      realignScheduled = true;
+      window.requestAnimationFrame(() => {
+        realignScheduled = false;
+        runRealign();
+      });
+    };
+    const realignForPrint = () => {
+      runRealign();
       slides.forEach(measureFrameTitle);
     };
     const repositionNativeUi = (event) => {

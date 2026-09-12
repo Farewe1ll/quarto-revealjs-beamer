@@ -75,7 +75,17 @@ $border-radius: 4px !default;
    in beamer.js. Making the section itself the scroll container carried the
    absolutely-positioned headline/footline along with the content: scrolled to the
    end the footline went from top:690 to -201, permanently covering the last line.
-   The section clips instead and the body scrolls in an inner layer. */
+   The section clips instead and the body scrolls in an inner layer.
+
+   Do NOT delete this as redundant against the rule above. It is inert against the
+   shipped stylesheets -- the base `overflow: hidden` below already outranks
+   Quarto's own `.reveal .slide.scrollable { overflow-y: auto }` (0,3,1 against
+   0,3,0), and deleting this rule was measured to change nothing at all. What it
+   buys is specificity (0,4,1), and that is exactly what a *document's* stylesheet
+   needs defeated: a user writing the natural
+   `.reveal .slides section.scrollable { overflow-y: auto }` ties the base rule at
+   (0,3,1), wins on source order, and re-enables section scrolling -- measured:
+   hidden with this rule present, `auto` without it. */
 .reveal .slides section.beamer-leaf-slide.scrollable,
 .reveal .slides section.beamer-leaf-slide.smaller,
 .reveal .slides section.beamer-leaf-slide.beamer-long-frame-title {
@@ -292,10 +302,15 @@ $border-radius: 4px !default;
 }
 
 /* Descendant selectors on purpose: subheadings inside .columns, blocks, and
-   callouts must keep the theme's structure colors, not the reveal fallback. */
+   callouts must keep the theme's structure colours, not the reveal fallback.
+   It reads `--beamer-structure`, not `--beamer-primary`. The two are equal in
+   both stock variants so the difference is invisible there, but `structure` is
+   the role h4-h6 and the list markers use and the one the README tells authors
+   to override to recolour the theme's furniture -- reading `primary` here meant
+   that documented override silently skipped h3. */
 .reveal .slides section h3 {
   margin: 0.1em 0 0.55em;
-  color: var(--beamer-primary);
+  color: var(--beamer-structure);
   font-size: 0.91em;
   font-weight: 600;
   letter-spacing: 0;
@@ -354,22 +369,32 @@ $border-radius: 4px !default;
      # Title {.section-badge}   centred rounded badge
      # Title {.section-minimal} plain text, no fill
 
-   The look is expressed entirely in custom properties so beamer.js only has to
-   supply the numbers it alone can know (the band's height and where the body
-   starts); the geometry itself stays declarative here. */
+   The look is expressed in custom properties, and the geometry is declarative:
+   the band is in the flow (see the `h1` rule below), so nothing has to tell the
+   stylesheet how tall a section title is. beamer.js only adds the
+   `beamer-section-slide` class. */
 .reveal .slides section.beamer-section-slide {
-  --beamer-section-inset: 0;
   --beamer-section-radius: 0;
   --beamer-section-shadow: none;
   --beamer-section-align: left;
   --beamer-section-size: 1.08em;
-  --beamer-section-margin: 0;
   flex-direction: column;
-  /* The heading is absolutely positioned, so this padding only reserves room
-     for the body. The band and minimal looks let the body flow normally here;
-     a centred badge overrides the top padding below. */
-  padding: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) + 22px) 58px
+  /* `justify-content: flex-start` is load-bearing, not decoration: Quarto marks
+     level-1 sections `center`, which `applySlideBox` turns into
+     `beamer-center-slide` (`justify-content: center`), and a centred flex column
+     would centre the band into the middle of the page. A band is a frametitle and
+     belongs flush under the headline. The badge look opts back into centring for
+     its title+body block, at a higher specificity.
+     The top padding reserves only the headline, because the band reserves its own
+     height from the flow. It used to reserve
+     `headline + var(--beamer-frame-height) + 22px` -- a fixed 58px that nothing
+     ever measured for a section page, since `measureFrameTitle` requires a direct
+     `h2`. Measured against that rule: a two-line title (band 95.2px) reached
+     15.2px into the body's box, and a three-line one (band 132.7px) buried the
+     first line, whose top sat at 90.9px. */
+  padding: var(--beamer-active-headline-height) 58px
     calc(var(--beamer-footline-height) + 22px);
+  justify-content: flex-start;
 }
 
 .reveal .slides section.beamer-section-slide.section-badge {
@@ -385,12 +410,10 @@ $border-radius: 4px !default;
   padding: calc(var(--beamer-active-headline-height) + 24px) 12%
     calc(var(--beamer-footline-height) + 22px);
   justify-content: center;
-  --beamer-section-inset: 12%;
   --beamer-section-radius: 5px;
   --beamer-section-shadow: 0 3px 0 rgba(0, 0, 0, 0.12);
   --beamer-section-align: center;
   --beamer-section-size: 1.62em;
-  --beamer-section-margin: 0 auto;
   /* A badge has to be a solid object: it is the only section look whose whole
      point is the rounded box, and a shadow drawn around a transparent one
      reads as a stray rule under the text. Variants that leave the section band
@@ -401,12 +424,11 @@ $border-radius: 4px !default;
   --beamer-section-fg: var(--beamer-section-badge-fg);
 }
 
-/* In the badge look the title is part of the centred flow, so it must stop
-   being an absolutely-positioned band. Its body then matches the badge's own
-   inset, so the two read as one centred block rather than as a narrow badge
+/* In the badge look the title is part of the centred flow, so it must not keep
+   the band's full-bleed negative margins: it matches the badge's own inset
+   instead, so the two read as one centred block rather than as a narrow badge
    with full-width prose hanging off it. */
 .reveal .slides section.beamer-section-slide.section-badge > h1:first-of-type {
-  position: static;
   width: 100%;
   margin: 0 auto;
 }
@@ -437,24 +459,19 @@ $border-radius: 4px !default;
   background: transparent;
 }
 
-
-
 .reveal .slides section.beamer-section-slide > h1:first-of-type {
-  position: absolute;
-  transform-origin: center center;
-  /* The band starts where the headline ends. There is no per-look offset term
-     here: `--beamer-section-offset` used to sit in this calc, but nothing ever
-     wrote it, so it was always 0px. */
-  top: var(--beamer-active-headline-height);
-  left: var(--beamer-section-inset);
-  right: var(--beamer-section-inset);
-  z-index: 2;
+  /* In the flow, so the band's own height is what reserves the space the body
+     starts below -- which is why no measurement is needed for a section page. A
+     full-bleed band still spans the whole slide: the section is padded 58px
+     horizontally, so the negative inline margin cancels that padding and the
+     `padding` below puts the text back at x=58, flush with the frame titles. The
+     badge look resets the margin to `auto` above. */
+  margin: 0 -58px 22px;
   display: flex;
   align-items: center;
   justify-content: var(--beamer-section-align);
   box-sizing: border-box;
   min-height: var(--beamer-frame-height);
-  margin: var(--beamer-section-margin);
   padding: 10px 58px;
   color: var(--beamer-section-fg, var(--beamer-section-title-fg));
   background: var(--beamer-section-fill, var(--beamer-section-title-bg));
@@ -659,8 +676,10 @@ $border-radius: 4px !default;
   width: 0.34em;
   height: 0.34em;
   transform: translateY(-50%);
-  /* Beamer paints itemize projectors with `structure`; in CambridgeUS that
-     stays `beamer@blendedblue` while the frametitle goes dark red. */
+  /* Beamer paints itemize projectors with `structure`. Upstream CambridgeUS
+     leaves it at `beamer@blendedblue` while the frametitle goes dark red, but
+     this theme deliberately re-points `structure` at the variant's darkred (see
+     `_palette.scss`), so the projectors track the accent instead of clashing. */
   background: var(--beamer-structure);
   border-radius: 1px;
 }
@@ -1240,7 +1259,16 @@ html.print-pdf .reveal .slides section.beamer-center-slide {
 
 html.reveal-print .reveal .slides section.beamer-section-slide,
 html.print-pdf .reveal .slides section.beamer-section-slide {
-  padding: calc(var(--beamer-active-headline-height) + var(--beamer-frame-height) + 22px) 58px calc(var(--beamer-footline-height) + 34px) !important;
+  padding: var(--beamer-active-headline-height) 58px calc(var(--beamer-footline-height) + 34px) !important;
+}
+
+/* Print re-applies the `center` class's `justify-content: center` at a
+   specificity the screen rule does not reach, which would centre the band into
+   the middle of the page. The band and minimal looks pin it under the headline; a
+   badge keeps its deliberate centring, so it is excluded rather than overridden. */
+html.reveal-print .reveal .slides section.beamer-section-slide:not(.section-badge),
+html.print-pdf .reveal .slides section.beamer-section-slide:not(.section-badge) {
+  justify-content: flex-start !important;
 }
 
 html.reveal-print .reveal .slides section#title-slide,

@@ -1,0 +1,28 @@
+---
+title: "References across files"
+author: "Multifile Author"
+date: "2026"
+short-title: "Refs multifile"
+short-author: "Multifile Author"
+short-institute: "Multifile Institute"
+short-date: "2026"
+beamer-variant: madrid
+bibliography:
+  - tests/fixtures/refs-multifile-a.bib
+  - tests/fixtures/refs-multifile-b.bib
+refs-order: declaration
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+# Section
+
+## Body {#body}
+
+Both entries are cited so citeproc renders both [@ZuluLast2020] [@AlphaFirst2021].
+
+## References {#references}
+
+::: {#refs}
+:::

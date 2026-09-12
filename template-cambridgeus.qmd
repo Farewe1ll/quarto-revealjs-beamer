@@ -169,7 +169,7 @@ $$
 $$
 :::
 
-公式默认使用扩展内置的固定版本 KaTeX，断网打开也能完整渲染；行内公式放大 2%，行间公式放大 6%。
+公式默认使用扩展内置的固定版本 KaTeX，断网打开也能完整渲染；行内公式放大 2%，行间公式放大 6%。注意 KaTeX 是按相对路径 `_extensions/beamerslides/katex/` 动态加载的，`embed-resources: true` **不会**把它内联——单独把 HTML 文件搬走会让公式静默失效，请让 `_extensions/beamerslides/` 与它同行。
 
 # 总结
 

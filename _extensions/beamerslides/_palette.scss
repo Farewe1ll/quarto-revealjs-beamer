@@ -25,8 +25,10 @@
   /* `structure` is the colour Beamer derives bullets, block titles and other
      structural furniture from. It is NOT the same thing as the variant's
      headline/frametitle text colour, which is what `--beamer-primary`
-     carries: in CambridgeUS those differ (structure stays blue while
-     titlelike becomes dark red). */
+     carries. Upstream CambridgeUS keeps `structure` at beamer@blendedblue while
+     its frametitle goes dark red; this theme deliberately re-points `structure`
+     at the variant's own darkred instead (see the CambridgeUS block below), so
+     the two roles coincide there by choice rather than by accident. */
   --beamer-structure: #3333b2;
   --beamer-structure-2: #262686;
   --beamer-structure-3: #1a1a59;
@@ -89,7 +91,7 @@
   --beamer-block-alert-title-bg: #bf0000;
   --beamer-block-alert-title-fg: #ffffff;
   --beamer-block-alert-title-weight: 650;
-  /* White on the #bf0000 band is already 7.6:1, so no stroke is needed. */
+  /* White on the #bf0000 band is already 6.53:1, so no stroke is needed. */
   --beamer-block-alert-title-stroke: 0;
 
   --beamer-headline-height: 32px;
@@ -142,8 +144,8 @@
      the undiluted darkred instead so the alert signal is the same red as the
      list markers and the highest-chroma warm colour on the slide; mixing in
      grey was the one thing making the alert read *quieter* than the plain
-     block. This value drives the alert block title, `.alert` inline emphasis
-     and `h4`.
+     block. This value drives the alert block title and `.alert` inline
+     emphasis; `h4` used to take it too and now takes `--beamer-structure`.
      `example text` is NOT derived from `structure` -- beamercolorthemedefault
      pins it to green!50!black, and neither beaver nor orchid redefines it -- so
      it keeps the same value here as in Madrid even though `structure` moved to
@@ -194,7 +196,7 @@
      background, against the 4.5:1 that body-size text needs -- it reads as a
      washed-out gold rather than a warning red. Kept because it is the explicit
      design decision; `--beamer-alert` below stays red on purpose so `.alert`
-     inline emphasis and `h4` remain legible. */
+     inline emphasis stays legible on the light page. */
   --beamer-block-alert-title-bg: transparent;
   --beamer-block-alert-title-fg: #ffcd00;
   --beamer-block-alert-title-weight: 700;

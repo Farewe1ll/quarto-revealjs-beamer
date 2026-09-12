@@ -18,5 +18,8 @@
 /tests/_output/
 /tests/_artifacts/
 
+# Test run lock (and the claim file it is built from) -- see tests/run-tests.mjs
+tests/.run-tests.lock*
+
 # Scratch / temporary files
 tmp/

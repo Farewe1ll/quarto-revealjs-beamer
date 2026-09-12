@@ -57,7 +57,7 @@ beamer-variant: madrid
 | `beamer-secheader` | 按变体决定 | Madrid 默认关闭，CambridgeUS 默认开启；设置 `true` / `false` 可覆盖 |
 | `beamer-progress` | `false` | 在 footline 顶部显示细进度条；格式中的 `progress: true` 也会启用同一条进度线 |
 
-页码由三段式 footline 统一显示为“当前页 / 总页数”，因此 Reveal.js 自带的浮动 `slide-number` 会被主题替代，通常无需另行开启。标记为 `visibility="uncounted"` 的页面不显示页码，也不会进入总页数或推进进度。开启 Reveal.js 菜单时，按钮会自动避开 headline、frame title、logo 和 footline。
+页码由三段式 footline 统一显示为“当前页 / 总页数”，因此 Reveal.js 自带的浮动 `slide-number` 被主题**强制隐藏**（`display: none !important`）——写成 `slide-number: true` 也不会出现浮动页码，页码只在 footline 里。标记为 `visibility="uncounted"` 的页面不显示页码，也不会进入总页数或推进进度。开启 Reveal.js 菜单时，按钮会自动避开 headline、frame title、logo 和 footline。
 
 页脚会优先读取短元数据。作者与机构会合并显示为“作者（机构）”：
 
@@ -70,7 +70,11 @@ beamer-secheader: true
 beamer-progress: true
 ```
 
-若未提供短值，扩展会回退到 Quarto 生成的标题、作者、机构和日期。非法的变体或布尔值会输出警告，并使用安全的默认行为。
+若未提供短值，扩展会回退到 Quarto 生成的标题、作者、机构和日期。非法的变体或布尔值会输出警告，并使用安全的默认行为；未知的 `refs-order` / `refs-overflow` 也会告警并回退。
+
+格式层还预设了一批 **Reveal.js 选项**（见 `_extensions/beamerslides/_extension.yml`）。它们决定版面而不是内容，所以没有做成元数据开关：`width: 1280`、`height: 720`、`margin: 0`、`center: false`、`controls: false`、`menu: false`、`progress: false`、`slide-number: false`、`transition: none`、`background-transition: none`、`navigation-mode: linear`、`hash: true`、`history: false`、`minimal: true`、`preview-links: auto`、`code-overflow: wrap`、`highlight-style: github`、`date-format: long`，以及内置 KaTeX。在 front matter 里重新声明同名选项即可覆盖。
+
+`center` 需要一点说明：它的默认值是 `false`，但 Quarto 会给一级章节页加 `center` 类，主题据此把章节页内容居中；band 与 minimal 两种外观另用 `justify-content: flex-start` 把色带钉在页眉下方（原因见「章节页外观」）。给任意一页加 `{.center}` 可以单独把它改成居中。
 
 ## 自定义配色
 
@@ -120,7 +124,7 @@ structure!50!black = darkred!50!black = #660000
 
 `h3`–`h6` 同时构成一条递减的字号阶梯：`0.91em` → `0.78em` → `0.68em` → `0.6em`（以根字号 30px 计为 27.3 / 23.4 / 20.4 / 18.0 px）。回归测试会断言这条阶梯严格递减，以及四级标题对页面背景的对比度均达到 WCAG AA（4.5:1）。
 
-`--beamer-alert`（`red` / beaver 的 `darkred!80!gray`）与 `--beamer-example`（`green!50!black`，注意 xcolor 的 `green` 是 `rgb(0,1,0)`，故为 `#008000` 而非 `#004000`）是**基础色**；三种 block 的标题底色由它们按 `!75!black` 派生，block 正文底色再由标题底色按 `!10!bg` 派生。因此覆盖基础色即可联动整套 block 配色。
+`--beamer-alert`（Madrid 为 `red`；CambridgeUS **有意偏离**上游 beaver 的 `darkred!80!gray`（`#bd1a1a`），改用未稀释的 `darkred`（`#cc0000`），让警示色与列表符号同色）与 `--beamer-example`（`green!50!black`，注意 xcolor 的 `green` 是 `rgb(0,1,0)`，故为 `#008000` 而非 `#004000`）是**基础色**；三种 block 的标题底色由它们按 `!75!black` 派生，block 正文底色再由标题底色按 `!10!bg` 派生。因此覆盖基础色即可联动整套 block 配色。
 
 最简单的做法是复制仓库里的 `examples/custom-palette.css`，只改一个种子色，其余由 `color-mix()` 按 Beamer 的关系派生：
 
@@ -144,7 +148,7 @@ format:
 
 标题页会显示可点击的邮箱地址；ORCID 使用内嵌矢量 iD 图标，并以作者名右上方的小角标呈现，避免位图缩放模糊。多位作者继续使用同一组 `name`、`email`、`orcid` 和 `affiliations` 字段。
 
-行内公式默认放大 `2%`，行间公式放大 `6%`。内置 KaTeX 及其字体不依赖 CDN。若文档依赖 KaTeX 尚未支持的 MathJax 专用语法，可以覆盖回 Quarto 的 MathJax（此时 MathJax 本身是否离线取决于用户的 Quarto 配置）：
+行内公式默认放大 `2%`，行间公式放大 `6%`。内置 KaTeX 及其字体不依赖 CDN，断网可用。**但它不是单文件自包含的**：Quarto 把 `html-math-method.url` 编译成一段运行时脚本，由它按相对路径 `_extensions/beamerslides/katex/…` 动态插入 `<link>` 与 `<script>`，因此 `embed-resources: true` 看不到、也就**不会内联**它们。实测：把 HTML 与 `_extensions/beamerslides/` 一起搬走可以正常渲染（KaTeX 返回 200），只搬 HTML 则两个文件都 404，而公式渲染器的 `throwOnError: false` 会让它**静默降级**成原始 `$…$`。所以要么让 `_extensions/beamerslides/` 与 HTML 同行，要么自己把 KaTeX 的 CSS/JS 内联进 HTML。若文档依赖 KaTeX 尚未支持的 MathJax 专用语法，可以覆盖回 Quarto 的 MathJax（此时 MathJax 本身是否离线取决于用户的 Quarto 配置）：
 
 ```yaml
 format:
@@ -164,7 +168,7 @@ format:
 正文内容。
 ```
 
-`data-subsection` 是可选的；启用 headline 时，如果没有提供该属性，副导航会显示当前 frame title。
+`data-subsection` 是可选的；启用 headline 时，如果没有提供该属性，副导航会显示当前 frame title。对称的 `data-section` 用于覆盖 headline 左半部分显示的章节名（默认取最近一个一级标题的文本）。
 
 ### 章节页外观
 
@@ -206,6 +210,8 @@ format:
 :::
 ```
 
+三个类各有别名，效果相同：`.beamer-block`、`.example-block`、`.alert-block`；裸的 `.block` 也接受。
+
 block 标题会渲染为真实文本节点（而不是 CSS 伪元素），因此在浏览器里可以被 Ctrl+F 搜索、选中复制，也能被读屏软件读取。标题保持字面文本（不解析 markdown，避免 `a_b_c` 之类的标题被误当作强调）。手写 HTML 时仍可用 `data-title` 属性，此时由 CSS 伪元素兜底。
 
 **两种变体的 block 外观不同，这同样是 Beamer 的行为**：
@@ -227,7 +233,7 @@ CambridgeUS 的三种 block 按**语义层级**设计（这是有意偏离上游
 
 描边宽度是在**真实演示尺寸**下扫掠 2/3/4/5px 并在整页里并排比较后定的：2px 相对普通块显得畏缩，5px 开始像一条黑杠且黄色被压薄，**3–4px 是可用区间，取 3px**（比邻近平级标题明显更重，同时保留最多黄色）。可用 `--beamer-block-alert-title-stroke` 调整。
 
-**`--beamer-alert` 仍保持红色**：它同时驱动 `.alert` 行内强调和 `h4`，这两处直接坐在浅色页面上，所以不受 block 标题的黄影响。
+**`--beamer-alert` 仍保持红色**：它驱动 `.alert` 行内强调，这一处直接坐在浅色页面上，所以不受 block 标题的黄影响。（`h4` 曾经也取这个变量，现在改用 `--beamer-structure`。）
 
 若希望在 CambridgeUS 下也得到实色标题条，覆盖对应变量即可：
 
@@ -382,11 +388,13 @@ npm test
 
 页面就绪等待默认最长 20 秒；慢速环境可通过 `BEAMERSLIDES_PAGE_READY_TIMEOUT_MS` 调整，例如 `BEAMERSLIDES_PAGE_READY_TIMEOUT_MS=30000 npm test`。
 
+每条 Chrome DevTools 命令默认最长等待 300 秒。这个上限与外部命令的 `BEAMERSLIDES_COMMAND_TIMEOUT_MS`（同样 300 秒）保持一致：危险是同一个，而走这条通道的 `Page.printToPDF` / `Page.captureScreenshot` 恰恰是整套里最慢的命令，又跑在同样拥挤的共享 CI runner 上。上限过宽只是让真正的挂死晚一点报出来；过窄则会把"runner 慢"变成失败，后者更糟。没有它的话，一条永不到达回包的 `Runtime.evaluate` 会让套件**永久挂起**，且留下需要手工删除的陈旧锁。可用 `BEAMERSLIDES_CDP_TIMEOUT_MS` 覆盖，例如 `BEAMERSLIDES_CDP_TIMEOUT_MS=60000 npm test`。
+
 测试对**外部偶发故障**做了重试，这是实测统计出来的、与扩展代码无关的抖动：`quarto render` 会偶发 `SIGSEGV`（Quarto 的 Deno 运行时崩溃，同一输入下次即成功），以及 Reveal 偶尔不发布 `window.Reveal` 就绪（页面已加载、字体已就绪，但就是没初始化）。**不要并发运行本套件。** 它会在仓库根目录写固定名字的临时文件、并共用同一个 `tests/_output`，两个进程会互相删输入、互相覆盖产物，表现为"某个探针读到 null"这类无关报错（这个坑真实浪费过时间）。套件启动时会检查 `tests/.run-tests.lock`，若已有运行中的进程会直接报错并给出 pid，而不是继续跑出误导性的失败。
 
 探针若读到**尚未生成**的元素，会抛 `Cannot read properties of null`。这是竞态而非结论——页面稍后就绪、同一探针即通过——因此只对这类消息重试；真正"元素缺失"的探针仍会在自己的断言上失败。
 
-另外 `Page.printToPDF` 偶发返回近乎空的文档（实测有一次只产出 1,148 字节，同一页面正常约 100 KB），也会重试。渲染重试**包裹的是整个操作而不是命令参数**——`renderFixture` 在 `finally` 里删除临时输入，若只重试命令就会对着已删除的文件反复重试，把偶发崩溃变成必然失败（这个错误在本仓库真实发生过，已修）。重试只挽救"未完成/明显无效"的产物，真正的失败依然会失败。重试次数可用 `BEAMERSLIDES_PAGE_READY_ATTEMPTS` 覆盖。
+另外 `Page.printToPDF` 偶发返回近乎空的文档（实测有一次只产出 1,148 字节，同一页面正常约 100 KB），也会重试。渲染重试**包裹的是整个操作而不是命令参数**——`renderFixture` 在 `finally` 里删除临时输入，若只重试命令就会对着已删除的文件反复重试，把偶发崩溃变成必然失败（这个错误在本仓库真实发生过，已修）。重试只挽救"未完成/明显无效"的产物，真正的失败依然会失败。`quarto render` 与 `Page.printToPDF` 的重试次数目前是代码里的固定值（各 3 次）；只有"页面未就绪即重载"的次数可用 `BEAMERSLIDES_PAGE_READY_ATTEMPTS` 覆盖。
 
 只有确认视觉变化符合预期后，才应更新基线：
 

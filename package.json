@@ -1,6 +1,7 @@
 {
   "name": "quarto-revealjs-beamer",
   "description": "Beamer Madrid / CambridgeUS themes for Quarto Reveal.js",
+  "version": "0.4.0",
   "private": true,
   "license": "MIT",
   "type": "module",

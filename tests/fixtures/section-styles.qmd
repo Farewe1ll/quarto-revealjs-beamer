@@ -20,3 +20,8 @@ Text.
 ## Frame {#sec-frame}
 
 - item
+
+# A deliberately long section title that wraps onto several lines so that the band is taller than one line and the first line of the body below it has to clear the band's full measured height rather than a fixed reservation {#sec-long}
+
+Text under a title that wraps. The assertion on this page is what keeps the band
+in the document flow: a fixed reservation let the band reach into the body.

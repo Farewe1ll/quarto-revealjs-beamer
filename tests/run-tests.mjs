@@ -1,35 +1,99 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runLockFile = join(projectRoot, "tests", ".run-tests.lock");
 
+const lockHolder = () => {
+  const holder = readFileSync(runLockFile, "utf8").trim();
+  const pid = Number.parseInt(holder, 10);
+  const alive =
+    Number.isFinite(pid) &&
+    (() => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch (error) {
+        return error.code === "EPERM";
+      }
+    })();
+  return { holder, alive };
+};
+
+const describeConflict = (holder) =>
+  `Another test run (pid ${holder}) is already using this checkout. ` +
+  "The suite writes fixed temporary files into the repo root and a " +
+  "single tests/_output, so concurrent runs corrupt each other. " +
+  `Wait for it, or delete ${relative(projectRoot, runLockFile)} if stale.`;
+
+// Claim the lock, or report that someone else holds it. The pid is written to a
+// private file first and then `link`ed into place, because `link` is the atomic
+// create-if-absent primitive: the lock only becomes visible once it already
+// contains the pid. `writeFileSync(..., { flag: "wx" })` looks atomic but is not
+// enough here -- it creates the file and *then* writes it, so a concurrent run
+// that loses the race can read an empty lock, find no live pid in it, and
+// "reclaim" the winner's lock as stale.
+const claimRunLock = () => {
+  const claimPath = `${runLockFile}.claim-${process.pid}`;
+  writeFileSync(claimPath, String(process.pid));
+  try {
+    linkSync(claimPath, runLockFile);
+    return true;
+  } catch (error) {
+    if (error.code !== "EEXIST") {
+      throw error;
+    }
+    return false;
+  } finally {
+    rmSync(claimPath, { force: true });
+  }
+};
+
+// A stale lock (holder no longer alive) is reclaimed once and the claim retried;
+// a second failure means a live run claimed it in the meantime, so this one loses.
 const acquireRunLock = () => {
-  if (existsSync(runLockFile)) {
-    const holder = readFileSync(runLockFile, "utf8").trim();
-    const pid = Number.parseInt(holder, 10);
-    const alive =
-      Number.isFinite(pid) &&
-      (() => {
-        try {
-          process.kill(pid, 0);
-          return true;
-        } catch (error) {
-          return error.code === "EPERM";
-        }
-      })();
-    if (alive) {
-      throw new Error(
-        `Another test run (pid ${holder}) is already using this checkout. ` +
-          "The suite writes fixed temporary files into the repo root and a " +
-          "single tests/_output, so concurrent runs corrupt each other. " +
-          `Wait for it, or delete ${relative(projectRoot, runLockFile)} if stale.`
-      );
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (claimRunLock()) {
+      releaseRunLockOnExit();
+      return;
+    }
+    let current;
+    try {
+      current = lockHolder();
+    } catch (readError) {
+      if (readError.code === "ENOENT") {
+        // The holder released it between the failed link and this read.
+        continue;
+      }
+      throw readError;
+    }
+    if (current.alive || attempt === 1) {
+      throw new Error(describeConflict(current.holder));
+    }
+    try {
+      unlinkSync(runLockFile);
+    } catch (unlinkError) {
+      if (unlinkError.code !== "ENOENT") {
+        throw unlinkError;
+      }
     }
   }
-  writeFileSync(runLockFile, String(process.pid));
+  throw new Error(
+    `Could not claim ${relative(projectRoot, runLockFile)} after reclaiming a ` +
+      "stale lock; another run keeps taking it."
+  );
+};
+
+const releaseRunLockOnExit = () => {
   process.on("exit", () => {
     try {
       if (
@@ -49,7 +113,6 @@ import {
   artifactsDir,
   assertNoBrowserErrors,
   assertPrintLayout,
-  baselinesDir,
   chromeTemporaryDir,
   debugCleanup,
   delay,
@@ -63,12 +126,10 @@ import {
   resetDirectory,
   rootDir,
   run,
-  runCapture,
   showSlide,
   shutdownChrome,
   startServer,
   temporaryInputs,
-  testsDir,
   visibleInkMeasurementSource,
 } from "./lib/harness.mjs";
 
@@ -126,8 +187,8 @@ const testMadrid = async (connection, origin) => {
     const block = slide.querySelector(".beamer-block");
     return {
       classes: reveal.className,
-      leafSlides: document.querySelectorAll(".beamer-leaf-slide").length,
-      headlineCount: document.querySelectorAll(".beamer-leaf-slide > .beamer-headline").length,
+      leafSlides: document.querySelectorAll("section.beamer-leaf-slide").length,
+      headlineCount: document.querySelectorAll("section.beamer-leaf-slide > .beamer-headline").length,
       footerBoxCount: footerBoxes.length,
       footerWidths: footerBoxes.map((node) => node.getBoundingClientRect().width),
       author: footer.querySelector(".beamer-footline-author").textContent,
@@ -1734,7 +1795,6 @@ const readDocumentFootnoteStateWithRetry = async (page, context) => {
     true,
     `${context}: footnote slide (after ${footnoteStateAttempts} reads)`
   );
-  return state;
 };
 
 const readDocumentFootnoteState = `(() => {
@@ -1847,10 +1907,6 @@ const testInjectionTiming = async (connection, origin) => {
               }
             }
           }
-          if (window.__beamerTimeline.frames === undefined) {
-            window.__beamerTimeline.frames = 0;
-          }
-          window.__beamerTimeline.frames += 1;
           // Keep observing until the first ready frame plus 30 more, so a slow
           // renderer cannot end the window before the deck ever paints ready
           // (which would make the bare-frame check pass vacuously).
@@ -1919,9 +1975,9 @@ const testInvalidOptions = async (connection, origin) => {
     return {
       classes: document.querySelector(".reveal").className,
       variantMeta: document.querySelector('meta[name="beamer-variant"]').content,
-      headlineCount: document.querySelectorAll(".beamer-leaf-slide > .beamer-headline").length,
+      headlineCount: document.querySelectorAll("section.beamer-leaf-slide > .beamer-headline").length,
       progressCount: document.querySelectorAll(".beamer-footline-progress").length,
-      slideCount: document.querySelectorAll(".beamer-leaf-slide").length,
+      slideCount: document.querySelectorAll("section.beamer-leaf-slide").length,
       hasFootline: Boolean(slide.querySelector(":scope > .beamer-footline"))
     };
   })()`);
@@ -2100,21 +2156,34 @@ const testOverflowDiagnostics = async (connection, origin) => {
   );
   await overviewPage.close();
 
+  // The control has to be measured on a SCREEN page. Reading it off the
+  // `?print-pdf` page below was vacuous: `isPrintLayout()` short-circuits
+  // `reportOverflow`, so a deck loaded in print layout can never warn about an
+  // overflow however badly it overflows -- the control passed for every fixture,
+  // including ones that overflow. It exists to prove the deck used below is clean
+  // on screen, so it is measured where that can actually be observed.
+  const screenPage = await BrowserPage.create(
+    connection,
+    `${origin}/madrid.html`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  await delay(400);
+  const screenWarnings = await screenPage.evaluate(`window.__beamerWarnings`);
+  await screenPage.close();
+  assert.deepEqual(
+    screenWarnings,
+    [],
+    `the madrid fixture must not overflow on screen, otherwise the print check below is meaningless: ${JSON.stringify(screenWarnings)}`
+  );
+
   // Reveal paginates the deck in print/PDF layout, so a slide's client height no
-  // longer describes its content box: the check must stay silent there. The
-  // Madrid fixture is used because it does not overflow on screen, so any
-  // warning below can only come from a phantom print measurement.
+  // longer describes its content box: the check must stay silent there.
   const printPage = await BrowserPage.create(
     connection,
     `${origin}/madrid.html?print-pdf`,
     undefined,
     { preloadScript: consoleWarningCaptureSource }
-  );
-  const screenWarnings = await printPage.evaluate(`window.__beamerWarnings`);
-  assert.deepEqual(
-    screenWarnings,
-    [],
-    `the madrid fixture must not overflow on screen, otherwise this check is meaningless: ${JSON.stringify(screenWarnings)}`
   );
   await printPage.emulateMedia("print");
   const printWarnings = await printPage.evaluate(`(async () => {
@@ -2278,7 +2347,7 @@ const paletteModel = (() => {
           strokeWidth: 0,
         },
         Alert: {
-          // White on the #bf0000 band is 7.6:1, so no outline is needed.
+          // White on the #bf0000 band is 6.53:1, so no outline is needed.
           background: toHex(madridAlertBand),
           body: bodyOf(madridAlertBand),
           color: "#ffffff",
@@ -2314,6 +2383,9 @@ const paletteModel = (() => {
           color: "#ffcd00",
           weight: "700",
           strokeWidth: 3,
+          // A stroke in the wrong colour is invisible in exactly the case it
+          // exists for, so the colour is pinned wherever one is painted.
+          strokeColor: "#000000",
         },
       },
     },
@@ -2411,7 +2483,14 @@ const testPaletteAlgebra = async (connection, origin) => {
       ["bullet marker", state.bulletMarker],
       ["numbered marker", state.numberMarker],
     ]) {
-      if (actual == null) continue;
+      // Not a skip. The fixture is required to carry both list kinds, so a marker
+      // that was not measured means the markup or the probe lost it -- and a
+      // `continue` here turned exactly that into a green test.
+      assert(
+        actual != null,
+        `${variant}: ${label} was not measured; the fixture must contain both an ` +
+          "unordered and an ordered list on the same slide"
+      );
       closeTo(
         actual,
         paletteModel.structureByVariant[variant],
@@ -2457,6 +2536,13 @@ const testPaletteAlgebra = async (connection, origin) => {
         want.strokeWidth,
         `${variant} ${kind} block title stroke width`
       );
+      if (want.strokeWidth > 0) {
+        assert.equal(
+          state.kinds[kind].strokeColor,
+          want.strokeColor,
+          `${variant} ${kind} block title stroke colour`
+        );
+      }
     }
     await page.close();
   }
@@ -2480,7 +2566,7 @@ const testReferencesPagination = async (connection, origin) => {
   await delay(400);
   const state = await page.evaluate(`(() => {
     const pages = [];
-    document.querySelectorAll(".beamer-leaf-slide").forEach((slide) => {
+    document.querySelectorAll("section.beamer-leaf-slide").forEach((slide) => {
       const container = slide.querySelector("#refs");
       if (!container) return;
       const layer = slide.querySelector(":scope > .beamer-scroll") || slide;
@@ -2650,7 +2736,7 @@ const testReferencesPagination = async (connection, origin) => {
   await delay(400);
   const surplus = await surplusPage.evaluate(`(() => {
     const pages = [];
-    document.querySelectorAll(".beamer-leaf-slide").forEach((slide) => {
+    document.querySelectorAll("section.beamer-leaf-slide").forEach((slide) => {
       const container = slide.querySelector("#refs");
       if (!container) return;
       pages.push({
@@ -2717,6 +2803,42 @@ const testReferencesPagination = async (connection, origin) => {
   await surplusPage.close();
 };
 
+// `refs-order: declaration` reads the keys straight out of every declared `.bib`, and
+// the keys of several files are concatenated in the order the files are listed. That
+// path had only ever been exercised with a SINGLE bibliography file, so a regression
+// that read just the first file -- or that ordered entries within one file but not
+// across them -- would not have been caught. The two entries are chosen so that
+// citeproc's alphabetical order is the exact reverse of the declared one, which is what
+// makes the assertion able to fail rather than agree by luck.
+const testReferencesMultifile = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/refs-multifile.html#/references`
+  );
+  await delay(400);
+  const state = await page.evaluate(`(() => {
+    const meta = document.querySelector('meta[name="beamer-refs-keys"]');
+    return {
+      shipped: meta ? meta.content : null,
+      keys: Array.from(document.querySelectorAll("#refs .csl-entry")).map((entry) =>
+        (entry.id || "").replace(/^ref-/, "")
+      )
+    };
+  })()`);
+  await page.close();
+  assert.equal(
+    state.shipped,
+    "ZuluLast2020,AlphaFirst2021",
+    `the keys of every declared bibliography file must be concatenated in the order the files are listed: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.keys,
+    ["ZuluLast2020", "AlphaFirst2021"],
+    "'refs-order: declaration' must order entries across bibliography files, not only within one: " +
+      JSON.stringify(state)
+  );
+};
+
 // The other half of the reference pagination: no `item` is declared, so every break is
 // measured. This path is also where two defects showed up at once -- the sections the
 // pagination creates were missing from the list the decoration loop walked, so they got no
@@ -2739,7 +2861,7 @@ const testReferencesAutoPages = async (connection, origin) => {
   // zero-height box, so `needsScroll` on one would be meaningless.
   const state = await page.evaluate(`(async () => {
     const pages = [];
-    const slides = Array.from(document.querySelectorAll(".beamer-leaf-slide")).filter(
+    const slides = Array.from(document.querySelectorAll("section.beamer-leaf-slide")).filter(
       (slide) => slide.querySelector("#refs")
     );
     // The fixture has to reproduce the state a reader's deck is in, or this test cannot see
@@ -2846,7 +2968,7 @@ const testReferencesScroll = async (connection, origin) => {
   );
   await delay(500);
   const state = await page.evaluate(`(async () => {
-    const slide = Array.from(document.querySelectorAll(".beamer-leaf-slide")).find(
+    const slide = Array.from(document.querySelectorAll("section.beamer-leaf-slide")).find(
       (entry) => entry.querySelector("#refs")
     );
     const indices = window.Reveal.getIndices(slide);
@@ -3042,7 +3164,53 @@ const testScrollLayers = async (connection, origin) => {
       }
       return report;
     };
-    return { wrapped: measure("wrapped-scroll"), late: measure("late-scroll") };
+    // A scrollable SECTION page. Its title is an h1, and the pass that builds the
+    // layer used to treat only a frame's h2 as fixed UI, so the band was moved into
+    // the layer and lost everything the stylesheet gives a direct child: no fill,
+    // position static, and the frame's 32.4px title promoted to 52.5px by
+    // Quarto's linear-navigation title-slide rule once the theme's own (more
+    // specific) rule stopped matching.
+    const measureSectionPage = () => {
+      const slide = document.getElementById("scroll-section");
+      // Reveal only lays a slide out once it is the current one, and this page is a
+      // separate horizontal section from the frames measured above. Present it, then
+      // put the deck back where it was: the later probes in this test measure
+      // late-scroll's geometry and need its stack rendered.
+      const restore = window.Reveal.getIndices(document.getElementById("wrapped-scroll"));
+      const indices = window.Reveal.getIndices(slide);
+      window.Reveal.slide(indices.h, indices.v);
+      const heading = slide.querySelector(":scope > h1");
+      const layer = slide.querySelector(":scope > .beamer-scroll");
+      const slideRect = slide.getBoundingClientRect();
+      const style = heading ? getComputedStyle(heading) : null;
+      const rect = heading ? heading.getBoundingClientRect() : null;
+      const paragraphs = layer ? Array.from(layer.querySelectorAll("p")) : [];
+      const report = {
+        isSectionSlide: slide.classList.contains("beamer-section-slide"),
+        headingIsDirectChild: Boolean(heading),
+        headingInLayer: Boolean(layer && layer.querySelector("h1")),
+        paragraphsInLayer: paragraphs.length,
+        bandFill: style ? style.backgroundColor : null,
+        bandLeft: rect ? Math.round(rect.left - slideRect.left) : null,
+        bandWidth: rect ? Math.round(rect.width) : null,
+        slideWidth: Math.round(slideRect.width),
+        overflows: layer ? layer.scrollHeight > layer.clientHeight + 1 : false
+      };
+      if (paragraphs.length) {
+        const last = paragraphs[paragraphs.length - 1];
+        layer.scrollTop = layer.scrollHeight;
+        report.lastParagraphReachable =
+          last.getBoundingClientRect().bottom <= slideRect.bottom + 1;
+        layer.scrollTop = 0;
+      }
+      window.Reveal.slide(restore.h, restore.v);
+      return report;
+    };
+    return {
+      wrapped: measure("wrapped-scroll"),
+      late: measure("late-scroll"),
+      section: measureSectionPage()
+    };
   })()`);
 
   // Case 1: the layer exists (`.scrollable` was in the source), but its inset has to
@@ -3073,6 +3241,55 @@ const testScrollLayers = async (connection, origin) => {
   assert.equal(state.late.overflows, true, JSON.stringify(state));
   assert.equal(state.late.lastBlockReachable, true, JSON.stringify(state));
   assert.equal(state.late.lastBlockClearOfFooter, true, JSON.stringify(state));
+
+  // Case 3: a `.scrollable` SECTION page. Its title is an `h1`, and the layer pass
+  // used to treat only a frame's `h2` as fixed UI -- so the band was moved into the
+  // layer, where the stylesheet rule that gives it a fill, a position and its size
+  // (all of which require a DIRECT child of the `<section>`) stopped matching. The
+  // band rendered with no fill, `position: static`, and the frame's 32.4px title
+  // promoted to 52.5px, and it scrolled away with the body. Each assertion below
+  // failed in that state.
+  assert.equal(state.section.isSectionSlide, true, JSON.stringify(state.section));
+  assert.equal(
+    state.section.headingIsDirectChild,
+    true,
+    `a section page's band must stay a direct child of its <section>, or it loses its fill, position and size: ${JSON.stringify(state.section)}`
+  );
+  assert.equal(
+    state.section.headingInLayer,
+    false,
+    `the band must not be moved into the scroll layer: ${JSON.stringify(state.section)}`
+  );
+  // Matching a colour shape rather than "not transparent": when the band is moved
+  // into the layer the heading lookup returns null, and a bare `notEqual` against
+  // `rgba(0, 0, 0, 0)` passes for `null` -- so that form of the assertion could not
+  // fail in the state it exists for.
+  assert.match(
+    String(state.section.bandFill),
+    /^rgb\(/,
+    `a scrollable section page must keep its band fill: ${JSON.stringify(state.section)}`
+  );
+  assert.equal(
+    state.section.bandLeft,
+    0,
+    `the band must stay full bleed: ${JSON.stringify(state.section)}`
+  );
+  assert.equal(
+    state.section.bandWidth,
+    state.section.slideWidth,
+    `the band must span the slide: ${JSON.stringify(state.section)}`
+  );
+  assert.equal(
+    state.section.paragraphsInLayer,
+    12,
+    `the section page's body must be in the layer, and the fixture must keep 12 paragraphs: ${JSON.stringify(state.section)}`
+  );
+  assert.equal(state.section.overflows, true, JSON.stringify(state.section));
+  assert.equal(
+    state.section.lastParagraphReachable,
+    true,
+    `the body must remain reachable even with the band pinned: ${JSON.stringify(state.section)}`
+  );
 
   // The other direction: a frame that stops scrolling gets its body back. Left inside an
   // absolutely positioned layer, the content no longer contributes to the section's
@@ -3291,6 +3508,10 @@ const measureSectionStyles = async (connection, origin, variant) => {
         band: read("sec-default"),
         badge: read("sec-badge"),
         minimal: read("sec-minimal"),
+        // A title that wraps. The band is in the document flow, so its own height
+        // is what reserves the space -- a fixed reservation buried the first line
+        // of the body once the title ran past one line.
+        longTitle: read("sec-long"),
         // An H2 is an ordinary frame: it must NOT pick up a section look, which
         // is what keeps the attribute meaningful rather than universal.
         frameIsSection: Boolean(
@@ -3359,18 +3580,40 @@ const assertSectionStyles = (variant, state) => {
             contrast: titleContrast,
           })
       );
-      if (look.bodyColor) {
-        const bodyContrast = contrastRatio(
-          look.bodyColor,
-          look.bodyBackground
-        );
-        assert(
-          bodyContrast !== null && bodyContrast >= 4.5,
-          `${variant}: ${kind} body text must be legible: ` +
-            JSON.stringify({ color: look.bodyColor, bg: look.bodyBackground, contrast: bodyContrast })
-        );
-      }
+      // Not a skip: every look in the fixture carries prose, so a missing body
+      // colour means the paragraph went away and with it the legibility check.
+      assert(
+        look.bodyColor,
+        `${variant}: the ${kind} section page carries no body text to check for ` +
+          "legibility; the fixture must keep a paragraph on every look"
+      );
+      const bodyContrast = contrastRatio(
+        look.bodyColor,
+        look.bodyBackground
+      );
+      assert(
+        bodyContrast !== null && bodyContrast >= 4.5,
+        `${variant}: ${kind} body text must be legible: ` +
+          JSON.stringify({ color: look.bodyColor, bg: look.bodyBackground, contrast: bodyContrast })
+      );
     }
+    // The regression guard for the band's height. `bodyBelowHeading` is checked
+    // for every look above, but only this page has a title tall enough to make it
+    // mean anything: with a fixed reservation the band reached 52.7px into the
+    // body and the first line was painted underneath it.
+    assert(state.longTitle, `${variant}: the wrapping section page was not rendered`);
+    assert.equal(
+      state.longTitle.bodyBelowHeading,
+      true,
+      `${variant}: a wrapping section title must not reach into its body: ` +
+        JSON.stringify(state.longTitle)
+    );
+    assert(
+      state.longTitle.height > state.band.height,
+      `${variant}: the wrapping section page must actually wrap, or this check is ` +
+        `vacuous: ${JSON.stringify({ long: state.longTitle.height, band: state.band.height })}`
+    );
+
     assert.equal(state.band.align, "left", `${variant}: default band alignment`);
 
     // Default: full-bleed band flush under the headline.
@@ -3483,9 +3726,47 @@ const testBlockTitles = async (connection, origin) => {
   await page.close();
 };
 
+// `process._getActiveHandles` is a private Node API, and `debugCleanup`'s arguments
+// are evaluated whether or not the debug output is enabled -- so an unguarded call
+// would not stay confined to debug runs. It would throw at the very end of every
+// run, CI included, the day that API is renamed or removed, and it would do it while
+// the run was otherwise green.
+const activeHandleNames = () => {
+  try {
+    return typeof process._getActiveHandles === "function"
+      ? process._getActiveHandles().map((handle) => handle?.constructor?.name)
+      : "(process._getActiveHandles is not available)";
+  } catch (error) {
+    return `(could not read the active handles: ${error.message})`;
+  }
+};
+
+// Each teardown step runs on its own, so a failure in one cannot skip the rest. The
+// steps are ordered most-important-last for the reader, not for safety: without this,
+// a throw in `shutdownChrome` (or in the temporary-input loop above it) left the
+// browser running and the profile directory on disk, and it also replaced the real
+// test failure with a teardown error.
+const teardownStep = async (name, run) => {
+  try {
+    await run();
+  } catch (error) {
+    console.warn(`Warning: teardown step "${name}" failed: ${error.message}`);
+  }
+};
+
 let server;
 let chrome;
 try {
+  // Before anything destructive. Two suites at once share this checkout: fixed
+  // temporary input names in the repo root and a single `tests/_output`.
+  // Interleaved runs delete each other's inputs and overwrite each other's
+  // renders, which shows up as unrelated DOM errors deep inside a probe.
+  // Refusing to start beats debugging that -- but only if the refusal happens
+  // before `resetDirectory` wipes the other run's output, which is why this is
+  // the first statement of the run rather than the last one before the browser
+  // phase.
+  acquireRunLock();
+
   resetDirectory(outputDir);
   resetDirectory(artifactsDir);
   run("node", ["--check", "_extensions/beamerslides/beamer.js"]);
@@ -3500,6 +3781,7 @@ try {
     "centering",
     "behavior",
     "refs-pagination",
+    "refs-multifile",
     "refs-surplus",
     "refs-auto",
     "refs-empty",
@@ -3565,11 +3847,8 @@ try {
     /Unknown refs-order 'bogus'; using 'citation'\./
   );
 
-  // Two suites at once share this checkout: fixed temporary input names in the
-  // repo root and a single `tests/_output`. Interleaved runs delete each other's
-  // inputs and overwrite each other's renders, which shows up as unrelated DOM
-  // errors deep inside a probe. Refusing to start beats debugging that.
-  acquireRunLock();
+  // The run lock is already held: it was claimed at the top of this block, before
+  // the destructive output reset (see there).
 
   const local = await startServer();
   server = local.server;
@@ -3590,6 +3869,7 @@ try {
   await testPaletteOverrides(chrome.connection, local.origin);
   await testBlockTitles(chrome.connection, local.origin);
   await testReferencesPagination(chrome.connection, local.origin);
+  await testReferencesMultifile(chrome.connection, local.origin);
   await testReferencesAutoPages(chrome.connection, local.origin);
   await testReferencesScroll(chrome.connection, local.origin);
   await testScrollLayers(chrome.connection, local.origin);
@@ -3601,33 +3881,45 @@ try {
   console.log(`Artifacts: ${relative(rootDir, artifactsDir)}`);
 } finally {
   debugCleanup("start");
-  for (const temporaryInput of temporaryInputs) {
-    if (existsSync(temporaryInput)) unlinkSync(temporaryInput);
-  }
-  if (!fixtureIgnoreExisted && existsSync(generatedFixtureIgnore)) {
-    unlinkSync(generatedFixtureIgnore);
-  }
+  await teardownStep("remove the temporary inputs", () => {
+    for (const temporaryInput of temporaryInputs) {
+      try {
+        if (existsSync(temporaryInput)) unlinkSync(temporaryInput);
+      } catch (error) {
+        console.warn(
+          `Warning: could not remove ${temporaryInput}: ${error.message}`
+        );
+      }
+    }
+  });
+  await teardownStep("restore tests/fixtures/.gitignore", () => {
+    if (!fixtureIgnoreExisted && existsSync(generatedFixtureIgnore)) {
+      unlinkSync(generatedFixtureIgnore);
+    }
+  });
   debugCleanup("temporary inputs removed");
   if (chrome) {
     debugCleanup("stopping Chrome");
-    await shutdownChrome(chrome);
+    // Chrome first: it holds the profile directory that is removed last.
+    await teardownStep("stop Chrome", () => shutdownChrome(chrome));
     debugCleanup("Chrome stopped", chrome.processHandle.exitCode, chrome.processHandle.signalCode);
   }
   if (server) {
     debugCleanup("closing HTTP server");
-    server.closeIdleConnections?.();
-    server.closeAllConnections?.();
-    await new Promise((resolveClose) => {
-      server.close((error) => {
-        if (error) console.warn(`Warning: could not close HTTP server: ${error.message}`);
-        resolveClose();
+    await teardownStep("close the HTTP server", async () => {
+      server.closeIdleConnections?.();
+      server.closeAllConnections?.();
+      await new Promise((resolveClose) => {
+        server.close((error) => {
+          if (error) console.warn(`Warning: could not close HTTP server: ${error.message}`);
+          resolveClose();
+        });
       });
     });
     debugCleanup("HTTP server closed");
   }
-  await removeTemporaryDirectory(chromeTemporaryDir);
-  debugCleanup(
-    "done",
-    process._getActiveHandles().map((handle) => handle.constructor?.name)
+  await teardownStep("remove the Chrome profile directory", () =>
+    removeTemporaryDirectory(chromeTemporaryDir)
   );
+  debugCleanup("done", activeHandleNames());
 }

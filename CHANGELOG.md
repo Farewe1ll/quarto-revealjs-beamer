@@ -6,9 +6,188 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Earlier releases predate this file; their history is in the git log.
 
-## [Unreleased]
+## [0.4.0] - 2026-09-12
 
 ### Fixed
+
+- **A section page's title band is sized by its own content, so it can no longer
+  bury the first line of the body.** The band reserved a fixed
+  `headline + var(--beamer-frame-height) + 22px`, and nothing ever measured a
+  section title: `measureFrameTitle` only handles a frame's `h2`. A two-line title
+  therefore reached 15.2px into the body's box and a three-line one buried a whole
+  line — measured with the body's top at 90.9px under a band ending at 132.7px, and
+  a screenshot of the reader seeing prose that started mid-sentence. The band now
+  sits in the document flow, which is *less* machinery rather than more: it
+  reserves its own height and the body simply follows it, so the stylesheet never
+  needs to be told how tall a section title is. `beamer.js` still only adds the
+  `beamer-section-slide` class, so the look stays declarative.
+  A full-bleed band is preserved through a negative inline margin against the
+  section's own 58px padding, which puts the title text back at `x=58` and keeps it
+  flush with the frame titles. Measured after: `left:0`, `width:1280`, top flush
+  under the headline, body clear by 36.4px in both variants.
+  Two consequences worth knowing. Section-page prose now starts directly under the
+  band instead of being vertically centred — that is what Beamer does, and it is
+  what makes the overlap structurally impossible rather than merely unlikely (with
+  `flex-start` an overfull page clips at the bottom and keeps its first line;
+  centring clips both ends). **No visual baseline changed** — no baseline covers a section
+  page that carries prose, and the band's own geometry is identical.
+- **A section page's overflow warning no longer gives frame advice.** It told the
+  reader to "add `.smaller` to the frame title", which a section page does not
+  have, and which would have led straight into the `.scrollable` section bug fixed
+  below. The advice now depends on the slide kind. (The metric was also
+  misleading — it reported "4px" while 41.8px of body text sat under the band —
+  but that failure mode is what the flow change above removes.)
+- **A decoration pass that fails part-way now says so.** `decorateChrome` marks the
+  deck decorated before it starts, deliberately: the pass appends reference pages
+  and rewrites slide structure, so a half-finished run must not be repeated. That
+  fail-stop is right, but it was also silent — the deck shipped with frames that
+  had no headline, footline or numbering and nothing was reported. It now logs what
+  happened and why it is not retried.
+- **A nested ordered list's marker no longer inherits its parent's alignment
+  correction.** The correction is written to a custom property on the `<li>`, and
+  custom properties inherit, so a nested marker resolved it to the padding the pass
+  had just written on its ancestor; a first-write-wins cache then froze that
+  inherited value as the nested marker's own baseline. Measured: the nested marker
+  cached `0.11614em` against the outer marker's `0.1em`, making its correction
+  depend on the parent's glyphs. The baseline is now the constant that the
+  stylesheet's `0.1em` fallback already defines.
+- **The print-layout probe was measuring Reveal's background wrappers as if they
+  were slides.** Reveal copies a slide's class list onto its `div.slide-background`
+  once `Reveal.sync()` runs (which the theme calls when it generates reference
+  pages), so the probe's `.beamer-leaf-slide` selector matched seven extra empty
+  divs on the paginated-references fixture. Every per-slide check is null-guarded,
+  so those divs passed all of them vacuously and inflated the array the assertions
+  filter. The selector is now `section.beamer-leaf-slide`, and the same
+  qualification was applied to the six other places in the suite that counted the
+  bare class — they were only accidentally safe, because they happened to run on
+  decks where `sync()` had not copied the classes yet.
+- **The suite can no longer pass by measuring nothing.** Three checks were vacuous
+  or skippable: `assertPrintLayout`'s two assertions are "this filter found
+  nothing", which an empty array satisfies, and it had no coverage canary; a bullet
+  or numbered marker that was not measured hit `continue` and left the
+  `--beamer-structure` check green; and a section look whose paragraph disappeared
+  took the body-contrast check with it. All three now fail loudly instead. The
+  canary earns its keep immediately: it is what surfaced the background-wrapper
+  defect above.
+- The print-layout canary cannot use `Reveal.getTotalSlides()` as its reference
+  count — the theme marks reference pages `data-visibility="uncounted"` and Reveal
+  leaves those out of its model (measured: 10 leaf sections, 9 reported). It counts
+  leaf sections from the DOM instead.
+
+- **A `.scrollable` (or `.smaller`) section page kept its title band.** The pass
+  that moves a slide's body into the `.beamer-scroll` layer treated only an `h2`
+  as the fixed title, so a section page's `h1` band was moved into the layer with
+  the body. The band is positioned by a rule that requires a *direct child* of the
+  `<section>`, so it silently lost everything: measured with no fill
+  (`rgba(0,0,0,0)` against `rgb(51,51,178)`), `position: static`, and its title
+  promoted from 32.4px to 52.5px by Quarto's
+  `.reveal[data-navigation-mode=linear] .title-slide h1` rule once the theme's own
+  more specific rule stopped matching — and the title scrolled away with the body.
+  A section page's `h1` and a frame's `h2` are now both treated as fixed, so a
+  scrollable section page renders identically to a plain one and only its body
+  scrolls. The reachable input was undocumented (`.scrollable` is documented for
+  frames), but the failure was silent and the theme's own overflow warning
+  recommends `.scrollable`, so the combination was easy to reach by accident.
+- **Optical re-alignment runs once per frame instead of once per resize event.**
+  `alignInlineLabels`, `alignOrderedMarkers` and `centerTitleInk` were each
+  scheduled on their own `requestAnimationFrame` for every call, and one real
+  resize produces several calls — measured 2 native `resize` events plus 1
+  re-emission from Reveal, i.e. 3 full passes per resize, multiplied by the event
+  rate during a window drag. Each pass reads `getComputedStyle` per list item and
+  one `getImageData` per title. The work is unchanged; a coalescing flag now
+  collapses any number of requests in one frame into a single pass.
+  `realignForPrint` stays synchronous, since `beforeprint` has no frame to wait
+  for. **No visual baseline changed.**
+- The alert block title's stroke **colour** is now asserted where a stroke is
+  painted. The suite collected it and never checked it, so only the width was
+  pinned while CambridgeUS's legibility depends on `#000000` specifically.
+- The contrast of white on the Madrid alert band is **6.53:1**, not the 7.6:1 that
+  three comments claimed. The conclusion is unaffected — it is still far above the
+  4.5:1 that body-size text needs, so Madrid still needs no stroke.
+- **The harness's three teardown gaps are closed** (all test-side; no rendering
+  change):
+  - The run lock was claimed *after* `resetDirectory(outputDir)`, so a second run
+    refused to start only once it had already deleted the first run's output —
+    the opposite of what the guard's own comment promises. It is now the first
+    statement of the run, verified by planting a live lock: the run refuses and
+    all 33 files in `tests/_output` survive. The claim is also atomic now
+    (`wx` instead of check-then-write, which let two simultaneous runs both see no
+    lock and both write their own pid).
+  - Chrome's process-group kill was wired only to the signal handler.
+    `stopChildProcess` signalled the parent pid alone, so the `detached` group the
+    spawn comment exists for was never used on the ordinary path. It is used now,
+    and the pid is dropped from the registry once the group is gone so a later
+    signal cannot aim a `SIGKILL` at a recycled pid. **Honest scope:** the leak
+    this was expected to fix could *not* be reproduced — with the browser process
+    wedged with `SIGSTOP` and then killed parent-only, all 10 Chrome processes
+    still exited by themselves. This is a consistency fix that makes the ordinary
+    path match the documented intent, not a demonstrated leak fix.
+  - Every CDP command now has a watchdog (default 120s,
+    `BEAMERSLIDES_CDP_TIMEOUT_MS`). Without one a single lost reply hung the suite
+    forever and left a lock to delete by hand; with a 1ms watchdog the run now
+    fails in 19s naming the stuck command, and releases the lock on the way out.
+
+- **A test that could not fail was replaced by one that can.** The print-layout control asserted that the Madrid fixture "must not overflow on screen", but it read the warnings off a `?print-pdf` page — and `isPrintLayout()` short-circuits `reportOverflow`, so a deck loaded in print layout can never report an overflow, however badly it overflows. The control passed for every fixture. It is now measured on a real screen page, where the property it claims can actually be observed.
+- **A command that never started is no longer retried as if it had crashed.** The render retry exists for Quarto's intermittent Deno SIGSEGV, but it caught every failure — including `ENOENT` — so a missing or non-executable Quarto burnt all three attempts and both blocking sleeps, then reported the same error, under a warning that claimed the Deno runtime had crashed. `runCapture` now carries `spawnSync`'s error code out, and the retry stops immediately on `ENOENT`/`EACCES`. Observed for real: a download that failed left `BEAMERSLIDES_QUARTO_BIN` pointing at nothing.
+- **A DevTools socket error now fails the commands waiting on it.** The connection had a listener for `close` but not for `error`, and Node's WebSocket is an EventTarget, so an unhandled `error` event neither throws nor settles anything: a browser that died mid-run left every pending command waiting out the 300s watchdog instead of failing immediately. The new listener mirrors the `close` handler.
+- The `CdpConnection.close` fallback timer is cleared when the close settles. It used to outlive the connection and hold the event loop open for up to a second after the last slide was measured.
+- `process._getActiveHandles()` is guarded. It is a private Node API, and `debugCleanup` evaluates its arguments whether or not the debug output is enabled — so the call ran on every `npm test`, not only in debug runs, and would have thrown at the end of an otherwise green run the day the API moved.
+- Each teardown step now runs on its own, so one failure cannot skip the rest. A throw in `shutdownChrome` (or in the temporary-input loop before it) used to leave the browser and its profile directory behind, and to replace the real test failure with a teardown error.
+
+### Changed
+
+- **`h3` now reads `--beamer-structure`.** The README and the regression test both
+  said `h3`–`h6` take the structural accent; the stylesheet gave `h3`
+  `--beamer-primary`. The two are equal in both stock variants, so nothing looked
+  wrong — but `structure` is the role `h4`–`h6`, the list markers and the README's
+  own "override this to recolour the theme" recipe all use, and reading `primary`
+  meant that documented override silently skipped `h3`. No visual change in either
+  stock theme, confirmed by the unchanged baselines.
+
+- Documentation corrections, none of which change behaviour: `--beamer-alert` no
+  longer drives `h4` (three places still said it did, including one contradicted by
+  this same release's own entry); CambridgeUS's `--beamer-alert` is the undiluted
+  darkred `#cc0000`, a deviation the code documents as deliberate while the README
+  and CHANGELOG still quoted upstream's `#bd1a1a`; the CambridgeUS block-title
+  colours were superseded later in this release; the "Added" entry for the section
+  looks claimed `beamer.js` supplies the band's height and a centring offset, which
+  the "Removed" entry for `--beamer-section-offset` in the same release says was
+  never true; and the comments describing CambridgeUS `structure` were written
+  before the theme re-pointed it at the variant's darkred.
+
+- README now records that the bundled KaTeX is **not** single-file: Quarto compiles
+  `html-math-method.url` into a runtime script that inserts the `<link>` and
+  `<script>` by relative path, so `embed-resources: true` cannot inline them.
+  Measured: HTML plus `_extensions/beamerslides/` renders offline (200), the HTML
+  alone gets two 404s and degrades silently to raw `$…$` because the renderer sets
+  `throwOnError: false`.
+
+
+- The `overflow: hidden` rule for `.scrollable` / `.smaller` /
+  `.beamer-long-frame-title` frames now carries a comment recording **why it must
+  not be deleted**. It is inert against the shipped stylesheets — the base
+  `.beamer-leaf-slide` rule already outranks Quarto's own
+  `.reveal .slide.scrollable { overflow-y: auto }`, and deleting the rule was
+  measured to change nothing — but it is the `(0,4,1)` guard that defeats a
+  *document's* stylesheet writing the natural
+  `.reveal .slides section.scrollable { overflow-y: auto }`, which ties the base
+  rule at `(0,3,1)` and wins on source order. Measured: `hidden` with the rule,
+  `auto` without it.
+- README documents `BEAMERSLIDES_CDP_TIMEOUT_MS`, and its claim about overriding
+  retry counts now matches the code: only the page-ready reload count is
+  overridable, while the `quarto render` and `Page.printToPDF` attempts are fixed
+  at 3 each.
+
+- README documents the user-facing surface that had none: `.center` (per slide and via the format), `data-section`, and the block-div aliases `.beamer-block` / `.example-block` / `.alert-block`.
+- README lists the Reveal.js options the format presets in `_extension.yml`, so it is clear what is already configured and can be overridden, and it states plainly that `slide-number` is force-hidden with `!important` — writing `slide-number: true` cannot bring the floating number back.
+- README notes that unknown `refs-order` / `refs-overflow` values warn and fall back, not only invalid variants and booleans.
+
+### Removed
+
+- Dead code in the suite: an unreachable `return state` after an assertion that
+  always throws, three imported-but-unused harness bindings (`baselinesDir`,
+  `runCapture`, `testsDir`), and the `__beamerTimeline.frames` counter, which was
+  written on every frame and never read by anything.
 
 - **A `.scrollable` frame no longer scrolls its own chrome away.** The frame used
   to be the scroll container itself (`overflow: auto` on the `<section>`), and the
@@ -89,7 +268,8 @@ Earlier releases predate this file; their history is in the git log.
   kinds with no fill and distinguishes them by title text colour. The extension
   was painting a solid `#a30000` band with a `#f8f2f2` body, which is not what
   the theme does. Blocks are now unfilled with coloured titles
-  (`#3333b2` / `#008000` / `#bd1a1a`).
+  (`#3333b2` / `#008000` / `#bd1a1a`; the plain and alert titles were retuned
+  later in this same release — see the palette entries below).
 - `--beamer-structure` is now a separate role from `--beamer-primary`.
   Previously the single `--beamer-primary` variable drove bullets and block
   titles as well as the accent, which conflated two different Beamer colours.
@@ -119,15 +299,16 @@ Earlier releases predate this file; their history is in the git log.
   the deck: 2px reads as a timid hairline beside the plain block and 5px starts
   to read as a black bar that thins the yellow, leaving 3-4px usable; shipped at
   3px. Tunable via `--beamer-block-alert-title-stroke`;
-  Madrid sets it to 0 because white on its `#bf0000` band is already 7.6:1.
-  `--beamer-alert` stays red on purpose so `.alert` inline emphasis and `h4`
-  remain legible.
+  Madrid sets it to 0 because white on its `#bf0000` band is already 6.53:1.
+  `--beamer-alert` stays red on purpose so `.alert` inline emphasis remains
+  legible.
 - The alert title carrying `font-weight: 700` against 650 is as far as the
   bundled Libertinus Sans can go: it ships only Regular and Bold, and measured,
   everything from 600 upward renders at the same advance width.
 - `green!50!black` is `#008000`, not `#004000`: xcolor defines `green` as
   `rgb(0,1,0)`, so the halved value comes from the 50% mix rather than from the
-  base green. CambridgeUS's `alerted text` is `#bd1a1a`.
+  base green. Upstream CambridgeUS's `alerted text` is `#bd1a1a`; this theme
+  deliberately ships the undiluted darkred `#cc0000` instead.
 - Section pages now use the frame-title template, as Beamer does: the section
   title is a band pinned under the headline instead of a centred rounded badge
   with a drop shadow. `--beamer-section-title-bg`/`-fg` remain separately
@@ -265,9 +446,9 @@ Earlier releases predate this file; their history is in the git log.
   badge now lets flexbox do it -- the title joins the flow for that look and the
   section centres its children -- so there is nothing to measure. Quarto copies heading classes onto the `<section>`, so no AST
   rewriting is involved and the choice is genuinely per page. The look is
-  expressed entirely in `--beamer-section-*` custom properties; `beamer.js` only
-  supplies the numbers it alone can know (the band's rendered height and the
-  centred offset), which keeps the styling declarative. The default is
+  expressed entirely in `--beamer-section-*` custom properties and needs no
+  measurement at all: the band is in the document flow, so it reserves its own
+  height, and `beamer.js` only adds the `beamer-section-slide` class. The default is
   unchanged, so existing decks render exactly as before.
 - `testSectionStyles`, covering all three looks in both variants: that each is
   still a section page, that the body clears the title, that the badge has an
@@ -292,6 +473,9 @@ Earlier releases predate this file; their history is in the git log.
   old CambridgeUS block fill.
 - `tests/fixtures/blocks-audit.qmd`, covering all three block kinds in one
   frame.
+
+- **`refs-order: declaration` is covered across several bibliography files.** The key list is built by reading every declared `.bib` and concatenating the keys in the order the files are listed, but that path had only ever been exercised with one file, so a regression that read just the first file — or that ordered entries within a file but not across files — would not have been caught. The fixture's two entries are chosen so citeproc's alphabetical order is the exact reverse of the declared order, which is what makes the assertion able to fail.
+- **A regression guard for a `.scrollable` section page.** The fix that keeps a section page's band out of the scroll layer shipped without one. The new page asserts that the band stays a direct child of its `<section>`, keeps its fill, stays full bleed and spans the slide, while the body sits in the layer and remains reachable — with the fix reverted, five of those assertions fail. The band-fill check deliberately matches a colour shape rather than asserting "not transparent": in the broken state the heading lookup returns `null`, and a bare `notEqual` against `rgba(0, 0, 0, 0)` passes for `null`, so the obvious form of that assertion could not fail.
 
 ### Changed
 
@@ -326,8 +510,8 @@ Earlier releases predate this file; their history is in the git log.
   observed call produced 1,148 bytes where the same page yields ~100 KB -- and
   the `?print-pdf` footnote section is read before Reveal finishes switching to
   its print layout.
-- The harness now retries the two external failures that were intermittently
-  failing the suite, both of which happen outside this project's code.
+- The other two retries cover a stalled render and a deck that never becomes
+  ready; both are external to this project's code.
   `quarto render` is retried (three attempts): Quarto's Deno runtime dies with
   SIGSEGV part-way through a render every so often -- the same input renders
   fine on the next attempt, and the crash predates any of this extension's code
@@ -355,6 +539,10 @@ Earlier releases predate this file; their history is in the git log.
   before and has no effect now. The README claim that `beamer.js` supplies a
   section "centring offset" was wrong and has been corrected — the section looks
   are entirely declarative.
+- **Dead CSS variable `--beamer-section-inset` / `--beamer-section-margin`.** Both
+  existed to position the section band absolutely. The band is now in the flow
+  and spans the slide through a negative inline margin, so neither variable has a
+  reader and both are gone.
 - **Four classes nothing consumed.** `beamer-title-slide`,
   `beamer-has-headline`, `beamer-has-progress` and `beamer-uncounted-slide` were
   emitted by `beamer.js` but selected by no rule in the extension, the shipped
@@ -427,4 +615,6 @@ Earlier releases predate this file; their history is in the git log.
   skipped while the document is in print layout.
 - A `:root`-level palette override is no longer ignored on CambridgeUS decks.
 
+[Unreleased]: https://github.com/Farewe1ll/quarto-revealjs-beamer/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Farewe1ll/quarto-revealjs-beamer/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Farewe1ll/quarto-revealjs-beamer/releases/tag/v0.3.0

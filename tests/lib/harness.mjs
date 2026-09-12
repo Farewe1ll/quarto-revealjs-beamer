@@ -78,6 +78,26 @@ const pageReadyTimeout =
   Number.isFinite(requestedPageReadyTimeout) && requestedPageReadyTimeout > 0
     ? requestedPageReadyTimeout
     : 20_000;
+// A CDP reply can simply never arrive: a renderer wedged mid-`Runtime.evaluate`,
+// or a `Page.printToPDF` that never finishes. Without a bound the awaiting
+// promise stays pending forever, so the run hangs with no witness and the next
+// attempt has to delete a stale run lock by hand. Override with
+// BEAMERSLIDES_CDP_TIMEOUT_MS.
+//
+// The default matches `BEAMERSLIDES_COMMAND_TIMEOUT_MS` below rather than being
+// tighter: the hazard is the same one, and the commands that go through here
+// (`printToPDF`, `captureScreenshot`) are the slowest ones in the suite, run on
+// the same shared CI runners. A bound that is too generous only makes a real hang
+// take longer to report; a bound that is too tight turns a slow runner into a
+// failure, which is the worse of the two.
+const requestedCdpTimeout = Number.parseInt(
+  process.env.BEAMERSLIDES_CDP_TIMEOUT_MS || "",
+  10
+);
+const cdpTimeout =
+  Number.isFinite(requestedCdpTimeout) && requestedCdpTimeout > 0
+    ? requestedCdpTimeout
+    : 300_000;
 const debugCleanup = (...values) => {
   if (process.env.BEAMERSLIDES_DEBUG_CLEANUP === "1") {
     console.error("[cleanup]", ...values);
@@ -96,6 +116,15 @@ const delay = (milliseconds) =>
 // `detached`, which makes it a process-group leader, and this handler kills that
 // whole group. Signal handlers must be synchronous -- an `async` teardown never
 // gets to run before the process dies.
+//
+// The group kill runs on the ordinary teardown path too, not only here -- see
+// `signalChild` below, which `stopChildProcess` uses. The machinery was built for
+// the signal path and the ordinary path kept signalling the parent pid alone, so
+// the group the spawn site creates was never used for the case it documents.
+// Measured, that gap did NOT leak on its own: with the browser process wedged with
+// SIGSTOP and then killed parent-only, all ten Chrome processes still exited by
+// themselves. This is consistency with the documented intent, not a demonstrated
+// leak fix.
 const childProcessGroups = new Set();
 
 const terminateChildProcessGroups = () => {
@@ -151,12 +180,43 @@ const childIsRunning = (processHandle) =>
   processHandle.exitCode === null &&
   processHandle.signalCode === null;
 
+// Signal the child's whole process group when it is a group leader. The child is
+// spawned `detached` (see `childProcessGroups`), so a negative pid addresses the
+// group Chrome created for itself and its helpers, where `processHandle.kill`
+// addresses the parent alone. Anything not in the registry -- a child that starts
+// before it is registered, or a future spawn that is not detached -- falls back to
+// the single-process signal rather than failing.
+//
+// The pid is also dropped from the registry once the group has been signalled, so
+// a later signal handler cannot `SIGKILL` a recycled pid's group.
+const signalChild = (processHandle, signal) => {
+  const pid = processHandle.pid;
+  if (typeof pid === "number" && childProcessGroups.has(pid)) {
+    try {
+      process.kill(-pid, signal);
+      if (signal === "SIGKILL") {
+        childProcessGroups.delete(pid);
+      }
+      return;
+    } catch (error) {
+      if (error.code === "ESRCH") {
+        // The whole group is already gone.
+        childProcessGroups.delete(pid);
+        return;
+      }
+      // Anything else (EPERM, EINVAL) falls through to the single-process kill,
+      // which reports its own failure to the caller.
+    }
+  }
+  processHandle.kill(signal);
+};
+
 const stopChildProcess = async (processHandle) => {
   if (!processHandle) return;
 
   if (childIsRunning(processHandle)) {
     try {
-      processHandle.kill("SIGTERM");
+      signalChild(processHandle, "SIGTERM");
     } catch (error) {
       if (error.code !== "ESRCH") {
         console.warn(`Warning: could not stop Chrome gracefully: ${error.message}`);
@@ -166,13 +226,18 @@ const stopChildProcess = async (processHandle) => {
   }
   if (childIsRunning(processHandle)) {
     try {
-      processHandle.kill("SIGKILL");
+      signalChild(processHandle, "SIGKILL");
     } catch (error) {
       if (error.code !== "ESRCH") {
         console.warn(`Warning: could not force Chrome to stop: ${error.message}`);
       }
     }
     await waitForChildExit(processHandle, 5000);
+  }
+  // Nothing left to signal, and holding the pid would let a later signal handler
+  // aim a group kill at whatever process inherits that pid.
+  if (typeof processHandle.pid === "number") {
+    childProcessGroups.delete(processHandle.pid);
   }
   processHandle.unref();
 };
@@ -235,7 +300,7 @@ const runCapture = (command, args) => {
     );
   }
   if (result.status !== 0) {
-    throw new Error(
+    const error = new Error(
       [
         `${command} ${args.join(" ")} failed` +
           (result.signal === "SIGKILL"
@@ -248,6 +313,14 @@ const runCapture = (command, args) => {
         .filter(Boolean)
         .join("\n")
     );
+    // `spawnSync` reports "the process never started" here rather than in `status`
+    // (a missing or non-executable binary), and that failure is permanent. Carrying
+    // the code out lets the retry wrapper tell it apart from the intermittent crash
+    // the retries exist for; without it a missing Quarto burnt two extra attempts and
+    // two blocking sleeps before reporting the same error, under a warning that said
+    // the Deno runtime had crashed.
+    error.code = result.error ? result.error.code : undefined;
+    throw error;
   }
   return { stdout: result.stdout || "", stderr: result.stderr || "" };
 };
@@ -275,7 +348,10 @@ const withRenderRetries = (operation) => {
       return operation();
     } catch (error) {
       lastError = error;
-      if (attempt === renderAttempts) {
+      // A command that never started will not start on the next attempt either, and
+      // its failure has nothing to do with the crash this retry exists for.
+      const permanent = error.code === "ENOENT" || error.code === "EACCES";
+      if (attempt === renderAttempts || permanent) {
         break;
       }
       console.warn(
@@ -387,7 +463,17 @@ const startServer = async () => {
       return;
     }
 
-    const decodedPath = decodeURIComponent(requestUrl.pathname);
+    // A malformed path (a stray `%`) makes `decodeURIComponent` throw, and that
+    // exception would leave the request hanging and take the run with it. Bad input
+    // from a probe is a 400, not a crash.
+    let decodedPath;
+    try {
+      decodedPath = decodeURIComponent(requestUrl.pathname);
+    } catch (error) {
+      response.writeHead(400);
+      response.end("Bad request");
+      return;
+    }
     const target = resolve(outputDir, `.${decodedPath}`);
     if (target !== outputDir && !target.startsWith(`${outputDir}${sep}`)) {
       response.writeHead(403);
@@ -409,7 +495,17 @@ const startServer = async () => {
       "Cache-Control": "no-store",
       "Content-Type": mimeTypes[extname(file)] || "application/octet-stream",
     });
-    createReadStream(file).pipe(response);
+    const stream = createReadStream(file);
+    // The file can vanish between the `existsSync` above and the open -- a second
+    // run resetting `tests/_output` is the realistic way -- and a stream with no
+    // `error` listener raises an unhandled 'error' event, which kills the run.
+    stream.on("error", () => {
+      if (!response.headersSent) {
+        response.writeHead(500);
+      }
+      response.end();
+    });
+    stream.pipe(response);
   });
 
   await new Promise((resolveListen, rejectListen) => {
@@ -427,11 +523,20 @@ class CdpConnection {
     this.pending = new Map();
     this.events = [];
     webSocket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data));
+      // A frame that is not JSON -- a protocol ping, or a truncated message -- must
+      // not throw out of this listener: an exception here is uncaught, which takes
+      // the whole run down with a stack that names nothing useful.
+      let message;
+      try {
+        message = JSON.parse(String(event.data));
+      } catch (error) {
+        return;
+      }
       if (message.id) {
         const pending = this.pending.get(message.id);
         if (!pending) return;
         this.pending.delete(message.id);
+        clearTimeout(pending.timer);
         if (message.error) {
           pending.reject(new Error(message.error.message));
         } else {
@@ -443,7 +548,24 @@ class CdpConnection {
     });
     webSocket.addEventListener("close", () => {
       const error = new Error("Chrome DevTools connection closed.");
-      for (const pending of this.pending.values()) pending.reject(error);
+      for (const pending of this.pending.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(error);
+      }
+      this.pending.clear();
+    });
+    // A socket error while the connection is in use must fail the commands that are
+    // waiting on it. Without a listener here they had nothing to settle them except
+    // the per-command watchdog, so a browser that died mid-run turned into one
+    // `cdpTimeout` wait (300s by default) per pending command instead of an immediate,
+    // attributable failure. Node's WebSocket is an EventTarget, so an unhandled
+    // `error` event does not throw -- it just goes unnoticed, which is worse.
+    webSocket.addEventListener("error", () => {
+      const error = new Error("Chrome DevTools connection errored.");
+      for (const pending of this.pending.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(error);
+      }
       this.pending.clear();
     });
   }
@@ -480,7 +602,23 @@ class CdpConnection {
     const message = { id, method, params };
     if (sessionId) message.sessionId = sessionId;
     return new Promise((resolveCommand, rejectCommand) => {
-      this.pending.set(id, { resolve: resolveCommand, reject: rejectCommand });
+      // The watchdog is deliberately not `unref`ed: if a command really is stuck
+      // it is the only thing that will still report the failure, and the timer is
+      // cleared the moment the command settles.
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        rejectCommand(
+          new Error(
+            `Chrome DevTools command ${method} did not answer within ` +
+              `${cdpTimeout} ms (set BEAMERSLIDES_CDP_TIMEOUT_MS to change this).`
+          )
+        );
+      }, cdpTimeout);
+      this.pending.set(id, {
+        resolve: resolveCommand,
+        reject: rejectCommand,
+        timer,
+      });
       this.webSocket.send(JSON.stringify(message));
     });
   }
@@ -492,15 +630,19 @@ class CdpConnection {
 
     return new Promise((resolveClose) => {
       let settled = false;
+      let timer;
       const finish = () => {
         if (settled) return;
         settled = true;
+        // Without this the 1s fallback timer outlived the connection and kept the
+        // event loop alive for up to a second after the last slide was measured.
+        clearTimeout(timer);
         resolveClose();
       };
       this.webSocket.addEventListener("close", finish, { once: true });
       this.webSocket.addEventListener("error", finish, { once: true });
       this.webSocket.close();
-      delay(1000).then(finish);
+      timer = setTimeout(finish, 1000);
     });
   }
 }
@@ -1096,7 +1238,7 @@ const printLayoutMeasurementSource = `(() => {
       return getComputedStyle(node).display !== "none";
     });
 
-  return Array.from(document.querySelectorAll(".beamer-leaf-slide")).map((slide) => {
+  return Array.from(document.querySelectorAll("section.beamer-leaf-slide")).map((slide) => {
     const slideRect = slide.getBoundingClientRect();
     const heading = slide.querySelector(":scope > h2");
     const content = heading ? directContent(slide) : null;
@@ -1173,8 +1315,50 @@ const printLayoutMeasurementSource = `(() => {
   });
 })()`;
 
+// Leaf sections, derived from Reveal's own DOM shape rather than from the theme's
+// class: a section that holds no nested sections is a slide the theme is expected
+// to decorate. Counting this independently is what makes the canary in
+// `assertPrintLayout` able to fail.
+//
+// The filter mirrors `leafSlides()` in `beamer.js`, deliberately. If that rule ever
+// changes, this one has to change with it -- otherwise the canary starts reporting
+// a mismatch between two definitions of "leaf slide" instead of a missing class.
+const leafSectionCountSource = `(() => {
+  return Array.from(document.querySelectorAll(".reveal .slides section")).filter(
+    (slide) => {
+      const hasNested = Array.from(slide.children).some(
+        (child) => child.tagName === "SECTION"
+      );
+      const hasContent = Array.from(slide.children).some(
+        (child) => !child.matches(".beamer-headline, .beamer-footline")
+      );
+      return !hasNested && (slide.id !== "" || hasContent);
+    }
+  ).length;
+})()`;
+
 const assertPrintLayout = async (page) => {
   const printLayout = await page.evaluate(printLayoutMeasurementSource);
+  // Coverage canary. Both assertions below are "this filter found nothing", which
+  // an empty array satisfies -- so a deck whose slides never received
+  // `beamer-leaf-slide` would pass every print-layout check by measuring nothing.
+  //
+  // Reveal's own `getTotalSlides()` is NOT the number to compare against: the theme
+  // marks reference pages `data-visibility="uncounted"`, and Reveal leaves
+  // uncounted slides out of its model (measured on the Madrid fixture: 10 leaf
+  // sections, 9 reported, the difference being `#references`). The leaf sections
+  // are counted from the DOM instead.
+  const leafSections = await page.evaluate(leafSectionCountSource);
+  assert(
+    printLayout.length > 0,
+    `the print-layout probe measured no slides at all: ${JSON.stringify(printLayout)}`
+  );
+  assert.equal(
+    printLayout.length,
+    leafSections,
+    `the print-layout probe measured ${printLayout.length} slides but the deck has ` +
+      `${leafSections} leaf sections; a slide is missing its beamer-leaf-slide class`
+  );
   assert.deepEqual(
     printLayout.filter((slide) => !slide.frameContentBelowTitle),
     [],
@@ -1218,7 +1402,6 @@ export {
   generatedFixtureIgnore,
   launchChrome,
   outputDir,
-  printLayoutMeasurementSource,
   removeTemporaryDirectory,
   renderFixture,
   renderTemplate,
