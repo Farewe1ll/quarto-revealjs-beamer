@@ -1,0 +1,11 @@
+---
+title: "CJK chip alignment"
+author: "Auditor"
+date: "2026"
+lang: zh
+format: beamerslides-revealjs
+---
+
+## 混排 {#cjk-chip}
+
+中文正文里的行内代码 `#cc0000` 与汉字的重心要对齐。

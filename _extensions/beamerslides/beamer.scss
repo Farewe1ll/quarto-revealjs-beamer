@@ -1164,6 +1164,23 @@ $border-radius: 4px !default;
   box-decoration-break: clone;
 }
 
+/* In CJK body text the same baseline is not enough: a Latin run's ink band is
+   much shorter than an ideograph's, so with both sitting on the baseline the
+   Latin band's centre lands below the ideographs' centre and the code reads as
+   sinking. Measured on the CambridgeUS template's prose: the CJK ink spans 27px
+   and the code's 18px, their bottoms 2px apart (that gap is the ideographs'
+   overshoot) and their CENTRES 2.5px apart. Raising the chip by 0.1em closes it,
+   and it also centres the chip's own box on that line -- 3.6px of air above it
+   against 3.6px below -- where a Latin line wants the box exactly on the
+   baseline. So the shift is scoped to CJK documents and Latin decks are left
+   alone; `lang` is inherited from the document, so `:lang()` follows the
+   front matter's `lang:` without any per-slide markup. */
+.reveal:lang(zh) code:not(pre code),
+.reveal:lang(ja) code:not(pre code),
+.reveal:lang(ko) code:not(pre code) {
+  vertical-align: 0.1em;
+}
+
 .reveal .columns {
   display: flex;
   align-items: stretch;

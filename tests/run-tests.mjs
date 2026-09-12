@@ -703,26 +703,7 @@ const testMadrid = async (connection, origin) => {
   );
   // "HHH" is capitals only, so its ink top row is the cap line and its bottom row
   // is the baseline: the two lines the eye measures the chip's box against.
-  const inkRows = (x0, x1, y0, y1) => {
-    let first = -1;
-    let last = -1;
-    for (let y = y0; y <= y1; y += 1) {
-      let hits = 0;
-      for (let x = x0; x <= x1; x += 1) {
-        const index = (y * chipShot.width + x) * 4;
-        const luminance =
-          0.2126 * chipShot.data[index] +
-          0.7152 * chipShot.data[index + 1] +
-          0.0722 * chipShot.data[index + 2];
-        if (luminance < 150) hits += 1;
-      }
-      if (hits >= 2) {
-        if (first < 0) first = y;
-        last = y;
-      }
-    }
-    return { first, last };
-  };
+  const inkRows = (x0, x1, y0, y1) => scanInkRows(chipShot, x0, x1, y0, y1);
   const bodyLeft = Math.round(chipPosition.bodyLeft);
   const bodyInk = inkRows(
     bodyLeft,
@@ -3533,6 +3514,31 @@ const testSectionStyles = async (connection, origin) => {
   }
 };
 
+// The rows a region of a screenshot actually paints, which is how the chip's
+// position is checked: a baseline derived from canvas metrics is 1.4px off on the
+// fixture pages and the test's difference doubles that error, so the measurement
+// has to come from the render.
+const scanInkRows = (png, x0, x1, y0, y1, maximumLuminance = 150) => {
+  let first = -1;
+  let last = -1;
+  for (let y = Math.max(0, y0); y <= Math.min(png.height - 1, y1); y += 1) {
+    let hits = 0;
+    for (let x = Math.max(0, x0); x <= Math.min(png.width - 1, x1); x += 1) {
+      const index = (y * png.width + x) * 4;
+      const luminance =
+        0.2126 * png.data[index] +
+        0.7152 * png.data[index + 1] +
+        0.0722 * png.data[index + 2];
+      if (luminance < maximumLuminance) hits += 1;
+    }
+    if (hits >= 2) {
+      if (first < 0) first = y;
+      last = y;
+    }
+  }
+  return { first, last };
+};
+
 const measureSectionStyles = async (connection, origin, variant) => {
   {
     const page = await BrowserPage.create(
@@ -3838,6 +3844,68 @@ const assertSectionStyles = (variant, state) => {
 
 // Block titles are real text nodes built from an attribute value: they must
 // survive UTF-8, escaping, and multiple words without being split or dropped.
+// In a CJK line the shared baseline is not enough. An ideograph's ink is much
+// taller than a Latin run's, so with both on the baseline the Latin band's centre
+// lands below the ideographs' centre and the code reads as sinking -- measured on
+// the templates: 27px of CJK ink against 18px of code ink, their bottoms 2px apart
+// and their centres 2.5px apart. The theme raises the chip by 0.1em for CJK
+// documents only, because a Latin line wants the chip exactly on the baseline; this
+// checks both halves of that claim, the Latin half through the chip-position
+// assertion above.
+const testCjkChipAlignment = async (connection, origin) => {
+  renderFixture("chip-cjk");
+  const page = await BrowserPage.create(connection, `${origin}/chip-cjk.html#/cjk-chip`);
+  const state = await page.evaluate(`(() => {
+    const slide = document.getElementById("cjk-chip");
+    const chip = slide.querySelector("p code");
+    const chipRect = chip.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(chip.previousSibling);
+    // Per line, because the text node may wrap: the rect whose centre is closest to
+    // the chip's is the run that shares its line.
+    const rects = Array.from(range.getClientRects()).map((rect) => ({
+      top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right
+    }));
+    const chipCentre = (chipRect.top + chipRect.bottom) / 2;
+    const shared = rects.reduce((best, rect) =>
+      Math.abs((rect.top + rect.bottom) / 2 - chipCentre) <
+      Math.abs((best.top + best.bottom) / 2 - chipCentre)
+        ? rect
+        : best
+    );
+    return {
+      lang: document.documentElement.lang,
+      verticalAlign: getComputedStyle(chip).verticalAlign,
+      chip: { top: chipRect.top, bottom: chipRect.bottom, left: chipRect.left, right: chipRect.right },
+      cjk: shared
+    };
+  })()`);
+  assert.match(state.lang, /^zh/, `the fixture must render as Chinese: ${state.lang}`);
+  assert.notEqual(
+    state.verticalAlign,
+    "baseline",
+    "a CJK document must raise the chip off the shared baseline"
+  );
+  await page.screenshot("chip-cjk");
+  const shot = PNG.sync.read(readFileSync(join(artifactsDir, "chip-cjk.png")));
+  const y0 = Math.round(state.chip.top) - 6;
+  const y1 = Math.round(state.chip.bottom) + 6;
+  const cjkInk = scanInkRows(shot, Math.round(state.cjk.left), Math.round(state.cjk.right), y0, y1, 120);
+  const codeInk = scanInkRows(shot, Math.round(state.chip.left) + 5, Math.round(state.chip.right) - 5, y0, y1, 120);
+  assert(
+    cjkInk.first >= 0 && codeInk.first >= 0,
+    `both runs must paint ink on that line: ${JSON.stringify({ cjkInk, codeInk, state })}`
+  );
+  const cjkCentre = (cjkInk.first + cjkInk.last) / 2;
+  const codeCentre = (codeInk.first + codeInk.last) / 2;
+  assert(
+    Math.abs(codeCentre - cjkCentre) <= 2,
+    `inline code must sit optically centred on a CJK line: ` +
+      JSON.stringify({ cjkCentre, codeCentre, cjkInk, codeInk })
+  );
+  await page.close();
+};
+
 const testBlockTitles = async (connection, origin) => {
   renderFixture("block-titles");
   const page = await BrowserPage.create(
@@ -3945,6 +4013,7 @@ try {
     "refs-auto",
     "refs-empty",
     "scroll-layers",
+    "chip-cjk",
   ]) {
     renderFixture(fixture);
   }
@@ -4026,6 +4095,7 @@ try {
   await testInvalidOptions(chrome.connection, local.origin);
   await testOverflowDiagnostics(chrome.connection, local.origin);
   await testPaletteOverrides(chrome.connection, local.origin);
+  await testCjkChipAlignment(chrome.connection, local.origin);
   await testBlockTitles(chrome.connection, local.origin);
   await testReferencesPagination(chrome.connection, local.origin);
   await testReferencesMultifile(chrome.connection, local.origin);

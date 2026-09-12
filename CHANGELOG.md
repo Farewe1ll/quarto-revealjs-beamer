@@ -113,6 +113,21 @@ Earlier releases predate this file; their history is in the git log.
   `tests/fixtures/madrid.qmd` gained an inline-code span on a screenshotted page
   plus a deliberately single-line probe paragraph, so the chip now has both visual
   coverage and a measurable box position — it previously had neither.
+- **Inline code in Chinese, Japanese and Korean text no longer reads as sitting
+  low.** The shared baseline is not enough there: an ideograph's ink is much taller
+  than a Latin run's, so although both sit on the baseline their bands are centred
+  differently. Measured on the CambridgeUS template's prose — 27px of CJK ink
+  against 18px of code ink, the bottoms 2px apart (the ideographs' overshoot) and
+  the centres 2.5px apart, which is what the eye reads as the code sinking. The
+  theme now raises the chip by 0.1em, which puts the two centres 0.00px apart and
+  also centres the chip's own box on such a line (3.6px of air above it against
+  3.6px below). A Latin line wants the chip exactly on the baseline, so the rule is
+  scoped with `:lang(zh)`, `:lang(ja)`, `:lang(ko)` — `lang` is inherited from the
+  document, so it follows the front matter without any per-slide markup, and the
+  Latin fixture still measures the code's ink bottom flush with the caps' bottom.
+  A new fixture (`chip-cjk`) and assertion check the CJK half in pixels; the
+  Latin half is what the `chip-position` assertion above already guards, since a
+  leaked raise would break its balance by 2.4px.
 - **The `.section-minimal` section page splits its air evenly instead of leaving
   the title floating.** The look kept the band's `min-height` and the heading's
   bottom margin, which around bare text pushed the body away and left 13px of air
