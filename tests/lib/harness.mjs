@@ -87,6 +87,42 @@ const debugCleanup = (...values) => {
 const delay = (milliseconds) =>
   new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 
+// Chrome forks a tree of helper processes (renderers, GPU, network). Killing
+// only the parent -- or letting the parent die from SIGTERM -- leaves that tree
+// reparented to init and running until the machine is rebooted. Measured after
+// a batch of interrupted runs: five orphaned headless browsers holding ~2.9 GB.
+//
+// Two guards, because no graceful path can cover a signal: the child is spawned
+// `detached`, which makes it a process-group leader, and this handler kills that
+// whole group. Signal handlers must be synchronous -- an `async` teardown never
+// gets to run before the process dies.
+const childProcessGroups = new Set();
+
+const terminateChildProcessGroups = () => {
+  for (const pid of childProcessGroups) {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch (error) {
+      // The group is already gone.
+    }
+  }
+  childProcessGroups.clear();
+};
+
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(signal, () => {
+    terminateChildProcessGroups();
+    // The graceful teardown is async and so never runs on a signal; remove the
+    // profile directory synchronously or it is left behind for good.
+    try {
+      rmSync(chromeTemporaryDir, { recursive: true, force: true });
+    } catch (error) {
+      // Best effort.
+    }
+    process.exit(128);
+  });
+}
+
 const waitForChildExit = (processHandle, milliseconds) => {
   if (processHandle.exitCode !== null || processHandle.signalCode !== null) {
     return Promise.resolve(true);
@@ -545,7 +581,12 @@ const launchChromeAttempt = async ({
   try {
     processHandle = spawn(chromePath, chromeFlags(profileDir), {
       stdio: ["ignore", "ignore", stderrFd],
+      // Own process group, so the whole Chrome tree can be signalled at once.
+      detached: true,
     });
+    if (typeof processHandle.pid === "number") {
+      childProcessGroups.add(processHandle.pid);
+    }
   } finally {
     closeSync(stderrFd);
   }

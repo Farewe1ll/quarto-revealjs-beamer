@@ -163,6 +163,15 @@ Earlier releases predate this file; their history is in the git log.
   genuinely observes a missing element still fails, through its own assertion.
   This was the last of the intermittent failures to be explained; it accounted
   for roughly one run in three.
+- Interrupting the suite no longer leaks headless browsers. Chrome forks a tree
+  of helper processes, and killing only the parent -- or letting it die from
+  SIGTERM -- left that tree reparented to init. A batch of interrupted runs left
+  five orphaned headless browsers holding ~2.9 GB, plus ~476 MB of profile
+  directories and a stale lock file. Chrome is now spawned in its own process
+  group and a synchronous signal handler kills the whole group and removes the
+  profile directory; an `async` teardown cannot run on a signal, which is why
+  the graceful path never covered this. Verified by SIGTERM-ing a live run: zero
+  processes and zero directories left behind.
 - The suite refuses to start when another run is already using the checkout.
   Fixed temporary input names in the repo root and a single `tests/_output` mean
   concurrent runs delete each other's inputs and overwrite each other's renders,
