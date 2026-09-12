@@ -105,6 +105,20 @@ structure!50!black = darkred!50!black = #660000
 1. 变量可以写在 `.reveal`、`.reveal.beamer-madrid` / `.reveal.beamer-cambridgeus` 上，也可以直接写在 `:root` 上——两个变体的调色板都按 `:root` 级选择器声明（CambridgeUS 用 `:where(:root).beamer-cambridgeus` 保持同等特异性），因此文档级 `:root` 覆盖对两种变体都生效。
 2. `--beamer-primary` 只影响正文强调色；frame title、标题页色块、页眉页脚、`--beamer-structure` 各自有独立变量，需要一并覆盖。
 
+### 标题层级用哪个变量
+
+`h1`–`h6` 的颜色分属四套规则，**没有一个统一开关**：
+
+| 层级 | 颜色来源 |
+|:---|:---|
+| `h1`（章节页标题） | `--beamer-section-title-fg`（badge 外观用 `--beamer-section-badge-fg`、minimal 外观用 `--beamer-section-minimal-fg`） |
+| `h2`（frame title） | `--beamer-frame-fg` |
+| `h3` / `h4` / `h5` / `h6` | `--beamer-structure` |
+
+因此 `_extensions/beamerslides/beamer.scss` 里的 `$presentation-heading-color`（默认 `#1b3761`）**只是一个遗留值**：Quarto 需要它来生成 Reveal 的 `--r-heading-color`，但那个变量已经不再决定任何可见的颜色——`h1`/`h2` 被章节页与 frame title 规则接管，`h3`–`h6` 各自取 `--beamer-structure`。**要改标题颜色，请改上面表里的变量，不要改它。**
+
+`h3`–`h6` 同时构成一条递减的字号阶梯：`0.91em` → `0.78em` → `0.68em` → `0.6em`（以根字号 30px 计为 27.3 / 23.4 / 20.4 / 18.0 px）。回归测试会断言这条阶梯严格递减，以及四级标题对页面背景的对比度均达到 WCAG AA（4.5:1）。
+
 `--beamer-alert`（`red` / beaver 的 `darkred!80!gray`）与 `--beamer-example`（`green!50!black`，注意 xcolor 的 `green` 是 `rgb(0,1,0)`，故为 `#008000` 而非 `#004000`）是**基础色**；三种 block 的标题底色由它们按 `!75!black` 派生，block 正文底色再由标题底色按 `!10!bg` 派生。因此覆盖基础色即可联动整套 block 配色。
 
 最简单的做法是复制仓库里的 `examples/custom-palette.css`，只改一个种子色，其余由 `color-mix()` 按 Beamer 的关系派生：
@@ -171,7 +185,7 @@ format:
 
 三种样式的**正文一律使用正文字色**（`--beamer-ink`），与普通 frame 上的正文一致；正文在页面上而不是色带上，所以它的可读性按页面背景衡量。
 
-实现上，外观差异全部由 `_extensions/beamerslides/beamer.scss` 里的 `--beamer-section-*` 变量表达；`beamer.js` 只提供它才能算出的数值（色带高度、居中偏移），因此样式本身仍是声明式的。
+实现上，外观差异**全部**由 `_extensions/beamerslides/beamer.scss` 里的 `--beamer-section-*` 变量表达，`beamer.js` 不参与章节页的几何计算：它只负责给 `<section>` 打上 `beamer-section-slide` 类，三种外观（以及 badge 的标题与正文整体居中）都由 flex 与这些自定义属性完成。因此样式本身是完全声明式的。
 
 > **注意**：属性只决定章节页**长什么样**，不能决定它**是否存在**。Reveal.js 按 `slide-level` 在渲染前就把 `#` 切成了独立的 `<section>`，扩展运行时页面已经存在。另外 CambridgeUS 下 badge 的阴影是刻意保留的——该变体的章节底色透明，没有阴影的方块会直接消失在浅色背景里。
 
