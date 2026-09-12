@@ -54,6 +54,10 @@ $$
 
 [关键假设]{.bg style="--col: #f5dfe1"} and [[查看总结]{.button}](#mathematics) must be vertically centered, and inline code such as `quarto render` must read at the body's own size.
 
+::: {#chip-probe}
+HHH `HHH` HHH
+:::
+
 | Theme | Accent |
 |:---|:---|
 | Madrid | Blue |

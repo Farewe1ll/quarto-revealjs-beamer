@@ -71,23 +71,38 @@ Earlier releases predate this file; their history is in the git log.
 
 ### Fixed
 
-- **Inline code no longer reads as larger than the sentence around it, and no
-  longer hangs out of its line.** The theme asked for a monospace stack whose
-  x-height is about 8% larger than Libertinus Sans's, so at Quarto's default
-  `0.875em` the chip's lowercase measured 14px against the body's 13px and its box
-  ended 0.2px *below* its line box — a highlight that sits low in the line even
-  though its baseline is exact. `$code-inline-font-size` is now `0.8125em`
+- **Inline code no longer reads as larger than the sentence around it, and its
+  highlight no longer sags below the line.** Two separate defects, both measured.
+
+  The size: the theme asked for a monospace stack whose x-height is about 8% larger
+  than Libertinus Sans's, so at Quarto's default `0.875em` the chip's lowercase
+  measured 14px against the body's 13px. `$code-inline-font-size` is now `0.8125em`
   (= 0.875 / 1.077), which measures at x-height parity (ratio 1.000) with the
-  baseline unmoved and the chip back inside the line (3.8px of air above it, 1.2px
-  below). Cap height ends up about a tenth under the body's, the usual trade for a
-  monospace face. The size is declared in the theme's own rule as well as in
-  `$code-inline-font-size`, because the versions disagree about where it comes from:
-  1.10 derives `.reveal code`'s size as `$code-font-size * 0.875` (so naming a size
-  on the *shared* `$code-font-size` shrinks the chip to 0.7175em instead — which is
+  baseline unmoved; cap height ends up about a tenth under the body's, the usual
+  trade for a monospace face. The size is declared in the theme's own rule as well
+  as in the variable, because the versions disagree about where it comes from: 1.10
+  derives `.reveal code`'s size as `$code-font-size * 0.875` (so naming a size on
+  the *shared* `$code-font-size` shrinks the chip to 0.7175em instead — which is
   what the first attempt did, and what the new assertion on the computed ratio now
   catches), while 1.4 and 1.5 set no inline size at all and let the chip inherit the
-  body's 1em. `tests/fixtures/madrid.qmd` gained an inline-code span on a
-  screenshotted page, so the chip has visual coverage it previously had none of.
+  body's 1em.
+
+  The position, which the size fix did not touch: a chip's box is anchored to the
+  baseline and sized by the *monospace* font's ascent and descent, and those are
+  lopsided around the text a reader sees — 22.98px above the baseline against 7.98px
+  below on the stack this machine resolves, with the body's cap height at 20px. With
+  equal padding the box's top edge sat 5.1px above the body's cap line while its
+  bottom edge reached 9.4px under the baseline — measured on the rendered line — so
+  the highlight read as hanging out of the line even though the glyphs were exactly
+  on it. All of the air now goes on top (`padding: 0.21em 0.25em 0`), which balances
+  the two margins the eye compares — the body's cap line above the box, the baseline
+  below it — to 8.9px against 8.2px, a difference of 0.8 where it was 4.3. The balance point is font-dependent (0.13em for
+  DejaVu Sans Mono, 0.29em for Liberation Mono, the two fallbacks Linux resolves),
+  so the stylesheet value is a compromise and the new assertion admits all three
+  while rejecting the old symmetric padding on every one of them.
+  `tests/fixtures/madrid.qmd` gained an inline-code span on a screenshotted page
+  plus a deliberately single-line probe paragraph, so the chip now has both visual
+  coverage and a measurable box position — it previously had neither.
 - **The `.section-minimal` section page splits its air evenly instead of leaving
   the title floating.** The look kept the band's `min-height` and the heading's
   bottom margin, which around bare text pushed the body away and left 13px of air

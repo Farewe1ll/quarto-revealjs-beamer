@@ -8,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { PNG } from "pngjs";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -564,6 +565,28 @@ const testMadrid = async (connection, origin) => {
     // on the wrong variable leaves the page at a size nobody intended.
     const chip = slide.querySelector("p code");
     const chipParagraph = chip.closest("p");
+    // A deliberately short paragraph, so its rect is one line box. Where the chip's
+    // box sits relative to the body text is NOT derivable in-page: a baseline
+    // computed from canvas ascent/descent is 1.4px off here, and the difference
+    // below doubles that error, which is enough to hide the sag it must catch. So
+    // the test screenshots the line and scans the painted ink instead; this state
+    // carries the boxes and the window that scan needs.
+    const probe = slide.querySelector("#chip-probe");
+    const probeChip = probe.querySelector("code");
+    const probeParagraph = probe.querySelector("p");
+    const probeRange = document.createRange();
+    probeRange.selectNodeContents(
+      Array.from(probeParagraph.childNodes).find((n) => n.nodeType === 3)
+    );
+    const probeBody = probeRange.getBoundingClientRect();
+    const chipPosition = {
+      chipTop: probeChip.getBoundingClientRect().top,
+      chipBottom: probeChip.getBoundingClientRect().bottom,
+      bodyLeft: probeBody.left,
+      lines: probeParagraph.getClientRects().length,
+      paddingTop: parseFloat(getComputedStyle(probeChip).paddingTop),
+      paddingBottom: parseFloat(getComputedStyle(probeChip).paddingBottom)
+    };
     const contentBottom = Math.max(
       slide.querySelector("table").getBoundingClientRect().bottom,
       filename.closest(".code-with-filename").getBoundingClientRect().bottom
@@ -582,6 +605,7 @@ const testMadrid = async (connection, origin) => {
         lineTop: chipParagraph.getBoundingClientRect().top,
         lineBottom: chipParagraph.getBoundingClientRect().bottom
       },
+      chipPosition,
       inlineBoxCenterDelta:
         (buttonRect.top + buttonRect.bottom -
           backgroundRect.top - backgroundRect.bottom) /
@@ -648,6 +672,73 @@ const testMadrid = async (connection, origin) => {
     formatsState.chip.fontSize < formatsState.chip.bodyFontSize,
     `inline code must not be larger than the body text: ` +
       JSON.stringify(formatsState.chip)
+  );
+  // And its box must not sag below the line. A chip is an inline element, so its
+  // box is anchored to the baseline and sized by the MONOSPACE font's ascent and
+  // descent -- lopsided around the text a reader sees, by 22.98px against 7.98px on
+  // the stack this machine resolves. With equal padding the box's bottom edge sat
+  // 9.4px under the baseline while its top was only 5.1px above the body's cap
+  // line, which reads as the highlight hanging out of the line (reported, then
+  // confirmed on a magnified line). The theme carries all of the air on top
+  // instead, which measures 8.5 against 8.2 here. How much is font-dependent -- the
+  // monospace fallbacks put the balance between 0.13em and 0.29em of top padding --
+  // so the stylesheet value is a compromise and this tolerance admits all of them
+  // while still rejecting the old symmetric padding on every one.
+  const chipPosition = formatsState.chipPosition;
+  assert.equal(
+    chipPosition.lines,
+    1,
+    `the chip probe paragraph must stay on one line: ${JSON.stringify(chipPosition)}`
+  );
+  assert(
+    chipPosition.paddingTop >= chipPosition.paddingBottom + 2,
+    `the chip must carry its air above the text, not below it: ` +
+      JSON.stringify(chipPosition)
+  );
+  await formatsPage.screenshot("chip-position");
+  const chipShot = PNG.sync.read(
+    readFileSync(join(artifactsDir, "chip-position.png"))
+  );
+  // "HHH" is capitals only, so its ink top row is the cap line and its bottom row
+  // is the baseline: the two lines the eye measures the chip's box against.
+  const inkRows = (x0, x1, y0, y1) => {
+    let first = -1;
+    let last = -1;
+    for (let y = y0; y <= y1; y += 1) {
+      let hits = 0;
+      for (let x = x0; x <= x1; x += 1) {
+        const index = (y * chipShot.width + x) * 4;
+        const luminance =
+          0.2126 * chipShot.data[index] +
+          0.7152 * chipShot.data[index + 1] +
+          0.0722 * chipShot.data[index + 2];
+        if (luminance < 150) hits += 1;
+      }
+      if (hits >= 2) {
+        if (first < 0) first = y;
+        last = y;
+      }
+    }
+    return { first, last };
+  };
+  const bodyLeft = Math.round(chipPosition.bodyLeft);
+  const bodyInk = inkRows(
+    bodyLeft,
+    bodyLeft + 40,
+    Math.round(chipPosition.chipTop) - 6,
+    Math.round(chipPosition.chipBottom) + 6
+  );
+  assert(
+    bodyInk.first >= 0 && bodyInk.last > bodyInk.first,
+    `the body text's ink must be found for the chip scan: ` +
+      JSON.stringify({ bodyInk, chipPosition })
+  );
+  const chipAbove = bodyInk.first - chipPosition.chipTop;
+  const chipBelow = chipPosition.chipBottom - bodyInk.last;
+  assert(
+    Math.abs(chipAbove - chipBelow) <= 3,
+    `the chip's box must sit centred between the body's cap line and baseline: ` +
+      JSON.stringify({ chipAbove, chipBelow, bodyInk, chipPosition })
   );
   assert.notEqual(formatsState.filenameBackground, formatsState.filenameColor);
   assert.equal(formatsState.filenameLabelBorderWidth, 0);

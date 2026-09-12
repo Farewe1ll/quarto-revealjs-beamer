@@ -1132,14 +1132,22 @@ $border-radius: 4px !default;
      the chip the same size on every supported version -- and `$code-inline-font-size`
      above still feeds the upstream variable where it exists, so both paths agree. */
   font-size: $code-inline-font-size;
-  /* Symmetric and small. The old `0.06em` top against `0.1em` bottom, combined
-     with the leading the line box adds above an inline, put the chip's top edge
-     2.4px under the line box's top and its bottom edge 0.2px PAST the line box's
-     bottom -- measured -- so the highlight read as sitting low in the line even
-     though the baseline was exact. Symmetric padding contains it again: at the
-     size named above the chip now sits 3.8px under the line top and 1.2px above
-     the line bottom, with the glyphs still on the body's baseline. */
-  padding: 0.05em 0.25em;
+  /* The air goes ABOVE the chip, and none below it, because a chip's box is
+     anchored to the baseline and sized by the MONOSPACE font's own ascent and
+     descent -- which are not symmetric around the text the eye sees. At 0.8125em
+     the stack in use here reports 22.98px of ascent and 7.98px of descent against
+     a body cap height of 20px, so with equal padding the box's top edge sits only
+     5.1px above the cap line while its bottom edge reaches 9.4px under the
+     baseline: the highlight reads as sagging even though the glyphs are exactly on
+     the baseline. All of the air on top balances the two margins the eye actually
+     compares -- the cap line above, the baseline below -- and measures 8.9px
+     against 8.2px on the rendered line.
+     0.21em is a compromise, not a constant: the balance point follows the
+     monospace fallback's metrics, and this value minimises the worst case across
+     the stack -- 0.205em for the SFMono it was measured on, 0.13em for DejaVu Sans
+     Mono and 0.29em for Liberation Mono, the two fonts the Linux CI resolves.
+     Larger values also push the box towards the line above. */
+  padding: 0.21em 0.25em 0;
   background: $code-bg;
   border: 1px solid #d9dde2;
   border-radius: 2px;
