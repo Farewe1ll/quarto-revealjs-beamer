@@ -57,7 +57,6 @@ import {
   generatedFixtureIgnore,
   launchChrome,
   outputDir,
-  printLayoutMeasurementSource,
   removeTemporaryDirectory,
   renderFixture,
   renderTemplate,
@@ -759,7 +758,6 @@ const testCambridgeUs = async (connection, origin) => {
     };
   })()`);
   assert.match(titleState.classes, /beamer-cambridgeus/);
-  assert.match(titleState.classes, /beamer-has-headline/);
   // CambridgeUS keeps no filled title box: transparent background and a
   // tighter gap above the author metadata than Madrid's filled box.
   assert.equal(titleState.boxBackground, "rgba(0, 0, 0, 0)");
@@ -985,8 +983,6 @@ const testOptions = async (connection, origin) => {
       date: footer.querySelector(".beamer-footline-date-text").textContent
     };
   })()`);
-  assert.match(state.classes, /beamer-has-headline/);
-  assert.match(state.classes, /beamer-has-progress/);
   assert.equal(state.headlineCount, 1);
   assert.equal(state.progressCount, 1);
   assert(state.progressWidth > 0);
@@ -1099,6 +1095,109 @@ const testBehavior = async (connection, origin) => {
   assert.equal(topState.customNumber, "3 / 5");
   await topPage.close();
 
+  // Levels 3-6 are themed by this extension and had no coverage at all before
+  // this fixture rendered them: h4 took `--beamer-alert`, which under Madrid is
+  // `#ff0000` at 3.93:1 against the light slide, and h5/h6 were never defined,
+  // so they fell through to Reveal's single-size heading rule and rendered
+  // larger than h3.
+  const headingPage = await BrowserPage.create(
+    connection,
+    `${origin}/behavior.html#/top-aligned`
+  );
+  const headingState = await headingPage.evaluate(`(() => {
+    const slide = document.getElementById("top-aligned");
+    const slideStyle = getComputedStyle(slide);
+    // The custom property is a hex literal while getComputedStyle reports
+    // "rgb(r, g, b)", so both sides go through the same parser before they are
+    // compared.
+    const parseRgb = (value) => {
+      const text = String(value).trim();
+      const hex = text.match(/^#([0-9a-f]{6})$/i);
+      if (hex) {
+        const n = parseInt(hex[1], 16);
+        return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+      }
+      const parts = text.match(/[\\d.]+/g);
+      return parts ? parts.slice(0, 3).map(Number) : null;
+    };
+    const relativeLuminance = (value) => {
+      const rgb = parseRgb(value);
+      if (!rgb) return null;
+      const [r, g, b] = rgb.map((channel) => {
+        const c = channel / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrastRatio = (foreground, background) => {
+      const a = relativeLuminance(foreground);
+      const b = relativeLuminance(background);
+      if (a === null || b === null) return null;
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    };
+    // The slide itself has no background colour; walk up to the first ancestor
+    // that paints one, which is where the slide actually sits.
+    const opaqueBackground = (element) => {
+      let node = element;
+      while (node) {
+        const value = getComputedStyle(node).backgroundColor;
+        if (value && value !== "rgba(0, 0, 0, 0)" && value !== "transparent") return value;
+        node = node.parentElement;
+      }
+      return "rgb(255, 255, 255)";
+    };
+    const bodyBackground = opaqueBackground(slide);
+    const levels = {};
+    for (const tag of ["h3", "h4", "h5", "h6"]) {
+      const el = slide.querySelector(":scope > " + tag);
+      if (!el) continue;
+      const style = getComputedStyle(el);
+      levels[tag] = {
+        color: style.color,
+        rgb: parseRgb(style.color),
+        fontSize: parseFloat(style.fontSize),
+        contrast: contrastRatio(style.color, bodyBackground)
+      };
+    }
+    return {
+      structureRgb: parseRgb(slideStyle.getPropertyValue("--beamer-structure")),
+      bodyBackground,
+      levels
+    };
+  })()`);
+  // Every explicitly themed level is pinned: colour, AA contrast, and the
+  // descending size ladder (h3 > h4 > h5 > h6). The ladder assertion is what
+  // stops h5/h6 from silently falling back to Reveal's single heading size and
+  // rendering larger than h3.
+  let previousSize = null;
+  for (const tag of ["h3", "h4", "h5", "h6"]) {
+    const level = headingState.levels[tag];
+    assert(level, `${tag} must be present on the fixture slide`);
+    assert.deepEqual(
+      level.rgb,
+      headingState.structureRgb,
+      `${tag} must use the variant's structure colour: ` + JSON.stringify(headingState)
+    );
+    assert(
+      level.contrast >= 4.5,
+      `${tag} must reach 4.5:1 against the slide background: ` +
+        JSON.stringify({ tag, ...level, bg: headingState.bodyBackground })
+    );
+    if (previousSize !== null) {
+      assert(
+        level.fontSize < previousSize,
+        `${tag} must be smaller than the level above it: ` +
+          JSON.stringify(
+            Object.fromEntries(
+              Object.entries(headingState.levels).map(([k, v]) => [k, v.fontSize])
+            )
+          )
+      );
+    }
+    previousSize = level.fontSize;
+  }
+  await headingPage.close();
+
   const centeredPage = await BrowserPage.create(
     connection,
     `${origin}/behavior.html#/per-page-center`
@@ -1139,7 +1238,12 @@ const testBehavior = async (connection, origin) => {
     const footer = slide.querySelector(":scope > .beamer-footline");
     return {
       visibility: slide.dataset.visibility,
-      uncountedClass: slide.classList.contains("beamer-uncounted-slide"),
+      // There is no marker class for an uncounted slide, so assert the rendered
+      // consequences instead. The page number is the real one: numberCount is
+      // 0 here, and the next slide reports "5 / 5" rather than "6 / 6", which is
+      // what proves the uncounted slide was left out of the count. The progress
+      // rule is injected at runtime rather than present in the rendered HTML, so
+      // the comparison below is against the previous slide's bar width.
       numberCount: footer.querySelectorAll(".beamer-footline-number").length,
       progressWidth: footer
         .querySelector(".beamer-footline-progress")
@@ -1147,7 +1251,6 @@ const testBehavior = async (connection, origin) => {
     };
   })()`);
   assert.equal(optionalState.visibility, "uncounted");
-  assert.equal(optionalState.uncountedClass, true);
   assert.equal(optionalState.numberCount, 0);
   assert(
     Math.abs(optionalState.progressWidth - centeredState.progressWidth) < 1,

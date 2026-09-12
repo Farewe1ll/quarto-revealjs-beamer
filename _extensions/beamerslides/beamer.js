@@ -890,10 +890,14 @@
       showProgress: metaBoolean("beamer-progress", false),
     };
 
+    // The variant class belongs on the element that owns the palette. The
+    // in-header bootstrap in beamer.lua already puts it on <html> before the
+    // first paint; adding it to <body> as well gave nothing a second hook.
+    // `beamer-no-headline` is the only headline state the stylesheet reads --
+    // it collapses `--beamer-active-headline-height`; the positive case is just
+    // the default, so it needs no class.
     document.documentElement.classList.add(`beamer-${variant}`);
-    document.body.classList.add(`beamer-${variant}`);
     reveal.classList.add(`beamer-${variant}`);
-    reveal.classList.toggle("beamer-has-headline", showHeadline);
     reveal.classList.toggle("beamer-no-headline", !showHeadline);
 
     const info = titleMetadata();
@@ -912,14 +916,10 @@
       // Reveal measures the slide before Beamer's full-height layout is added.
       // Its earlier top offset is stale once flex centering owns the content area.
       slide.style.removeProperty("top");
-      slide.classList.toggle(
-        "beamer-uncounted-slide",
-        slide.dataset.visibility === "uncounted"
-      );
 
-      if (slide.id === "title-slide") {
-        slide.classList.add("beamer-title-slide");
-      } else if (h1) {
+      // The title slide needs no marker class of its own: it is `#title-slide`,
+      // and the stylesheet selects it by that id.
+      if (slide.id !== "title-slide" && h1) {
         section = text(h1) || section;
         slide.classList.add("beamer-section-slide");
       }
@@ -1053,7 +1053,6 @@
     if (revealConfig.center === true) {
       slides.forEach((slide) => slide.classList.add("beamer-center-slide"));
     }
-    reveal.classList.toggle("beamer-has-progress", showProgress);
     if (showProgress) {
       const counts = slideCounts(slides);
       slides.forEach((slide) => {
