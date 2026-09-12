@@ -35,6 +35,7 @@ const artifactsDir = join(testsDir, "_artifacts");
 const baselinesDir = join(testsDir, "baselines");
 const chromeTemporaryDir = mkdtempSync(join(tmpdir(), "beamerslides-chrome-"));
 const temporaryInputs = [];
+
 const generatedFixtureIgnore = join(testsDir, "fixtures", ".gitignore");
 const fixtureIgnoreExisted = existsSync(generatedFixtureIgnore);
 const updateVisualBaselines = process.env.UPDATE_VISUAL_BASELINES === "1";
@@ -60,6 +61,7 @@ const chromeLaunchAttempts =
     ? requestedChromeLaunchAttempts
     : 3;
 const pdfAttempts = 3;
+const evaluateAttempts = 4;
 const requestedPageReadyAttempts = Number.parseInt(
   process.env.BEAMERSLIDES_PAGE_READY_ATTEMPTS || "",
   10
@@ -746,19 +748,40 @@ class BrowserPage {
   }
 
   async evaluate(expression) {
-    const response = await this.connection.send(
-      "Runtime.evaluate",
-      { expression, awaitPromise: true, returnByValue: true },
-      this.sessionId
-    );
-    if (response.exceptionDetails) {
-      throw new Error(
-        response.exceptionDetails.exception?.description ||
-          response.exceptionDetails.text ||
-          "Browser evaluation failed"
+    // A probe that dereferences an element the page has not created yet throws a
+    // null-property TypeError. That is a race, not a finding: the page is laid
+    // out a moment later and the identical probe succeeds. Only those specific
+    // messages are retried, so a probe that genuinely observes a missing element
+    // still fails -- through its own assertion, on its own text.
+    const transientNullProperty =
+      /Cannot read properties of (?:null|undefined) \(reading '[^']+'\)/;
+    for (let attempt = 1; attempt <= evaluateAttempts; attempt += 1) {
+      const response = await this.connection.send(
+        "Runtime.evaluate",
+        { expression, awaitPromise: true, returnByValue: true },
+        this.sessionId
       );
+      if (!response.exceptionDetails) {
+        return response.result?.value;
+      }
+      const message =
+        response.exceptionDetails.exception?.description ||
+        response.exceptionDetails.text ||
+        "Browser evaluation failed";
+      if (
+        attempt === evaluateAttempts ||
+        !transientNullProperty.test(message)
+      ) {
+        throw new Error(
+          attempt > 1 ? `${message} (after ${attempt} attempts)` : message
+        );
+      }
+      console.warn(
+        `[harness] ${this.url}: probe hit a not-yet-present element ` +
+          `(attempt ${attempt}/${evaluateAttempts}); retrying`
+      );
+      await delay(250 * attempt);
     }
-    return response.result?.value;
   }
 
   async waitForReady() {

@@ -156,6 +156,18 @@ Earlier releases predate this file; their history is in the git log.
   height and re-centres the badge. The header's effect on section pages was
   previously uncovered: the two variants merely happened to differ in their
   default, which made the difference look tested when it was not.
+- `BrowserPage.evaluate` retries probes that hit a not-yet-present element. Such
+  a probe throws `Cannot read properties of null (reading '…')`, which is a race
+  rather than a finding -- the page is laid out a moment later and the identical
+  probe succeeds. Only those specific messages are retried, so a probe that
+  genuinely observes a missing element still fails, through its own assertion.
+  This was the last of the intermittent failures to be explained; it accounted
+  for roughly one run in three.
+- The suite refuses to start when another run is already using the checkout.
+  Fixed temporary input names in the repo root and a single `tests/_output` mean
+  concurrent runs delete each other's inputs and overwrite each other's renders,
+  which surfaced as unrelated DOM errors. Diagnosing that cost real time, so it
+  now fails immediately with the holding pid instead.
 - The harness retries two more external failures, both outside this project's
   code. `Page.printToPDF` intermittently returns a near-empty document -- one
   observed call produced 1,148 bytes where the same page yields ~100 KB -- and

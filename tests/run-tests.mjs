@@ -1,6 +1,48 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const runLockFile = join(projectRoot, "tests", ".run-tests.lock");
+
+const acquireRunLock = () => {
+  if (existsSync(runLockFile)) {
+    const holder = readFileSync(runLockFile, "utf8").trim();
+    const pid = Number.parseInt(holder, 10);
+    const alive =
+      Number.isFinite(pid) &&
+      (() => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch (error) {
+          return error.code === "EPERM";
+        }
+      })();
+    if (alive) {
+      throw new Error(
+        `Another test run (pid ${holder}) is already using this checkout. ` +
+          "The suite writes fixed temporary files into the repo root and a " +
+          "single tests/_output, so concurrent runs corrupt each other. " +
+          `Wait for it, or delete ${relative(projectRoot, runLockFile)} if stale.`
+      );
+    }
+  }
+  writeFileSync(runLockFile, String(process.pid));
+  process.on("exit", () => {
+    try {
+      if (
+        existsSync(runLockFile) &&
+        readFileSync(runLockFile, "utf8").trim() === String(process.pid)
+      ) {
+        unlinkSync(runLockFile);
+      }
+    } catch (error) {
+      // Nothing useful to do while tearing down.
+    }
+  });
+};
 
 import {
   BrowserPage,
@@ -2628,6 +2670,12 @@ try {
     readFileSync(join(outputDir, "offline.html"), "utf8"),
     /https:\/\/cdn\.jsdelivr\.net\/npm\/katex/
   );
+
+  // Two suites at once share this checkout: fixed temporary input names in the
+  // repo root and a single `tests/_output`. Interleaved runs delete each other's
+  // inputs and overwrite each other's renders, which shows up as unrelated DOM
+  // errors deep inside a probe. Refusing to start beats debugging that.
+  acquireRunLock();
 
   const local = await startServer();
   server = local.server;
