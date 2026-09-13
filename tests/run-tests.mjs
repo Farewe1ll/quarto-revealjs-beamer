@@ -3873,10 +3873,16 @@ const testCjkChipAlignment = async (connection, origin) => {
         ? rect
         : best
     );
+    const paragraph = chip.closest("p");
     return {
       lang: document.documentElement.lang,
       verticalAlign: getComputedStyle(chip).verticalAlign,
       chip: { top: chipRect.top, bottom: chipRect.bottom, left: chipRect.left, right: chipRect.right },
+      // The clearance the eye gets between the chips of two consecutive lines is
+      // the line box minus the chip's box: whatever the box spends, they lose.
+      lineHeight: parseFloat(getComputedStyle(paragraph).lineHeight),
+      chipHeight: chipRect.height,
+      paddingTop: parseFloat(getComputedStyle(chip).paddingTop),
       cjk: shared
     };
   })()`);
@@ -3885,6 +3891,21 @@ const testCjkChipAlignment = async (connection, origin) => {
     state.verticalAlign,
     "baseline",
     "a CJK document must raise the chip off the shared baseline"
+  );
+  // ...and it must not pay for that centring with a taller box: two chips on
+  // consecutive lines have only the line box to share, so the box has to stay at
+  // the font's own height. Measured before this: a 32.2px box in a 38.4px line
+  // left 4.2px of visible clearance once the 2px ring was counted.
+  assert.equal(
+    state.paddingTop,
+    0,
+    `a CJK chip must not carry the Latin top padding: ${JSON.stringify(state)}`
+  );
+  const clearance = state.lineHeight - state.chipHeight;
+  assert(
+    clearance >= 8,
+    `chips on consecutive lines must have room between them: ` +
+      JSON.stringify({ clearance, ...state })
   );
   await page.screenshot("chip-cjk");
   const shot = PNG.sync.read(readFileSync(join(artifactsDir, "chip-cjk.png")));
