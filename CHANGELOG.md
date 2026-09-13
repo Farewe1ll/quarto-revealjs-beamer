@@ -206,6 +206,126 @@ Earlier releases predate this file; their history is in the git log.
 - Upstream CambridgeUS sets `titlelike`'s background to white, not to nothing; the
   theme writes `transparent`, which is equivalent on a light page. The README now
   says that instead of implying upstream leaves it unset.
+- **The three glyph-measurement passes share one implementation and one canvas.**
+  `alignInlineLabels`, `alignOrderedMarkers` and `fontMetrics` each carried their own
+  copy of the same two things -- the `context.font` shorthand and the fallback from
+  `fontBoundingBox*` to `actualBoundingBox*` -- and two of them allocated a fresh canvas
+  on every call, so each optical realign (a resize, a font load, every slide change)
+  built two canvases it never reused. Measured on the Madrid template: 7 canvases by the
+  time the page settled and 2 more per realign before, against 1 in total afterwards.
+  The shared `measureFont` never caches across calls, because all three users now share
+  one context and two of them can be interleaved through it; `drawnInk` re-sets the font
+  after it resizes the canvas, since resizing resets the context state. The three
+  passes' own arithmetic is untouched, and the merge was checked against a
+  pre-refactor snapshot of every number they write -- 17 title transforms, 9 marker
+  paddings and 4 inline-label shifts across `madrid`, `cambridgeus` and `behavior` --
+  all byte-for-byte identical.
+- **The block-palette contract the README described did not exist, and the README now
+  describes the one that does.** It said `--beamer-alert` and `--beamer-example` were the
+  *base* colours the three block title bands were derived from, so overriding them would
+  recolour the blocks. They are not: those bands are literals in `_palette.scss`, frozen at
+  Beamer's `!75!black` values so the stock colours are byte-exact, and overriding both base
+  colours was measured to change nothing at all -- the alert band stayed `rgb(191, 0, 0)`
+  and the example band `rgb(0, 96, 0)`. The 0.4.0 entry ("Block colours now follow Beamer's
+  colour algebra instead of being hard-coded") overstates the same thing: only the body
+  tint was ever derived. What IS live is that derivation -- `beamer.scss` reads each kind's
+  own title band through `color-mix(... 10%, #fff)` -- so overriding a `-title-bg` moves
+  the band AND its body tint together, measured. The README now documents that as the way
+  to recolour a block, names the `-fg` pair as what actually matters under CambridgeUS
+  (whose blocks are unfilled and distinguished by title text colour), and keeps
+  `--beamer-alert` and `--beamer-example` for what they do drive: inline `[text]{.alert}`
+  emphasis and CambridgeUS's example-block title text. The two comments in `_palette.scss`
+  that described the algebra as live relationships are corrected the same way. No
+  declaration changed, so no rendered colour moved.
+- **A `.section-badge` page no longer half-applies `.scrollable`; the combination is
+  now explicitly unsupported.** The look centres its title and body as ONE block, and
+  the scroll layer is an absolutely positioned strip inset from the top of the slide, so
+  the two cannot both hold. The theme used to build the layer anyway, and the result was
+  measured at 324px: the badge sat at y=308..384 while its body was painted at y=60..99,
+  above it. A badge page is now left exactly as a plain badge page — every scrolling
+  class is inert on it — the author is told once in the console, and because the page is
+  judged as the plain one it renders as, an overfull badge page finally reports its
+  overflow instead of being silently exempt for carrying `.scrollable`.
+  `.section-badge` is for a title and a line or two of prose; put long content on the
+  next frame, or use the band or minimal look. Covered by `testBadgeScrollIsInert`.
+- **A paginated bibliography no longer ships several elements with the same id.** Each
+  container beamer.js created for a declared continuation page or a generated page copied
+  the author's id, so a three-page bibliography carried three of them: invalid HTML, and
+  ambiguous for `:target` and for assistive technology. Only the author's own `::: {#refs}`
+  keeps the id now; the containers this pass creates carry the `.beamer-refs` class, which
+  the stylesheet accepts alongside `#refs`, so a document's own CSS keeps working either
+  way. Every lookup was already slide-scoped, so nothing else changed.
+  `testReferencesScrollMode` and `testReferencesScrollSurplus` now assert the id invariant
+  directly (`refsIds === 1`) on top of the container count.
+- **`--beamer-primary-3` is gone.** It was added to make the README's variable count
+  come out right, not because anything consumed it: no rule in `beamer.scss`, no code in
+  `beamer.js` and no assertion in the suite ever read it, and
+  `examples/custom-palette.css` was writing a value nothing would use. The README's count
+  is corrected to the file's actual 48 (and CambridgeUS's override count to the measured
+  39 — the table said 41, which no reading of the file supported).
+- **`repositionNativeUi` coalesces a burst into one pass, like its sibling.** It scheduled
+  a `requestAnimationFrame` AND an 80ms timeout on every event, neither cancelled, so one
+  native `resize` plus Reveal's re-emission plus the event rate of a window drag multiplied
+  both — the same defect `alignOpticalLabels` had before its own `realignScheduled` flag.
+  The pair is kept, because the frame follows the drag and the later timeout is what catches
+  the line after the deck's own title measurement has moved the chrome it is measured from,
+  but a burst now collapses into one of each and the trailing pass runs against the latest
+  slide. Verified by firing 25 `resize` events in one frame: every `--beamer-*` variable the
+  pass writes is byte-identical to the settled value.
+- **The test harness no longer allocates a Chrome profile directory just for being
+  imported, and `withBrowser` owns the browser's lifetime.** `mkdtempSync` ran at module
+  load, so any importer that never reached `removeTemporaryDirectory` — including one that
+  threw before launching anything — left a directory behind; it now runs inside
+  `launchChrome`. `withBrowser(run)` wraps launch/shutdown in a `finally` and removes the
+  profile it created, because `launchChrome` + `BrowserPage.create` are only leak-safe when
+  every failure path reaches `shutdownChrome`: a throwaway probe that threw inside a page
+  evaluation was measured leaving 18 Chrome processes and two profile directories behind,
+  with nothing on screen to say so.
+
+- **A scrollable section page no longer paints its body inside its own band.** The
+  earlier fix kept the `h1` band out of the `.beamer-scroll` layer but left the
+  layer's INSET at the section's `padding-top`, which is only the body's start line
+  when the title is absolutely positioned and its height reserved in that padding —
+  true of a frame's `h2` (`.beamer-frame-slide` reserves `headline + 58 + 22`), false
+  of a section page, whose band is deliberately IN THE FLOW so a wrapping title can
+  push the body down. Measured on this release's own `scroll-layers` fixture: band
+  0..95 against a layer at 0, first paragraph at 14, i.e. 81px inside the band. The
+  inset is now measured (`sectionBodyTop`) and re-applied by the same pass that
+  measures frame titles, so the page puts its first line exactly where a plain one
+  does — the matched pair (same deck, with and without `.scrollable`) reads band
+  0..58, body 94..133 and a 36px gap in both, where the scrollable one was −44 before.
+  `testScrollLayers` was blind to it: it asserts the band keeps its fill, position and
+  full-bleed width and that the body is *reachable*, never that the body clears the
+  band, and no baseline covers a section page carrying prose.
+- **A declared bibliography continuation page on a section-level bibliography now
+  gets its scroll layer, and a generated page keeps the bibliography's own heading
+  level.** Both were the same blind spot: `applySlideBox` runs before the references
+  are filled in, so a bare continuation page is still empty when the layer is built,
+  and the later pass that re-wraps a frame looks for an `h2` — which a section-level
+  bibliography does not have. The declared page kept `hasScrollLayer: false` and a
+  generated page was hard-coded to `h2`, so a level-1 bibliography showed a section
+  band on its authored pages and a frame band on its generated one, whose `z-index: 2`
+  then painted over the first entry. Measured on a three-page level-1 fixture: pages
+  now read `h1` / `h1` / `h1` with layers at 80px and every entry clear of its band.
+- **A section page's band now reserves the logo's width, and the logo clears the
+  band on section pages too.** `positionLogo` measured the frame title and then the
+  headline — the two kinds of chrome a slide was assumed to have — so a Madrid
+  section page, which has neither (its headline is off by default), fell through to
+  the slide's top and painted the logo at y=25..53 inside the band's y=0..58, where
+  the frame in the same deck kept it clear at y=83..111. The width half was reserved
+  only on `h2` as well, so the band kept a flat 58px gutter while `beamer.js` went on
+  writing `--beamer-logo-reserve`: with a 140px logo (the shipped fixture's is 50px,
+  which fits the gutter by luck) a long section title ran to x=1133 against a logo
+  starting at x=1118. Both are fixed; the matched case now reads 8px of clearance.
+- **`refs-order: declaration` no longer loses the whole order to a key mentioned in
+  a field value.** The `.bib` scan was unanchored, so `title = {A paper that cites
+  @smith2020, in its title}` contributed a phantom `2020`; because the caller compares
+  the extracted count against the rendered entry count, one such mention discarded the
+  declaration order for the whole document (loudly — the console warning fired — but
+  the feature was gone). The scan is now anchored to the start of a line and skips
+  `@string`, `@comment` and `@preamble` by name. Measured: the clean and the
+  key-in-a-field decks now both ship `k1,k2,k3` and render in declaration order, where
+  the second shipped `k1,k2,2020,k3` and fell back to citeproc's order.
 
 ## [0.4.0] - 2026-09-12
 

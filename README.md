@@ -228,7 +228,7 @@ format:
     html-math-method: mathjax
 ```
 
-**标题页**会显示可点击的邮箱地址；ORCID 使用内嵌矢量 iD 图标，以作者名右上方的小角标呈现，避免位图缩放模糊。多位作者继续使用同一组 `name`、`email`、`orcid`、`affiliations` 字段。
+**标题页**会显示可点击的邮箱地址；ORCID 使用内嵌矢量 iD 图标，以作者名右上方的小角标呈现，避免位图缩放模糊。多位作者继续使用同一组 `name`、`email`、`orcid`、`affiliations` 字段。图标带有一个稳定的类 `.beamer-orcid-icon`（主题自身不定义它的样式），需要改色、换图或在其后追加内容时直接对着它写 CSS 即可：`#title-slide .beamer-orcid-icon { ... }`。
 
 ## 参考文献分页与排序
 
@@ -252,6 +252,7 @@ refs-overflow: scroll   # 默认 paginate；scroll = 文献留在 Quarto 生成�
 - **`item` 是每页条数的上限，不是保证值。** 断页还受**实测高度**约束（一条长文献可能占两倍高度），装不下时这一页会被切得更短，**多出来的条目自动排到后续页**（不够就生成续页）。反过来条目短也不会超过 `item` 硬塞——想一页放更多就把 `item` 调大。续页会复制声明页的版式与标题。
 - 续页必须**紧跟**在带 `::: {#refs}` 的那一页后面，中间不能插入别的 frame；而且**续页本身必须是裸标题**——`## 标题 {item="N"}`，标题下不写正文。两条都要满足：`item` 只是通用的每页条数提示，任何 frame 都能写，扩展因此要靠「这一页有没有自己的正文」来判断它是不是续页。于是文档别处一个带正文的 `## 某页 {item="3"}` 不会被误当成文献页而吸走条目；反过来，续页一旦带上正文就会被当成普通 frame，文献改排到自动生成的页上。对照：两个模板的续页说明现在都写在 `::: {.notes}` 讲者备注里，备注不算正文。
 - **所有参考文献页都标记为 `uncounted`**，页脚总页数**不会因为文献分成几页而变化**。
+- **文献页挂在一级标题下也可以**：把上面的 `##` 全部换成 `#`（`# 参考文献 {item="6"}` + `::: {#refs}`）同样成立，续页也照旧是裸标题。此时每一页用的都是**章节页的外观**（通栏色带），包括自动生成的续页——层级不会中途从 `h1` 变成 `h2`。Quarto 自己会给这一页加 `.smaller .scrollable`，所以这条路径是躲不开的，扩展对它做了与二级标题完全相同的处理（`refs-section-level` fixture 覆盖）。
 - **默认模式下**断页是**量出来**的，所以参考文献页不需要滚动就能看全（Quarto 给文献页带的 `.scrollable` 只是保底）。唯一的例外是**单条文献自己就比整页高**：它独占一页，那一页仍可滚动（兜底规则是「一页至少要放下一条」，否则分页无法推进）。除此之外，任何一页要滚动才能看完都是扩展的 bug。
 - 声明页数与实际需要不符时会在控制台告警：**不够**时报出加了几页以及**第一条被移走的条目**（方便你把断点往前挪）；**多声明**时报出哪一页是空的。空页**不会**被自动删除（删掉可能连带删掉你在那页写的内容），只提示你处理。
 - `refs-title` 设置续页的基础标题，不写就取第一页的 `##` 标题；某一页自己写的 `##` 标题始终优先。
@@ -268,7 +269,16 @@ refs-overflow: scroll   # 默认 paginate；scroll = 文献留在 Quarto 生成�
 - `--beamer-structure` 是 Beamer 的 `structure`：列表符号、无填充 block 的标题文字、`h3`–`h6` 都取自它。Madrid 下等于 `beamer@blendedblue` = `rgb(0.2,0.2,0.7)`，量化为 `#3333b2`。
 - `--beamer-primary` 是当前变体的强调色：Madrid 下与 `structure` 相同；CambridgeUS 下是 beaver 的 `darkred` `#cc0000`，用于 frame title 文字、标题页色块等。它**只影响正文强调色**，其余部件各有独立变量。
 
-`--beamer-alert` 与 `--beamer-example` 是**基础色**：三种 block 的标题底色由它们按 `!75!black` 派生，block 正文底色再由标题底色按 `!10!bg` 派生，因此覆盖基础色即可联动整套 block 配色。注意 xcolor 的 `green` 是 `rgb(0,1,0)`，所以 `green!50!black` 是 `#008000` 而不是 `#004000`。
+### block 配色的两条链路（其中只有一条是活的）
+
+block 的配色分两段，**只有第二段是派生出来的**：
+
+1. **标题底色是字面量。** 三个 block 的标题底色（`--beamer-block-title-bg`、`--beamer-block-example-title-bg`、`--beamer-block-alert-title-bg`）在 `_palette.scss` 里按 Beamer 的 `!75!black` **逐字节写死**。这是有意的：`color-mix()` 与 xcolor 的字面量最多差 2/255，而 stock 配色要的是精确值。所以 **`--beamer-alert` / `--beamer-example` 不是它们的输入** —— 覆盖基础色不会移动任何标题底色（实测：把两者分别改成 `#00ff00` / `#ff00ff`，alert 标题条仍是 `rgb(191,0,0)`，example 仍是 `rgb(0,96,0)`）。
+2. **正文底色由标题底色派生，这一条是活的。** `beamer.scss` 用 `color-mix(in srgb, var(--beamer-block-title-band) 10%, #fff)` 从**当前 kind 自己的**标题底色算出正文淡染，就是 orchid 的 `block title bg!10!bg`。所以**改标题底色，正文会跟着走**（实测：把 alert 标题底色改成 `#00ff00`，标题条与正文淡染同时变成绿色系，而普通块不受影响）。
+
+**要改 block 配色，改标题底色那一对（`-bg` 与 `-fg`），不要改基础色。** CambridgeUS 的三种 block 没有填充、靠标题**文字色**区分，所以那个变体下真正起作用的是 `--beamer-block-*-title-fg`。
+
+`--beamer-alert` 仍然是有用的：它驱动 `[文字]{.alert}` 的行内强调色；`--beamer-example` 驱动 CambridgeUS 下 example 块标题的文字色。注意 xcolor 的 `green` 是 `rgb(0,1,0)`，所以 `green!50!black` 是 `#008000` 而不是 `#004000`。
 
 ### ⚠️ 一处有意偏离 Beamer
 
@@ -294,15 +304,15 @@ structure!50!black = darkred!50!black = #660000
 
 ### 变量参考
 
-下表按用途分组覆盖 `_palette.scss` 里的全部 49 个变量；`-fg` 是同一行的前景变量，`/ -2`、`/ -3` 是它的两个暗阶，`--beamer-block-alert-title-stroke` 一行的三项分别对应宽度、颜色与字重。CambridgeUS 覆盖其中 41 个，未标注“同左”或另列的取值与 Madrid 相同。`--beamer-active-headline-height` 由 `beamer-no-headline` 在关闭页眉时折叠为 `0px`；`--beamer-logo-top` 由样式表给出兜底值、再由 `beamer.js` 按实测的 frame title 底边覆写（见 `版面几何`）。两套变体里 `--beamer-primary-3` 都等于同行的 `--beamer-structure-3`：样式表只用到 `primary` 与 `-2`，第三阶同样列出来，是因为 `-2` / `-3` 是成对暴露的暗阶契约，覆盖时两者应当一起给。
+下表按用途分组覆盖 `_palette.scss` 里的全部 48 个变量；`-fg` 是同一行的前景变量，`/ -2` 是它的暗阶，`--beamer-block-alert-title-stroke` 一行的三项分别对应宽度、颜色与字重。CambridgeUS 覆盖其中 39 个，未标注“同左”或另列的取值与 Madrid 相同。`--beamer-active-headline-height` 由 `beamer-no-headline` 在关闭页眉时折叠为 `0px`；`--beamer-logo-top` 由样式表给出兜底值、再由 `beamer.js` 按实测的 chrome 底边覆写（见 `版面几何`）。`--beamer-primary` 只有 `-2` 这一个暗阶：它没有第三阶的用处，样式表从不读取，因此不再列出（`--beamer-structure` 的 `-3` 是列表三级符号的边框色，仍然使用）。
 
 | 用途 | 变量 | Madrid | CambridgeUS |
 |:---|:---|:---|:---|
 | 结构色 | `--beamer-structure` / `-2` / `-3` | `#3333b2` / `#262686` / `#1a1a59` | `#cc0000` / `#990000` / `#660000` |
-| 强调色 | `--beamer-primary` / `-2` / `-3` | `#3333b2` / `#262686` / `#1a1a59` | `#cc0000` / `#8f0000` / `#7a0000` |
+| 强调色 | `--beamer-primary` / `-2` | `#3333b2` / `#262686` | `#cc0000` / `#8f0000` |
 | 正文 | `--beamer-ink`、`--beamer-muted` | `#202124`、`#5f6670` | 同左 |
 | 底色 / 分隔线 | `--beamer-soft`、`--beamer-line` | `#eaeaf4`、`#b8b8d8` | `#f8f2f2`、`#d7b9bc` |
-| 基础色 | `--beamer-alert`、`--beamer-example` | `#ff0000`、`#008000` | `#cc0000`、`#008000` |
+| 行内强调色 | `--beamer-alert`、`--beamer-example` | `#ff0000`、`#008000` | `#cc0000`、`#008000` |
 | frame title | `--beamer-frame-bg`、`--beamer-frame-fg` | `#3333b2`、`#ffffff` | `#f2f2f2`、`#cc0000` |
 | 标题页色块 | `--beamer-title-bg`、`-fg`、`--beamer-title-subtitle-fg` | `#3333b2`、`#ffffff`、`rgba(255,255,255,.9)` | `transparent`、`#cc0000`、`#7a0000` |
 | 章节页色带 | `--beamer-section-title-bg`、`-fg`、`--beamer-section-minimal-fg` | `#3333b2`、`#ffffff`、`--beamer-structure` | `transparent`、`#cc0000`、`--beamer-structure` |
@@ -363,9 +373,13 @@ format:
 
 **内容超页**会在浏览器控制台输出一条包含 frame id 与实际溢出像素的告警（`.scrollable`、`.smaller` 或超长标题导致的滚动页除外），避免内容被静默裁切。给 frame 加 `.scrollable`（或 `.smaller`、由超长标题触发的 `beamer-long-frame-title`）后，**正文在 frame 内部滚动，而页眉、frame title 与页脚固定不动**：`beamer.js` 把正文搬进一个 `.beamer-scroll` 内层，它内缩到 frame 的 padding box，所以正文位置与不滚动时完全一致。Quarto 的文档级脚注页与参考文献页默认就带 `.smaller .scrollable`，同样适用。
 
+**章节页同样可以 `.scrollable`**，正文在色带下方滚动、色带与页眉页脚不动，第一行与不加 `.scrollable` 时**位置完全相同**（这是量出来的：章节页的色带在文档流里，自身高度不写进 padding，所以内层的内缩要实测色带底边 + 它的下外边距，而不是读 `padding-top`）。
+
+**`.section-badge` 例外，且是明确不支持的组合。** 该外观把标题与正文作为**一个整体居中**，而滚动内层是从页顶内缩的一条绝对定位区域——两者无法同时成立。因此 badge 页上的 `.scrollable`（以及 `.smaller`）**不生效**：页面按普通 badge 页渲染，超出的内容会被裁掉。页面带 `.scrollable` 时，控制台会给出**一次**告警说明这件事；只带 `.smaller`（Quarto 给文献页加的文本缩小标记）不告警——但 Quarto 给文献页加的是两个一起，所以 badge 外观的参考文献页也会收到这条提醒，而它确实是最容易溢出的那一页。badge 页应当只承载标题与一两行说明；需要长内容请把正文移到下一页，或改用默认色带 / `.section-minimal` 外观。
+
 **长 frame title** 会自动缩小（两档：超过基准 1.59 倍、2.03 倍时各降一档）并增高标题带，不会被固定高度裁切；高度超过基准的 2.28 倍时整页转为可滚动。
 
-**Logo 独占一行**，压在 frame title 色带下方而不是色带里面。色带的横向预留（`--beamer-logo-reserve`，由实测 logo 宽度写入）与菜单按钮的避让一直都在，纵向这一行则由 `positionLogo` 量出当前这页的 chrome 底边（有 frame title 时取它，否则取 headline）写入 `--beamer-logo-top`；样式表里的 `max(headline 高度, frame 高度) + 7px` 只是没有 JavaScript 时的兜底。配色见 `变量参考`。
+**Logo 独占一行**，压在标题色带下方而不是色带里面——frame title 与章节页色带都算。横向预留由 `--beamer-logo-reserve`（按实测 logo 宽度写入）给到 frame title，以及章节页的色带与 `.section-minimal` 两种左对齐外观（`.section-badge` 不需要：它纵向居中，与顶部角落的 logo 不会同处一行，加内缩只会把自己的标题推离徽标中心）；纵向这一行由 `positionLogo` 量出当前这页 chrome 的底边（frame title → 章节页色带 → headline，依次回退）写入 `--beamer-logo-top`；样式表里的 `max(headline 高度, frame 高度) + 7px` 只是没有 JavaScript 时的兜底。配色见 `变量参考`。
 
 ## 文件结构
 
@@ -404,6 +418,19 @@ tests/
 npm ci     # 安装锁定的测试依赖
 npm test
 ```
+
+写一次性探针（排查某个页面的几何）时，用 `tests/lib/harness.mjs` 导出的 `withBrowser` 而不是自己调 `launchChrome`：
+
+```js
+import { withBrowser, BrowserPage } from "./tests/lib/harness.mjs";
+await withBrowser(async (chrome) => {
+  const page = await BrowserPage.create(chrome.connection, url, { width: 1280, height: 720 });
+  console.log(await page.evaluate("document.title"));
+  await page.close();
+});
+```
+
+`launchChrome` + `BrowserPage.create` 只有在**每一条失败路径**都走到 `shutdownChrome` 时才是安全的；`withBrowser` 用 `finally` 保证这一点，并顺带删掉它建的 Chrome profile 目录。不这么写的话失败是无声的：脚本退出了，浏览器没有——实测一次抛在 `page.evaluate` 里的探针留下了 18 个 Chrome 进程和两个 profile 目录。套件自身不用它，因为它需要跨多个测试复用同一个浏览器。
 
 测试渲染两个变体、显式选项与自包含离线示例，覆盖：
 
