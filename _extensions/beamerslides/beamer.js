@@ -110,6 +110,14 @@
     };
   };
 
+  // Quarto ships the ORCID mark as a 16x16 PNG data URI, which blurs at the size
+  // the title page gives it, so it is replaced with this vector. The class is a
+  // deliberate public hook -- it is what a document targets to restyle, replace or
+  // append to the mark after an author's name (`#title-slide .beamer-orcid-icon`) --
+  // and nothing in the theme styles it, so it must NOT be deleted as an unused
+  // class: the stylesheet reaches the mark through
+  // `#title-slide .quarto-title-author-orcid svg`, which would keep working while
+  // silently removing the hook.
   const createOrcidIcon = () => {
     const svgNamespace = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgNamespace, "svg");
@@ -142,6 +150,108 @@
       .forEach((image) => image.replaceWith(createOrcidIcon()));
   };
 
+  // ---- Shared glyph metrics -------------------------------------------------
+  //
+  // Three passes below ask the same two questions of a computed style: which font
+  // shorthand does it describe, and how far does that font reach above and below the
+  // baseline. Each used to carry its own copy of both, and two of them allocated a
+  // canvas per call -- so one optical realign (a resize, a font load, every slide
+  // change) built two canvases it never reused.
+  //
+  // One context is shared and cached. `willReadFrequently` is set for `drawnInk`,
+  // the only caller that reads pixels back; it costs the plain `measureText` callers
+  // nothing. Resizing a canvas resets its context state, so `drawnInk` sets the font
+  // again after resizing -- `measureFont` never caches across calls, because all
+  // three users share this one context.
+  let metricsContext = null;
+  const glyphContext = () => {
+    if (!metricsContext) {
+      metricsContext = document
+        .createElement("canvas")
+        .getContext("2d", { willReadFrequently: true });
+    }
+    return metricsContext;
+  };
+
+  const fontShorthand = (style, size) =>
+    [style.fontStyle, style.fontWeight, size, style.fontFamily].join(" ");
+
+  // One `measureText`, with the box fallback applied: `fontBoundingBox*` is the
+  // font's own box and `actualBoundingBox*` is the drawn ink, and browsers disagree
+  // about which they report. `null` when the box cannot be resolved at all -- the
+  // callers treat that as "leave this one alone".
+  //
+  // The two `actual*` numbers are returned unfiltered on purpose: `alignInlineLabels`
+  // and `alignOrderedMarkers` centre on them and must refuse a NaN, while `drawnInk`
+  // below measures the painted pixels instead and has no use for them. The two
+  // `font*` numbers are already known finite -- that is this function's own `null`
+  // condition -- so the callers re-check ONLY the `actual*` pair. Those two shorter
+  // guards are not an oversight; re-adding `fontAscent`/`fontDescent` to them changes
+  // nothing.
+  const measureFont = (context, style, text) => {
+    context.font = fontShorthand(style, style.fontSize);
+    const measured = context.measureText(text);
+    const actualAscent = measured.actualBoundingBoxAscent;
+    const actualDescent = measured.actualBoundingBoxDescent;
+    const fontAscent = Number.isFinite(measured.fontBoundingBoxAscent)
+      ? measured.fontBoundingBoxAscent
+      : actualAscent;
+    const fontDescent = Number.isFinite(measured.fontBoundingBoxDescent)
+      ? measured.fontBoundingBoxDescent
+      : actualDescent;
+    if (!Number.isFinite(fontAscent) || !Number.isFinite(fontDescent)) {
+      return null;
+    }
+    return { measured, actualAscent, actualDescent, fontAscent, fontDescent };
+  };
+
+  // A bounding-box measurement is not enough for a TITLE: the ink there is measured
+  // from the DRAWN pixels instead, because `actualBoundingBoxAscent/Descent` report
+  // the font's own box, which for the CJK fallback runs about twice as tall as the
+  // glyphs actually painted -- using them over-corrected by roughly 2x.
+  const drawnInk = (context, style, text, font, lineHeight) => {
+    const canvas = context.canvas;
+    const width = Math.ceil(font.measured.width) + 8;
+    const height = Math.ceil(lineHeight * 3);
+    canvas.width = width;
+    canvas.height = height;
+    context.font = fontShorthand(style, style.fontSize);
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = "#000";
+    const baseline = Math.round(height / 2);
+    context.textBaseline = "alphabetic";
+    context.fillText(text, 4, baseline);
+
+    const pixels = context.getImageData(0, 0, width, height).data;
+    let firstRow = -1;
+    let lastRow = -1;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (pixels[(y * width + x) * 4 + 3] > 20) {
+          if (firstRow < 0) {
+            firstRow = y;
+          }
+          lastRow = y;
+          break;
+        }
+      }
+    }
+    if (firstRow < 0) {
+      return null;
+    }
+    return {
+      lineHeight,
+      // Distance from the line box's top down to the painted ink's centre: the
+      // half-leading term places the baseline inside the line box, then the
+      // ink's midpoint sits half its own sign-height below that baseline.
+      inkCentreFromLineTop:
+        (lineHeight - (font.fontAscent + font.fontDescent)) / 2 +
+        font.fontAscent +
+        (lastRow - firstRow) / 2 -
+        (baseline - firstRow),
+    };
+  };
+
   // CSS centers line boxes; this pass centers the painted glyphs inside each label.
   const alignInlineLabels = () => {
     const labels = Array.from(document.querySelectorAll(".bg, .button"));
@@ -149,8 +259,7 @@
       return;
     }
 
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
+    const context = glyphContext();
     if (!context) {
       return;
     }
@@ -189,26 +298,14 @@
         return;
       }
 
-      context.font = [
-        style.fontStyle,
-        style.fontWeight,
-        style.fontSize,
-        style.fontFamily,
-      ].join(" ");
-      const metrics = context.measureText(value);
-      const actualAscent = metrics.actualBoundingBoxAscent;
-      const actualDescent = metrics.actualBoundingBoxDescent;
-      const fontAscent = Number.isFinite(metrics.fontBoundingBoxAscent)
-        ? metrics.fontBoundingBoxAscent
-        : actualAscent;
-      const fontDescent = Number.isFinite(metrics.fontBoundingBoxDescent)
-        ? metrics.fontBoundingBoxDescent
-        : actualDescent;
+      const font = measureFont(context, style, value);
+      if (!font) {
+        return;
+      }
+      const { actualAscent, actualDescent, fontAscent, fontDescent } = font;
       if (
         !Number.isFinite(actualAscent) ||
-        !Number.isFinite(actualDescent) ||
-        !Number.isFinite(fontAscent) ||
-        !Number.isFinite(fontDescent)
+        !Number.isFinite(actualDescent)
       ) {
         return;
       }
@@ -239,19 +336,10 @@
     });
   };
 
-  // Shared 2D context for glyph metrics. The ink is measured from the DRAWN
-  // pixels rather than from `actualBoundingBoxAscent/Descent`: those report the
-  // font's own bounding box, which for the CJK fallback runs about twice as tall
-  // as the glyphs actually painted, and using them over-corrected by roughly 2x.
-  let metricsContext = null;
   const fontMetrics = (style, text, contentBoxHeight) => {
-    if (!metricsContext) {
-      metricsContext = document.createElement("canvas").getContext("2d", {
-        willReadFrequently: true,
-      });
-      if (!metricsContext) {
-        return null;
-      }
+    const context = glyphContext();
+    if (!context) {
+      return null;
     }
     const fontSize = Number.parseFloat(style.fontSize);
     const lineHeight = Number.parseFloat(style.lineHeight);
@@ -263,61 +351,11 @@
     if (contentBoxHeight > lineHeight * 1.5) {
       return null;
     }
-    const canvas = metricsContext.canvas;
-    const styled = (size) =>
-      [style.fontStyle, style.fontWeight, `${size}px`, style.fontFamily].join(
-        " "
-      );
-    metricsContext.font = styled(fontSize);
-    const measured = metricsContext.measureText(text);
-    const fontAscent = Number.isFinite(measured.fontBoundingBoxAscent)
-      ? measured.fontBoundingBoxAscent
-      : measured.actualBoundingBoxAscent;
-    const fontDescent = Number.isFinite(measured.fontBoundingBoxDescent)
-      ? measured.fontBoundingBoxDescent
-      : measured.actualBoundingBoxDescent;
-    if (!Number.isFinite(fontAscent) || !Number.isFinite(fontDescent)) {
+    const font = measureFont(context, style, text);
+    if (!font) {
       return null;
     }
-    const width = Math.ceil(measured.width) + 8;
-    const height = Math.ceil(lineHeight * 3);
-    canvas.width = width;
-    canvas.height = height;
-    metricsContext.font = styled(fontSize);
-    metricsContext.clearRect(0, 0, width, height);
-    metricsContext.fillStyle = "#000";
-    const baseline = Math.round(height / 2);
-    metricsContext.textBaseline = "alphabetic";
-    metricsContext.fillText(text, 4, baseline);
-
-    const pixels = metricsContext.getImageData(0, 0, width, height).data;
-    let firstRow = -1;
-    let lastRow = -1;
-    for (let y = 0; y < height; y += 1) {
-      for (let x = 0; x < width; x += 1) {
-        if (pixels[(y * width + x) * 4 + 3] > 20) {
-          if (firstRow < 0) {
-            firstRow = y;
-          }
-          lastRow = y;
-          break;
-        }
-      }
-    }
-    if (firstRow < 0) {
-      return null;
-    }
-    return {
-      lineHeight,
-      // Distance from the line box's top down to the painted ink's centre: the
-      // half-leading term places the baseline inside the line box, then the
-      // ink's midpoint sits half its own sign-height below that baseline.
-      inkCentreFromLineTop:
-        (lineHeight - (fontAscent + fontDescent)) / 2 +
-        fontAscent +
-        (lastRow - firstRow) / 2 -
-        (baseline - firstRow),
-    };
+    return drawnInk(context, style, text, font, lineHeight);
   };
 
   // `align-items: center` centres the LINE BOX, not the ink. A CJK title has no
@@ -357,8 +395,8 @@
         ".reveal .slides section.beamer-frame-slide > h2:first-of-type"
     );
     titles.forEach((title) => {
-      const text = title.textContent.trim();
-      if (!text || title.clientHeight <= 0) {
+      const titleText = title.textContent.trim();
+      if (!titleText || title.clientHeight <= 0) {
         return;
       }
       const wrapper = titleTextWrapper(title);
@@ -371,7 +409,7 @@
           : 1;
       const metrics = fontMetrics(
         window.getComputedStyle(title),
-        text,
+        titleText,
         wrapper.getBoundingClientRect().height / Math.max(0.0001, revealScale)
       );
       if (!metrics) {
@@ -483,8 +521,7 @@
       return;
     }
 
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
+    const context = glyphContext();
     if (!context) {
       return;
     }
@@ -514,26 +551,14 @@
 
       const basePaddingBottom = MARKER_PADDING_BASE_EM * fontSize;
 
-      context.font = [
-        style.fontStyle,
-        style.fontWeight,
-        style.fontSize,
-        style.fontFamily,
-      ].join(" ");
-      const metrics = context.measureText(value);
-      const actualAscent = metrics.actualBoundingBoxAscent;
-      const actualDescent = metrics.actualBoundingBoxDescent;
-      const fontAscent = Number.isFinite(metrics.fontBoundingBoxAscent)
-        ? metrics.fontBoundingBoxAscent
-        : actualAscent;
-      const fontDescent = Number.isFinite(metrics.fontBoundingBoxDescent)
-        ? metrics.fontBoundingBoxDescent
-        : actualDescent;
+      const font = measureFont(context, style, value);
+      if (!font) {
+        return;
+      }
+      const { actualAscent, actualDescent, fontAscent, fontDescent } = font;
       if (
         !Number.isFinite(actualAscent) ||
-        !Number.isFinite(actualDescent) ||
-        !Number.isFinite(fontAscent) ||
-        !Number.isFinite(fontDescent)
+        !Number.isFinite(actualDescent)
       ) {
         return;
       }
@@ -593,7 +618,9 @@
       return;
     }
 
-    const containers = Array.from(document.querySelectorAll("#refs"));
+    const containers = Array.from(
+      document.querySelectorAll("#refs, .beamer-refs")
+    );
     const entries = containers.flatMap((container) =>
       Array.from(container.querySelectorAll(".csl-entry"))
     );
@@ -712,7 +739,13 @@
       (child) =>
         !/^H[12]$/.test(child.tagName) &&
         !child.matches(
-          "#refs, .beamer-headline, .beamer-footline, aside.notes"
+          // `.beamer-refs` as well as `#refs`, because only the author's own
+          // container carries the id now. Today this is belt and braces -- both
+          // callers of `refsPages` run before any container is created -- but this
+          // predicate IS the contract for "a refs container is not authored body",
+          // and leaving half of it out is how a later reordering starts absorbing a
+          // continuation page whose bibliography has already been filled in.
+          "#refs, .beamer-refs, .beamer-headline, .beamer-footline, aside.notes"
         )
     );
 
@@ -756,20 +789,28 @@
     return copy;
   };
 
+  // The container a page's entries live in, whichever kind of page it is.
+  //
+  // The author's own `::: {#refs}` keeps its id. Every container this pass creates --
+  // for a declared continuation page, or for a page the bibliography needed and did
+  // not get -- carries the CLASS instead and no id at all. It used to copy the id, so
+  // a three-page bibliography shipped three elements with `id="refs"`: invalid HTML,
+  // and ambiguous for `:target` and for assistive technology. Every lookup in this
+  // file is scoped to one slide, so the class is all the code needs; `#refs` stays in
+  // the stylesheet alongside it, because that is the hook a document's own CSS
+  // already targets.
+  const refsContainer = (slide) => slide.querySelector("#refs, .beamer-refs");
+
   // The list that holds the entries, creating it when the page does not have one yet.
   // A continuation page declared with `item` but without `::: {#refs}` starts empty,
   // and the fill loop needs somewhere to put its entries.
-  //
-  // The copy keeps the `refs` id even though the document then has several: the
-  // stylesheet addresses the list as `#refs`, and nothing here resolves it globally --
-  // every lookup is scoped to a slide, and duplicate ids are only a validity wart, not
-  // a lookup hazard, in this direction.
   const entryList = (slide, master) => {
-    let container = slide.querySelector("#refs");
+    let container = refsContainer(slide);
     if (!container) {
       container = document.createElement("div");
-      container.id = "refs";
-      container.className = master.className;
+      container.className = [master.className, "beamer-refs"]
+        .filter(Boolean)
+        .join(" ");
       container.setAttribute("role", master.getAttribute("role") || "list");
       const before = slide.querySelector(":scope > .beamer-footline");
       if (before) {
@@ -909,13 +950,22 @@
       slide.className = template.className;
       slide.id = `${template.id || "references"}-${index + 1}`;
       if (baseTitle) {
-        const heading = document.createElement("h2");
+        // The template's own level, not a fixed `h2`. The band a title gets is
+        // decided by its TAG (`section > h2:first-of-type` is the absolutely
+        // positioned frame band; a section page's `h1` is the in-flow colour
+        // band), so a generated page under an `h1` bibliography used to switch
+        // kinds mid-list: measured on a level-1 references page, pages 1-2 showed
+        // a section band and page 3 a frame band, whose `z-index: 2` then painted
+        // over the first entry it was supposed to sit above.
+        const tag = directHeading(template, "h1") ? "h1" : "h2";
+        const heading = document.createElement(tag);
         heading.textContent = baseTitle;
         slide.appendChild(heading);
       }
       const container = document.createElement("div");
-      container.id = "refs";
-      container.className = master.className;
+      container.className = [master.className, "beamer-refs"]
+        .filter(Boolean)
+        .join(" ");
       container.setAttribute("role", master.getAttribute("role") || "list");
       slide.appendChild(container);
       template.parentElement.insertBefore(slide, template.nextElementSibling);
@@ -1150,6 +1200,20 @@
     slide.classList.contains("smaller") ||
     slide.classList.contains("beamer-long-frame-title");
 
+  // `.section-badge` cannot scroll, so every scrolling class is inert on it.
+  //
+  // The look centres its title and its body as ONE block; the scroll layer is an
+  // absolutely positioned strip inset from the top of the slide. The two cannot both
+  // hold. Half-applying it is what the theme used to do, and the result was measured
+  // at 324px: the badge sat at y=308..384 while its body was painted at y=60..99,
+  // above it. So a badge page is now left exactly as a plain badge page -- the class
+  // does nothing -- and `reportOverflow` says so once and then judges the page as the
+  // plain one it renders as, which also means an overfull badge page finally reports
+  // instead of being silently exempt for carrying `.scrollable`.
+  const badgeCannotScroll = (slide) =>
+    slide.classList.contains("beamer-section-slide") &&
+    slide.classList.contains("section-badge");
+
   const isScrollLayer = (node) => node.classList.contains("beamer-scroll");
   const isChrome = (node) =>
     node.classList.contains("beamer-headline") ||
@@ -1168,6 +1232,53 @@
     node.tagName === "H2" ||
     (node.tagName === "H1" &&
       slide.classList.contains("beamer-section-slide"));
+
+  // Where a section page's body starts, in the slide's own pixels: below the band
+  // it keeps IN THE FLOW, plus that band's own bottom margin, so a scrolling
+  // section page puts its first line exactly where a plain one does. Measured on
+  // the matched pair `testScrollLayers` now carries -- one short section page with
+  // `.scrollable` and one without: both read band 0..58 with the body at 94, so
+  // this resolves to the same 80px the plain page's own flow produces.
+  //
+  // `null` means "no measured answer", and the caller falls back to
+  // `padding-top`:
+  //   * not a section page -- a frame's title IS reserved in that padding;
+  //   * the badge look, whose band is centred rather than pinned to the top, so
+  //     "below the title" is not the line its body takes;
+  //   * a slide with no layout. A hidden slide has no geometry (Reveal
+  //     `display: none`s every slide but the current one) and a zero-height band
+  //     would otherwise resolve to an inset of 0. The pass that measures titles
+  //     re-wraps the layer once the page is laid out -- see `measureSectionBand`.
+  const sectionBodyTop = (slide) => {
+    if (!slide.classList.contains("beamer-section-slide")) {
+      return null;
+    }
+    if (slide.classList.contains("section-badge")) {
+      return null;
+    }
+    const band = directHeading(slide, "h1");
+    if (!band) {
+      return null;
+    }
+    const bandRect = band.getBoundingClientRect();
+    const slideRect = slide.getBoundingClientRect();
+    if (bandRect.height <= 0 || slideRect.height <= 0) {
+      return null;
+    }
+    const scale = Math.max(
+      0.0001,
+      window.Reveal && typeof window.Reveal.getScale === "function"
+        ? window.Reveal.getScale()
+        : 1
+    );
+    const marginBottom =
+      Number.parseFloat(window.getComputedStyle(band).marginBottom) || 0;
+    const top = (bandRect.bottom - slideRect.top) / scale + marginBottom;
+    if (!Number.isFinite(top) || top <= 0) {
+      return null;
+    }
+    return top;
+  };
 
   // A scrollable slide used to scroll itself (`overflow: auto` on the <section>),
   // and because the headline/footline are its absolutely-positioned children they
@@ -1194,8 +1305,20 @@
   // width and 58px min-height) and the frame-title measurement read it as a
   // direct child. That applies to a section page's `h1` band as much as to a
   // frame's `h2` -- see `isSlideTitle`.
+  //
+  // Where the layer's inset comes from is the other half of that, and it differs
+  // by slide kind. A frame reserves its title's height in the section's own
+  // padding (`.beamer-frame-slide`'s `padding-top` is
+  // `headline + frame-height + 22px`), so `padding-top` IS the body's start line.
+  // A section page deliberately does the opposite -- its band is IN THE FLOW, so
+  // its height is reserved by nothing and the padding only carries the headline
+  // (0px on Madrid's headline-less default). Reading `padding-top` there put the
+  // layer level with the band's own top: measured on the shipped `scroll-layers`
+  // fixture, band 0..95 against a layer at 0, i.e. the first paragraph painted
+  // 81px inside the band. So a section page's inset is measured instead -- see
+  // `sectionBodyTop`.
   const wrapScrollableSlide = (slide) => {
-    if (!slideScrolls(slide)) {
+    if (!slideScrolls(slide) || badgeCannotScroll(slide)) {
       // A frame can stop scrolling again -- `beamer-long-frame-title` is toggled on
       // every measurement -- and then its body has to come back out of the layer. Left
       // in an absolutely positioned child, the content no longer contributes to the
@@ -1243,7 +1366,14 @@
     built.className = "beamer-scroll";
     const title = directHeading(slide, "h2");
     const style = window.getComputedStyle(slide);
-    built.style.top = style.paddingTop;
+    const inset = sectionBodyTop(slide);
+    // Remembered numerically rather than read back out of `style.top`: the pass
+    // that re-measures a section page compares against this, and a string
+    // comparison would treat sub-pixel jitter from Reveal's scale as a change and
+    // rebuild the layer -- throwing away the reader's scroll position -- on every
+    // resize event.
+    built.dataset.beamerInset = inset === null ? "" : String(inset);
+    built.style.top = inset === null ? style.paddingTop : `${inset}px`;
     built.style.right = style.paddingRight;
     built.style.bottom = style.paddingBottom;
     built.style.left = style.paddingLeft;
@@ -1296,15 +1426,43 @@
     (typeof window.matchMedia === "function" &&
       window.matchMedia("print").matches);
 
+  // One message per badge page, triggered by `.scrollable` -- the class that asks for
+  // scrolling and that this theme documents as the way to get it. `.smaller` on its own
+  // does not trigger it, because that is a text-size hint first; Quarto puts both on a
+  // bibliography page, so a badge-styled `# References` does get the message, and it
+  // should: that page really cannot scroll, and it is the one most likely to overflow.
+  const inertBadgeScrollReported = new Set();
+  const reportInertBadgeScroll = (slide) => {
+    if (!slide.classList.contains("scrollable")) {
+      return;
+    }
+    const key = slide.id || "(unnamed)";
+    if (inertBadgeScrollReported.has(key)) {
+      return;
+    }
+    inertBadgeScrollReported.add(key);
+    console.warn(
+      `[beamerslides] ${slide.id ? `#${slide.id}` : "a section page"} is a ` +
+        "`.section-badge` page, and that look cannot scroll: it centres its title " +
+        "and its body as one block, which the scroll layer cannot do. `.scrollable` " +
+        "is ignored here, so the page renders as a plain badge page and any overflow " +
+        "is clipped. Split the page, drop `.section-badge`, or move the prose to the " +
+        "following frame."
+    );
+  };
+
   // Beamer reports an overfull vbox; on the web the equivalent failure is
   // silent, because the slide box hides its overflow. Warn once per slide state
   // so an author notices instead of shipping a frame with invisible content.
   const reportOverflow = (slide) => {
-    if (
-      isPrintLayout() ||
-      slide.getBoundingClientRect().width <= 0 ||
-      slideScrolls(slide)
-    ) {
+    if (isPrintLayout() || slide.getBoundingClientRect().width <= 0) {
+      return;
+    }
+    // A badge page renders as a plain one whatever its classes say, so it is judged
+    // as one -- `.scrollable` on it is inert rather than an exemption.
+    if (badgeCannotScroll(slide)) {
+      reportInertBadgeScroll(slide);
+    } else if (slideScrolls(slide)) {
       return;
     }
     const overflow = slide.scrollHeight - slide.clientHeight;
@@ -1317,19 +1475,52 @@
     }
     overflowReported.add(key);
     // A section page has no frame title, so the frame advice would name something
-    // that does not exist there. The remedies differ because the sections do: a
-    // section page carries prose only because the author put it there.
-    const remedy = slide.classList.contains("beamer-section-slide")
-      ? "Move the prose to the following frame, or add `.scrollable` so the page " +
-        "can scroll."
-      : "Add `.smaller` to the frame title, split the frame, or add `.scrollable` " +
-        "so it can scroll.";
+    // that does not exist there -- and a badge page cannot take the `.scrollable`
+    // the section advice offers, because that is the class it already has and the
+    // one this run just reported as inert.
+    const remedy = badgeCannotScroll(slide)
+      ? "Split the badge page, or move the prose to the following frame."
+      : slide.classList.contains("beamer-section-slide")
+        ? "Move the prose to the following frame, or add `.scrollable` so the page " +
+          "can scroll."
+        : "Add `.smaller` to the frame title, split the frame, or add `.scrollable` " +
+          "so it can scroll.";
     console.warn(
       `[beamerslides] ${slide.id ? `#${slide.id}` : "a frame"} overflows its ` +
         `content area by ${overflow}px (${slide.scrollHeight}px of content in ` +
         `${slide.clientHeight}px). ` +
         remedy
     );
+  };
+
+  // A section page's `h1` band is in the flow, so nothing reserves its height and
+  // the layer's inset can only be measured. This runs from the pass that already
+  // measures frame titles -- on every resize, every slide change, and after the
+  // fonts settle -- and it is also what gives some section pages their layer at
+  // all: `applySlideBox` runs before the references are filled in, so a
+  // continuation page the author declared is still empty at that point,
+  // `wrapScrollableSlide` finds nothing to move, and the later pass that re-wraps a
+  // frame (because its measured title height changed) never ran for it, because
+  // `measureFrameTitle` looks for an `h2`. Measured on a level-1 bibliography: the
+  // declared continuation page had no layer at all, while the level-2 one did.
+  //
+  // The 0.5px tolerance is what keeps this from thrashing: Reveal scales the whole
+  // deck, so a resize re-rounds the band's device-pixel box and the inset can move
+  // by a hundredth of a pixel without anything having actually changed.
+  const measureSectionBand = (slide) => {
+    if (!slide.classList.contains("beamer-section-slide")) {
+      return;
+    }
+    const top = sectionBodyTop(slide);
+    if (top === null) {
+      return;
+    }
+    const layer = slide.querySelector(":scope > .beamer-scroll");
+    const previous = Number.parseFloat(layer?.dataset.beamerInset ?? "");
+    if (layer && Number.isFinite(previous) && Math.abs(previous - top) < 0.5) {
+      return;
+    }
+    wrapScrollableSlide(slide);
   };
 
   const measureFrameTitle = (slide) => {
@@ -1344,6 +1535,7 @@
     const wasScrolling = slideScrolls(slide);
     const previousHeight = slide.style.getPropertyValue("--beamer-frame-height");
     if (!heading || heading.getBoundingClientRect().width <= 0) {
+      measureSectionBand(slide);
       reportOverflow(slide);
       return;
     }
@@ -1427,6 +1619,44 @@
     }
   };
 
+  // The bottom edge of the slide's fixed chrome, in viewport pixels, or `null` when
+  // the slide has none of the three kinds.
+  //
+  // A frame's title is its `h2`; a section page's is its in-flow `h1` band, which
+  // sits BELOW the headline when there is one; the headline is the last resort.
+  // Reading only the frame title and the headline -- the two kinds a slide was
+  // assumed to have -- was wrong for exactly the slide that has neither: Madrid runs
+  // with the headline off, so a section page fell through to the slide's own top and
+  // `positionLogo` put the logo at y=25..53 INSIDE the band's y=0..58, while the
+  // frame in the same deck kept it clear at y=83..111.
+  //
+  // The badge look is excluded on purpose, and for the reason `sectionBodyTop`
+  // excludes it too: its band is CENTRED, not pinned to the top, so it does not
+  // occupy the corner the logo is placed in. Counting it would push the logo to the
+  // slide's middle -- measured at y=409 under a badge at 308..384 -- and make it
+  // jump there from y=83 on the neighbouring frames, for a collision that does not
+  // exist (the badge's own box is nowhere near the top edge).
+  const fixedChromeBottom = (slide) => {
+    const candidates = [
+      directHeading(slide, "h2"),
+      slide.classList.contains("beamer-section-slide") &&
+      !slide.classList.contains("section-badge")
+        ? directHeading(slide, "h1")
+        : null,
+      slide.querySelector(":scope > .beamer-headline"),
+    ];
+    for (const node of candidates) {
+      if (!node) {
+        continue;
+      }
+      const rect = node.getBoundingClientRect();
+      if (rect.height > 0) {
+        return rect.bottom;
+      }
+    }
+    return null;
+  };
+
   // The logo's line. Quarto positions the logo itself, and the stylesheet cannot
   // know how tall a frame title band will be, so the line is measured here and
   // written back as `--beamer-logo-top`.
@@ -1452,10 +1682,6 @@
       return;
     }
     const revealRect = reveal.getBoundingClientRect();
-    const frameTitleRect = directHeading(slide, "h2")?.getBoundingClientRect();
-    const headlineRect = slide
-      .querySelector(":scope > .beamer-headline")
-      ?.getBoundingClientRect();
     const scale = Math.max(
       0.0001,
       typeof window.Reveal?.getScale === "function"
@@ -1463,10 +1689,8 @@
         : 1
     );
     const chromeBottom =
-      frameTitleRect?.bottom ??
-      headlineRect?.bottom ??
-      slide.getBoundingClientRect().top;
-    // `chromeBottom` falls back to the slide's top when neither chrome box can be
+      fixedChromeBottom(slide) ?? slide.getBoundingClientRect().top;
+    // `chromeBottom` falls back to the slide's top when no chrome box can be
     // measured -- the print and PDF paths -- and there the offset is just
     // `spacing`, i.e. a positive 8px rather than a value this pass guessed.
     const top =
@@ -1498,18 +1722,13 @@
         ? window.Reveal.getScale()
         : 1
     );
-    const headline = slide.querySelector(":scope > .beamer-headline");
-    const frameTitle = directHeading(slide, "h2");
     const logo = reveal.querySelector(".slide-logo");
-    const headlineRect = headline?.getBoundingClientRect();
-    const frameTitleRect = frameTitle?.getBoundingClientRect();
     const logoRect = logo?.getBoundingClientRect();
     const footerRect = slide
       .querySelector(":scope > .beamer-footline")
       ?.getBoundingClientRect();
     const spacing = 8 * scale;
-    const chromeBottom =
-      frameTitleRect?.bottom ?? headlineRect?.bottom ?? slideRect.top;
+    const chromeBottom = fixedChromeBottom(slide) ?? slideRect.top;
     const logoBottom =
       logoRect && logoRect.width > 0 && logoRect.height > 0
         ? logoRect.bottom
@@ -1843,15 +2062,28 @@
       runRealign();
       slides.forEach(measureFrameTitle);
     };
+    // The same coalescing the optical pass above already had, for the logo/menu line:
+    // it scheduled a `requestAnimationFrame` AND an 80ms timeout on every event,
+    // neither cancelled, so a native resize plus Reveal's re-emission plus the event
+    // rate of a window drag multiplied both. The PAIR is kept, because the two do
+    // different jobs -- the frame follows the drag, the later timeout is what catches
+    // the line after the deck's own title measurement has moved the chrome it is
+    // measured from -- but a burst of events now collapses into one of each, and the
+    // trailing pass runs against the latest slide rather than the first one's.
+    let repositionFrame = 0;
+    let repositionTimer = 0;
+    let repositionSlide = null;
     const repositionNativeUi = (event) => {
-      const currentSlide =
+      repositionSlide =
         event?.currentSlide ||
         (typeof window.Reveal.getCurrentSlide === "function"
           ? window.Reveal.getCurrentSlide()
           : null);
-      const reposition = () => positionNativeUi(reveal, currentSlide);
-      window.requestAnimationFrame(reposition);
-      window.setTimeout(reposition, 80);
+      window.cancelAnimationFrame(repositionFrame);
+      window.clearTimeout(repositionTimer);
+      const reposition = () => positionNativeUi(reveal, repositionSlide);
+      repositionFrame = window.requestAnimationFrame(reposition);
+      repositionTimer = window.setTimeout(reposition, 80);
     };
     window.addEventListener("resize", realignOpticalLabels, { passive: true });
     window.addEventListener("resize", repositionNativeUi, { passive: true });

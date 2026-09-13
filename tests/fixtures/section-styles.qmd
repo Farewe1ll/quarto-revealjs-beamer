@@ -13,6 +13,11 @@ Text.
 
 Text.
 
+# Centred badge asking to scroll {#sec-badge-scroll .section-badge .scrollable}
+
+A badge page cannot scroll, so this paragraph has to be laid out exactly where the
+plain badge page above puts its own, and the build has to say so once in the console.
+
 # Minimal {#sec-minimal .section-minimal}
 
 Text.

@@ -1,0 +1,29 @@
+---
+title: "Section-level references"
+author: "Section Refs Author"
+date: "2026"
+short-title: "Section refs"
+short-author: "Section Refs Author"
+beamer-variant: madrid
+bibliography: tests/fixtures/refs-pagination.bib
+refs-title: "参考文献"
+refs-order: declaration
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+# Body {#section-refs-body}
+
+Every entry is cited so citeproc renders all of them [@ref1] [@ref2] [@ref3] [@ref4] [@ref5] [@ref6] [@ref7] [@ref8] [@ref9] [@ref10] [@ref11] [@ref12] [@ref13].
+
+# References {#section-refs-main item="5"}
+
+::: {#refs}
+:::
+
+# References (cont.) {#section-refs-cont item="5"}
+
+# After {#section-refs-after}
+
+The page number here must ignore every reference page.

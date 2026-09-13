@@ -1264,12 +1264,18 @@ $border-radius: 4px !default;
   text-decoration: underline;
 }
 
-.reveal #refs {
+/* `#refs` is the author's own container; `.beamer-refs` is the class beamer.js puts
+   on the ones it creates for continuation and generated pages, so a paginated
+   bibliography no longer ships several elements with the same id. Both are styled
+   here, and both are fair game for a document's own CSS. */
+.reveal #refs,
+.reveal .beamer-refs {
   font-size: var(--beamer-refs-font-size, 0.9em);
   line-height: 1.3;
 }
 
-.reveal #refs .csl-entry {
+.reveal #refs .csl-entry,
+.reveal .beamer-refs .csl-entry {
   margin-bottom: 0.55em;
 }
 
@@ -1288,6 +1294,39 @@ $border-radius: 4px !default;
      logo box once Reveal has laid the deck out. */
   padding-right: var(--beamer-logo-reserve, 225px);
 }
+
+/* A section page's band is that page's fixed chrome, so it has to reserve the
+   logo's width exactly as a frame title does. Without this the band kept its flat
+   58px gutter while `beamer.js` went on measuring and writing
+   `--beamer-logo-reserve`, so any logo wider than about 110px overlapped a long
+   section title -- measured with a 140px logo: title ink running to x=1133 against
+   a logo starting at x=1118. `max()` keeps the base gutter when there is no logo
+   or the logo is narrow, and the centred minimal look takes the same padding on
+   the left so its text stays centred rather than drifting.
+
+   `.section-badge` is excluded, and must stay excluded: its title is centred
+   inside a box that is itself inset, so a one-sided padding moves the text off the
+   centre of its own badge -- measured with a 140px logo, by 56px. It needs no
+   reservation at all, because the badge is vertically centred and the logo sits in
+   the top corner; the 2-D audit in the suite confirms the two boxes never meet. */
+.reveal.has-logo
+  .slides
+  section.beamer-section-slide:not(.section-badge)
+  > h1:first-of-type {
+  padding-right: max(58px, var(--beamer-logo-reserve, 225px));
+}
+
+.reveal.has-logo
+  .slides
+  section.beamer-section-slide.section-minimal
+  > h1:first-of-type {
+  padding-left: max(58px, var(--beamer-logo-reserve, 225px));
+}
+
+/* The badge look is deliberately absent here: its band is CENTRED rather than
+   pinned to the top, so `fixedChromeBottom` leaves the logo in the top corner,
+   which the centred badge never reaches. Reserving the width on the section as well
+   only narrowed the badge for no visible benefit. */
 
 .reveal .slide-number {
   /* The Beamer footline owns slide numbering to avoid duplicate counters. */

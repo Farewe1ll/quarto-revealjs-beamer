@@ -816,7 +816,7 @@ const testMadrid = async (connection, origin) => {
     `${origin}/madrid.html#/references`
   );
   const referencesState = await referencesPage.evaluate(`(() => {
-    const references = document.querySelector("#references #refs");
+    const references = document.querySelector("#references #refs, #references .beamer-refs");
     const footer = document.querySelector("#references > .beamer-footline");
     return {
       entries: references.querySelectorAll(".csl-entry").length,
@@ -2721,7 +2721,7 @@ const testReferencesPagination = async (connection, origin) => {
   const state = await page.evaluate(`(() => {
     const pages = [];
     document.querySelectorAll("section.beamer-leaf-slide").forEach((slide) => {
-      const container = slide.querySelector("#refs");
+      const container = slide.querySelector("#refs, .beamer-refs");
       if (!container) return;
       const layer = slide.querySelector(":scope > .beamer-scroll") || slide;
       const style = getComputedStyle(layer);
@@ -2891,7 +2891,7 @@ const testReferencesPagination = async (connection, origin) => {
   const surplus = await surplusPage.evaluate(`(() => {
     const pages = [];
     document.querySelectorAll("section.beamer-leaf-slide").forEach((slide) => {
-      const container = slide.querySelector("#refs");
+      const container = slide.querySelector("#refs, .beamer-refs");
       if (!container) return;
       pages.push({
         id: slide.id,
@@ -2910,7 +2910,9 @@ const testReferencesPagination = async (connection, origin) => {
       unused: {
         exists: Boolean(unusedSlide),
         entries: unusedSlide.querySelectorAll(".csl-entry").length,
-        hasRefsContainer: Boolean(unusedSlide.querySelector("#refs")),
+        hasRefsContainer: Boolean(
+          unusedSlide.querySelector("#refs, .beamer-refs")
+        ),
         title: (unusedSlide.querySelector(":scope > h2") || {}).textContent || null,
         visibility: unusedSlide.dataset.visibility || null
       },
@@ -2974,7 +2976,9 @@ const testReferencesMultifile = async (connection, origin) => {
     const meta = document.querySelector('meta[name="beamer-refs-keys"]');
     return {
       shipped: meta ? meta.content : null,
-      keys: Array.from(document.querySelectorAll("#refs .csl-entry")).map((entry) =>
+      keys: Array.from(
+        document.querySelectorAll("#refs .csl-entry, .beamer-refs .csl-entry")
+      ).map((entry) =>
         (entry.id || "").replace(/^ref-/, "")
       )
     };
@@ -3016,7 +3020,7 @@ const testReferencesAutoPages = async (connection, origin) => {
   const state = await page.evaluate(`(async () => {
     const pages = [];
     const slides = Array.from(document.querySelectorAll("section.beamer-leaf-slide")).filter(
-      (slide) => slide.querySelector("#refs")
+      (slide) => slide.querySelector("#refs, .beamer-refs")
     );
     // The fixture has to reproduce the state a reader's deck is in, or this test cannot see
     // the defect it exists for: Reveal renders only the top-level sections within
@@ -3030,7 +3034,7 @@ const testReferencesAutoPages = async (connection, origin) => {
       const indices = window.Reveal.getIndices(slide);
       window.Reveal.slide(indices.h, indices.v, 0);
       await new Promise((resolve) => setTimeout(resolve, 90));
-      const container = slide.querySelector("#refs");
+      const container = slide.querySelector("#refs, .beamer-refs");
       const layer = slide.querySelector(":scope > .beamer-scroll") || slide;
       pages.push({
         id: slide.id,
@@ -3142,7 +3146,7 @@ const testReferencesAdjacentItems = async (connection, origin) => {
         number: footer
           ? (footer.querySelector(".beamer-footline-number") || {}).textContent || null
           : null,
-        hasRefs: Boolean(slide.querySelector("#refs")),
+        hasRefs: Boolean(slide.querySelector("#refs, .beamer-refs")),
         text: slide.textContent.replace(/\\s+/g, " ").trim().slice(0, 90),
       };
     };
@@ -3235,7 +3239,7 @@ const testReferencesContinuation = async (connection, origin) => {
     const pages = Array.from(
       document.querySelectorAll("section.beamer-leaf-slide")
     )
-      .filter((slide) => slide.querySelector("#refs"))
+      .filter((slide) => slide.querySelector("#refs, .beamer-refs"))
       .map((slide) => ({
         id: slide.id,
         entries: slide.querySelectorAll(".csl-entry").length,
@@ -3339,7 +3343,9 @@ const testReferencesImageFrame = async (connection, origin) => {
           .filter(
             (child) =>
               !/^H[12]$/.test(child.tagName) &&
-              !child.matches("#refs, .beamer-headline, .beamer-footline, aside.notes")
+              !child.matches(
+                "#refs, .beamer-refs, .beamer-headline, .beamer-footline, aside.notes"
+              )
           )
           .map((child) => child.textContent)
           .join("")
@@ -3357,7 +3363,7 @@ const testReferencesImageFrame = async (connection, origin) => {
       refsPageIds: Array.from(
         document.querySelectorAll("section.beamer-leaf-slide")
       )
-        .filter((candidate) => candidate.querySelector("#refs"))
+        .filter((candidate) => candidate.querySelector("#refs, .beamer-refs"))
         .map((candidate) => candidate.id),
       warnings: window.__beamerWarnings,
     };
@@ -3410,12 +3416,12 @@ const testReferencesScroll = async (connection, origin) => {
   await delay(500);
   const state = await page.evaluate(`(async () => {
     const slide = Array.from(document.querySelectorAll("section.beamer-leaf-slide")).find(
-      (entry) => entry.querySelector("#refs")
+      (entry) => entry.querySelector("#refs, .beamer-refs")
     );
     const indices = window.Reveal.getIndices(slide);
     window.Reveal.slide(indices.h, indices.v, 0);
     await new Promise((resolve) => setTimeout(resolve, 150));
-    const container = slide.querySelector("#refs");
+    const container = slide.querySelector("#refs, .beamer-refs");
     const layer = slide.querySelector(":scope > .beamer-scroll");
     const body = layer || slide;
     const footer = slide.querySelector(":scope > .beamer-footline");
@@ -3426,7 +3432,10 @@ const testReferencesScroll = async (connection, origin) => {
     const lastRect = last.getBoundingClientRect();
     const footerRect = footer.getBoundingClientRect();
     const result = {
-      refsContainers: document.querySelectorAll("#refs").length,
+      refsContainers: document.querySelectorAll("#refs, .beamer-refs").length,
+      // The invariant: however many containers a paginated bibliography needs, only
+      // the author's own carries the id, so the document never duplicates it.
+      refsIds: document.querySelectorAll("#refs").length,
       entries: blocks.length,
       uncounted: slide.dataset.visibility || null,
       hasLayer: Boolean(layer),
@@ -3445,6 +3454,11 @@ const testReferencesScroll = async (connection, origin) => {
   })()`);
 
   assert.equal(state.refsContainers, 1, JSON.stringify(state));
+  assert.equal(
+    state.refsIds,
+    1,
+    `the author's own container is the only one allowed to carry the id: ${JSON.stringify(state)}`
+  );
   assert.equal(state.entries, 13, JSON.stringify(state));
   assert.equal(state.uncounted, "uncounted", JSON.stringify(state));
   assert.equal(state.hasLayer, true, JSON.stringify(state));
@@ -3475,8 +3489,11 @@ const testReferencesScroll = async (connection, origin) => {
   );
   await delay(500);
   const itemState = await itemPage.evaluate(`(() => ({
-    refsContainers: document.querySelectorAll("#refs").length,
-    entriesOnFirst: document.querySelectorAll("#refs .csl-entry").length,
+    refsContainers: document.querySelectorAll("#refs, .beamer-refs").length,
+    refsIds: document.querySelectorAll("#refs").length,
+    entriesOnFirst: document.querySelectorAll(
+      "#refs .csl-entry, .beamer-refs .csl-entry"
+    ).length,
     totalEntries: document.querySelectorAll(".csl-entry").length,
     warnings: window.__beamerWarnings.filter((line) =>
       line.includes("[beamerslides]")
@@ -3487,6 +3504,7 @@ const testReferencesScroll = async (connection, origin) => {
     1,
     `the mode must not paginate: ${JSON.stringify(itemState)}`
   );
+  assert.equal(itemState.refsIds, 1, JSON.stringify(itemState));
   assert.equal(itemState.entriesOnFirst, 13, JSON.stringify(itemState));
   assert.equal(itemState.totalEntries, 13, JSON.stringify(itemState));
   assert.deepEqual(
@@ -3507,11 +3525,18 @@ const testReferencesScroll = async (connection, origin) => {
   );
   await delay(400);
   const bogusState = await bogusPage.evaluate(`(() => ({
-    refsContainers: document.querySelectorAll("#refs").length
+    refsContainers: document.querySelectorAll("#refs, .beamer-refs").length,
+    refsIds: document.querySelectorAll("#refs").length
   }))()`);
   assert(
     bogusState.refsContainers > 1,
     `an unknown refs-overflow must fall back to paginating: ${JSON.stringify(bogusState)}`
+  );
+  // ...and the extra containers it creates must not repeat the author's id.
+  assert.equal(
+    bogusState.refsIds,
+    1,
+    `only the author's container may carry id="refs": ${JSON.stringify(bogusState)}`
   );
   await bogusPage.close();
 
@@ -3559,6 +3584,143 @@ const testReferencesScroll = async (connection, origin) => {
     emptyCounts.scroll.lastNormal,
     `refs-overflow must not move the page count: ${JSON.stringify(emptyCounts)}`
   );
+};
+
+// A bibliography hung off a `#` heading instead of `##`. The docs and both templates
+// use `##`, but `# References` + `::: {#refs}` is a natural thing to write, Quarto marks
+// that page `.smaller .scrollable` on its own, and it is the one input that exercises the
+// whole section-page path at once. Three things were wrong with it and are pinned here:
+// the scroll layer was inset to the section's `padding-top` (0px on Madrid's
+// headline-less default) instead of to the in-flow band's measured bottom, so the first
+// entry was painted inside the band; a declared continuation page never got a layer at
+// all, because the pass that re-wraps a frame looks for an `h2`; and a generated page was
+// hard-coded to `h2`, so a section-level bibliography switched from a section band to a
+// frame band mid-list, whose `z-index: 2` then covered the entry it sat above.
+const testReferencesSectionLevel = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/refs-section-level.html#/section-refs-main`
+  );
+  await delay(600);
+  const state = await page.evaluate(`(async () => {
+    const leaves = Array.from(document.querySelectorAll("section.beamer-leaf-slide"));
+    const refsPages = leaves.filter(
+      (slide) => slide.querySelector("#refs, .beamer-refs")
+    );
+    const pages = [];
+    for (const slide of refsPages) {
+      const indices = window.Reveal.getIndices(slide);
+      window.Reveal.slide(indices.h, indices.v, 0);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const band = slide.querySelector(":scope > h1, :scope > h2");
+      const layer = slide.querySelector(":scope > .beamer-scroll");
+      const entries = Array.from(slide.querySelectorAll(".csl-entry"));
+      const bandRect = band ? band.getBoundingClientRect() : null;
+      const firstRect = entries.length
+        ? entries[0].getBoundingClientRect()
+        : null;
+      pages.push({
+        id: slide.id,
+        bandTag: band ? band.tagName : null,
+        isSectionSlide: slide.classList.contains("beamer-section-slide"),
+        hasLayer: Boolean(layer),
+        layerTop: layer ? layer.style.top : null,
+        entries: entries.length,
+        hiddenEntries: entries.filter(
+          (entry) => entry.style.visibility === "hidden"
+        ).length,
+        firstEntryClearsBand:
+          bandRect && firstRect ? firstRect.top >= bandRect.bottom : null,
+        uncounted: slide.dataset.visibility === "uncounted",
+        pageNumber: (() => {
+          const node = slide.querySelector(
+            ":scope > .beamer-footline .beamer-footline-number"
+          );
+          return node ? node.textContent : null;
+        })()
+      });
+    }
+    const after = document.getElementById("section-refs-after");
+    return {
+      pages,
+      totalEntries: document.querySelectorAll(".csl-entry").length,
+      refsIds: document.querySelectorAll("#refs").length,
+      afterNumber: (() => {
+        const node = after.querySelector(
+          ":scope > .beamer-footline .beamer-footline-number"
+        );
+        return node ? node.textContent : null;
+      })()
+    };
+  })()`);
+
+  assert.equal(
+    state.pages.length,
+    3,
+    `13 entries at 5 per page over 2 declared pages need a generated third: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.pages.map((entry) => entry.entries),
+    [5, 5, 3],
+    `every entry must land on exactly one page: ${JSON.stringify(state)}`
+  );
+  assert.equal(
+    state.totalEntries,
+    13,
+    `no entry may be lost or duplicated: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.pages.map((entry) => entry.hiddenEntries),
+    [0, 0, 0],
+    `the measuring clones must not survive on any page: ${JSON.stringify(state)}`
+  );
+  // The heading LEVEL is what decides which band a page gets, so a mixed list is the
+  // defect: pages 1-2 kept their `h1` section band while page 3 was generated with a
+  // frame's `h2`, and that h2's `z-index: 2` painted over the first entry under it.
+  assert.deepEqual(
+    state.pages.map((entry) => entry.bandTag),
+    ["H1", "H1", "H1"],
+    `a section-level bibliography must keep one heading level throughout: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.pages.map((entry) => entry.isSectionSlide),
+    [true, true, true],
+    JSON.stringify(state)
+  );
+  // The layer has to exist on every page, including the declared continuation page --
+  // that one is the case `applySlideBox` builds too early to catch.
+  assert.deepEqual(
+    state.pages.map((entry) => entry.hasLayer),
+    [true, true, true],
+    `every reference page needs its scroll layer: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.pages.map((entry) => entry.firstEntryClearsBand),
+    [true, true, true],
+    `no entry may be painted inside its own band: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.pages.map((entry) => entry.uncounted),
+    [true, true, true],
+    JSON.stringify(state)
+  );
+  assert.deepEqual(
+    state.pages.map((entry) => entry.pageNumber),
+    [null, null, null],
+    `reference pages must not take a page number: ${JSON.stringify(state)}`
+  );
+  assert.equal(
+    state.refsIds,
+    1,
+    `only the author's own container may carry id="refs": ${JSON.stringify(state)}`
+  );
+  // The footline's own count: the deck is title + body + After.
+  assert.equal(
+    state.afterNumber,
+    "3 / 3",
+    `reference pages must not move the page count: ${JSON.stringify(state)}`
+  );
+  await page.close();
 };
 
 // The scroll layer is built once, but both of its inputs are rewritten later: the
@@ -3611,8 +3773,17 @@ const testScrollLayers = async (connection, origin) => {
     // position static, and the frame's 32.4px title promoted to 52.5px by
     // Quarto's linear-navigation title-slide rule once the theme's own (more
     // specific) rule stopped matching.
-    const measureSectionPage = () => {
-      const slide = document.getElementById("scroll-section");
+    //
+    // Measured against the plain CONTROL page that carries the same prose, because
+    // "the band kept its fill and the body is reachable" was true of the state this
+    // test exists to prevent: the layer was pinned to the section's own
+    // \`padding-top\` (0px on Madrid's headline-less default) while the band, which
+    // is in the flow, occupied the top 95px -- band 0..95, layer 0, first paragraph
+    // 14, i.e. the body painted 81px inside its own band, and every assertion below
+    // still passed. The control is what makes the regression observable: both pages
+    // must put their first line in the same place.
+    const measureSectionPage = (id) => {
+      const slide = document.getElementById(id);
       // Reveal only lays a slide out once it is the current one, and this page is a
       // separate horizontal section from the frames measured above. Present it, then
       // put the deck back where it was: the later probes in this test measure
@@ -3625,7 +3796,9 @@ const testScrollLayers = async (connection, origin) => {
       const slideRect = slide.getBoundingClientRect();
       const style = heading ? getComputedStyle(heading) : null;
       const rect = heading ? heading.getBoundingClientRect() : null;
-      const paragraphs = layer ? Array.from(layer.querySelectorAll("p")) : [];
+      const paragraphs = layer
+        ? Array.from(layer.querySelectorAll("p"))
+        : Array.from(slide.querySelectorAll(":scope > p"));
       const report = {
         isSectionSlide: slide.classList.contains("beamer-section-slide"),
         headingIsDirectChild: Boolean(heading),
@@ -3635,14 +3808,38 @@ const testScrollLayers = async (connection, origin) => {
         bandLeft: rect ? Math.round(rect.left - slideRect.left) : null,
         bandWidth: rect ? Math.round(rect.width) : null,
         slideWidth: Math.round(slideRect.width),
-        overflows: layer ? layer.scrollHeight > layer.clientHeight + 1 : false
+        // Whichever box owns the overflow: the layer on the scrollable page, the
+        // section itself on the control. Reporting a flat false for the control
+        // because it has no layer made the assertion below vacuous -- and wrong about
+        // why: the control does not fit either, it CLIPS, which is the reason the page
+        // needs .scrollable in the first place. Measured, it overflows by 679px.
+        overflows:
+          (layer || slide).scrollHeight > (layer || slide).clientHeight + 1,
+        // Where the body starts, measured FROM THE BAND'S OWN BOTTOM so the two
+        // pages are comparable even though the scrollable one draws a scrollbar.
+        // Kept unrounded as well: the two bands are different heights (the
+        // scrollable title wraps, the control's does not), so subtracting two
+        // ROUNDED numbers reports a 1px difference where the real offsets are
+        // identical to the sub-pixel.
+        bandBottom: rect ? Math.round(rect.bottom) : null,
+        bandBottomExact: rect ? rect.bottom : null,
+        firstParagraphTop: paragraphs.length
+          ? Math.round(paragraphs[0].getBoundingClientRect().top)
+          : null,
+        firstParagraphTopExact: paragraphs.length
+          ? paragraphs[0].getBoundingClientRect().top
+          : null
       };
       if (paragraphs.length) {
         const last = paragraphs[paragraphs.length - 1];
-        layer.scrollTop = layer.scrollHeight;
+        if (layer) {
+          layer.scrollTop = layer.scrollHeight;
+        }
         report.lastParagraphReachable =
           last.getBoundingClientRect().bottom <= slideRect.bottom + 1;
-        layer.scrollTop = 0;
+        if (layer) {
+          layer.scrollTop = 0;
+        }
       }
       window.Reveal.slide(restore.h, restore.v);
       return report;
@@ -3650,7 +3847,8 @@ const testScrollLayers = async (connection, origin) => {
     return {
       wrapped: measure("wrapped-scroll"),
       late: measure("late-scroll"),
-      section: measureSectionPage()
+      section: measureSectionPage("scroll-section"),
+      control: measureSectionPage("plain-section")
     };
   })()`);
 
@@ -3732,6 +3930,39 @@ const testScrollLayers = async (connection, origin) => {
     `the body must remain reachable even with the band pinned: ${JSON.stringify(state.section)}`
   );
 
+  // Case 4: the scrollable section page must place its body exactly where the plain
+  // control page does. This is the assertion the fix above needed and did not have:
+  // every check in case 3 passed while the body was painted 81px inside the band.
+  assert.equal(
+    state.control.isSectionSlide,
+    true,
+    JSON.stringify(state.control)
+  );
+  assert.equal(
+    state.control.paragraphsInLayer,
+    12,
+    `the control page must keep its 12 direct paragraphs: ${JSON.stringify(state.control)}`
+  );
+  assert.equal(
+    state.control.overflows,
+    true,
+    `the control page must genuinely not fit, or comparing the two proves nothing: ${JSON.stringify(state.control)}`
+  );
+  assert(
+    state.section.firstParagraphTop >= state.section.bandBottom,
+    `a scrollable section page must put its body BELOW its band, not inside it: ${JSON.stringify(state.section)}`
+  );
+  const sectionOffset =
+    state.section.firstParagraphTopExact - state.section.bandBottomExact;
+  const controlOffset =
+    state.control.firstParagraphTopExact - state.control.bandBottomExact;
+  assert(
+    Math.abs(sectionOffset - controlOffset) <= 0.5,
+    `the first line must sit at the same offset below the band on both pages -- the whole ` +
+      `claim is that a scrollable section page renders like a plain one: ` +
+      `${JSON.stringify({ sectionOffset, controlOffset, section: state.section, control: state.control })}`
+  );
+
   // The other direction: a frame that stops scrolling gets its body back. Left inside an
   // absolutely positioned layer, the content no longer contributes to the section's
   // scroll height, so the overflow check could never see it again.
@@ -3759,6 +3990,90 @@ const testScrollLayers = async (connection, origin) => {
   assert(
     unwrapped.directParagraphs > 0,
     `the body must be a direct child again: ${JSON.stringify(unwrapped)}`
+  );
+  await page.close();
+};
+
+// `.section-badge` cannot scroll, and that is a decision rather than an oversight:
+// the look centres its title and its body as ONE block, while the scroll layer is an
+// absolutely positioned strip inset from the top of the slide, so the two cannot both
+// hold. Half-applying it is what the theme used to do -- measured with the badge at
+// y=308..384 and its body painted at y=60..99, i.e. 324px above it. So the class is
+// inert on a badge page, the page renders exactly as a plain badge page, the author is
+// told once, and an overfull badge page reports its overflow instead of being exempt.
+const testBadgeScrollIsInert = async (connection, origin) => {
+  renderFixture("section-styles");
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/section-styles.html`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  await delay(400);
+  const state = await page.evaluate(`(async () => {
+    const visit = async (id) => {
+      const slide = document.getElementById(id);
+      const indices = window.Reveal.getIndices(slide);
+      window.Reveal.slide(indices.h, indices.v, 0);
+      await new Promise((resolve) => setTimeout(resolve, 220));
+    };
+    const read = (id) => {
+      const slide = document.getElementById(id);
+      const band = slide.querySelector(":scope > h1");
+      const body = slide.querySelector(":scope > p");
+      const bandRect = band.getBoundingClientRect();
+      const bodyRect = body.getBoundingClientRect();
+      return {
+        hasLayer: Boolean(slide.querySelector(":scope > .beamer-scroll")),
+        bodyIsDirectChild: body.parentElement === slide,
+        bandBottom: Math.round(bandRect.bottom),
+        bodyTop: Math.round(bodyRect.top),
+        clearance: Math.round(bodyRect.top - bandRect.bottom)
+      };
+    };
+    await visit("sec-badge");
+    const plain = read("sec-badge");
+    await visit("sec-badge-scroll");
+    const asked = read("sec-badge-scroll");
+    return {
+      plain,
+      asked,
+      warnings: window.__beamerWarnings.filter((line) =>
+        line.includes("[beamerslides]")
+      )
+    };
+  })()`);
+
+  assert.equal(
+    state.asked.hasLayer,
+    false,
+    `a badge page must not get a scroll layer: ${JSON.stringify(state)}`
+  );
+  assert.equal(
+    state.asked.bodyIsDirectChild,
+    true,
+    `the body must stay where a plain badge page puts it: ${JSON.stringify(state)}`
+  );
+  assert(
+    state.asked.clearance > 0,
+    `the body must not be painted above the badge: ${JSON.stringify(state)}`
+  );
+  // ...and the page has to render like the badge page that did NOT ask to scroll,
+  // which is the whole content of "the class is inert here".
+  assert.equal(
+    state.asked.clearance,
+    state.plain.clearance,
+    `asking a badge page to scroll must change nothing about where its body sits: ${JSON.stringify(state)}`
+  );
+  assert.equal(
+    state.warnings.length,
+    1,
+    `the unsupported combination must be reported exactly once: ${JSON.stringify(state.warnings)}`
+  );
+  assert.match(
+    state.warnings[0],
+    /#sec-badge-scroll is a `\.section-badge` page, and that look cannot scroll/,
+    JSON.stringify(state.warnings)
   );
   await page.close();
 };
@@ -4515,6 +4830,7 @@ try {
     "refs-adjacent",
     "refs-continuation",
     "refs-image-frame",
+    "refs-section-level",
     "scroll-layers",
     "chip-cjk",
     "logo",
@@ -4616,6 +4932,8 @@ try {
   await testReferencesContinuation(chrome.connection, local.origin);
   await testReferencesImageFrame(chrome.connection, local.origin);
   await testReferencesScroll(chrome.connection, local.origin);
+  await testReferencesSectionLevel(chrome.connection, local.origin);
+  await testBadgeScrollIsInert(chrome.connection, local.origin);
   await testScrollLayers(chrome.connection, local.origin);
   await testPaletteAlgebra(chrome.connection, local.origin);
   await testSectionStyles(chrome.connection, local.origin);
@@ -4644,7 +4962,9 @@ try {
   debugCleanup("temporary inputs removed");
   if (chrome) {
     debugCleanup("stopping Chrome");
-    // Chrome first: it holds the profile directory that is removed last.
+    // `shutdownChrome` now removes the profile directory itself; the step below is the
+    // fallback for the case where it never ran at all -- a launch that failed part-way
+    // leaves the directory with no browser to shut down.
     await teardownStep("stop Chrome", () => shutdownChrome(chrome));
     debugCleanup("Chrome stopped", chrome.processHandle.exitCode, chrome.processHandle.signalCode);
   }

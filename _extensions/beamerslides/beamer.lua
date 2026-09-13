@@ -66,15 +66,36 @@ end
 -- parses entries but leaves `meta.bibliography` nil. The keys are therefore read
 -- straight out of the files.
 --
--- This is a deliberately conservative scan: it matches an entry header
--- (`@type{key,` or `@type(key,`) and nothing else, so `@string`, `@comment` and
--- cross-line headers are simply not matched. A key that never matches would
--- silently produce a wrong order, so the caller compares the extracted count with
--- the number of rendered entries and falls back rather than guessing.
+-- This is a deliberately conservative scan. It is anchored to the START of a line
+-- and the pattern only matches text that looks exactly like an entry header there
+-- (`@type{key,` or `@type(key,`), so a key mentioned inside a field value cannot
+-- contribute a phantom entry: the previous, unanchored pattern did exactly that --
+-- `title = {A paper that cites @smith2020, in its title}` was measured to add a
+-- bogus `2020` -- and because the caller compares the extracted count with the
+-- number of rendered entries, ONE such mention was enough to discard the whole
+-- declaration order rather than a single key.
+--
+-- What is left uncovered is narrower and is what the caller's count check is for: a
+-- field value that spans lines and whose continuation line itself reads as
+-- `@type{key,`, and an entry header split across lines. Both make the counts
+-- disagree, and the caller falls back to citeproc's order and says so rather than
+-- guessing.
+--
+-- `@string`, `@comment` and `@preamble` declare nothing citable and are skipped by
+-- name.
+local ignored_entry_types = {
+  ["string"] = true,
+  ["comment"] = true,
+  ["preamble"] = true,
+}
+
 local function bib_entry_keys(text)
   local keys = pandoc.List()
-  for key in text:gmatch("@%a+%s*[%{%(%s]*([%w%-%._%+%/:%*]+)%s*,") do
-    keys:insert(key)
+  for line in text:gmatch("[^\r\n]+") do
+    local entry_type, key = line:match("^%s*@(%a+)%s*[%{%(]%s*([^,%s{}]+)%s*,")
+    if entry_type ~= nil and not ignored_entry_types[entry_type:lower()] then
+      keys:insert(key)
+    end
   end
   return keys
 end
