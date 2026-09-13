@@ -3113,6 +3113,293 @@ const testReferencesAutoPages = async (connection, origin) => {
 // page Quarto produces and scrolls there. The interesting part is that "it scrolls" has to
 // mean the same thing as everywhere else in the theme -- the body moves, the chrome does not
 // -- and that the page still stays out of the footline's page count.
+// `item` is a general per-page density hint, so an author may put it on any frame.
+// Only a page with no authored body is a bibliography continuation page. The
+// adjacency test alone used to absorb any `item` page that followed the `#refs`
+// page, which marked an unrelated frame `uncounted` (dropping its page number) and
+// prepended reference entries above the author's own paragraph.
+const testReferencesAdjacentItems = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/refs-adjacent.html#/refs-one`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  await delay(500);
+  const state = await page.evaluate(`(async () => {
+    const order = Array.from(
+      document.querySelectorAll("section.beamer-leaf-slide")
+    );
+    const read = (slide) => {
+      const footer = slide.querySelector(":scope > .beamer-footline");
+      return {
+        id: slide.id,
+        entries: slide.querySelectorAll(".csl-entry").length,
+        keys: Array.from(slide.querySelectorAll(".csl-entry")).map((e) =>
+          e.id.replace(/^ref-/, "")
+        ),
+        visibility: slide.dataset.visibility || null,
+        number: footer
+          ? (footer.querySelector(".beamer-footline-number") || {}).textContent || null
+          : null,
+        hasRefs: Boolean(slide.querySelector("#refs")),
+        text: slide.textContent.replace(/\\s+/g, " ").trim().slice(0, 90),
+      };
+    };
+    const slides = order.map(read);
+    const byId = Object.fromEntries(slides.map((s) => [s.id, s]));
+    const allEntries = Array.from(document.querySelectorAll(".csl-entry"));
+    return {
+      before: byId["before-refs"],
+      after: byId["after-refs"],
+      refsPages: slides.filter((s) => s.hasRefs).map((s) => ({
+        id: s.id,
+        entries: s.entries,
+        keys: s.keys,
+        visibility: s.visibility,
+      })),
+      totalEntries: allEntries.length,
+      uniqueEntries: new Set(allEntries.map((e) => e.id)).size,
+      warnings: window.__beamerWarnings,
+    };
+  })()`);
+
+  for (const [label, frame, marker] of [
+    ["before", state.before, /own density hint/],
+    ["after", state.after, /adjacent to the bibliography/],
+  ]) {
+    assert(frame, `the ${label}-refs frame must still exist: ${JSON.stringify(state)}`);
+    // The frame keeps its own body...
+    assert.match(
+      frame.text,
+      marker,
+      `the ${label}-refs frame must keep its text: ${JSON.stringify(frame)}`
+    );
+    // ...receives no bibliography entries...
+    assert.equal(
+      frame.entries,
+      0,
+      `the ${label}-refs frame must not receive entries: ${JSON.stringify(frame)}`
+    );
+    // ...and stays counted, so the footline numbers it.
+    assert.notEqual(
+      frame.visibility,
+      "uncounted",
+      `the ${label}-refs frame must stay counted: ${JSON.stringify(frame)}`
+    );
+    assert(
+      frame.number && /^\d+ \/ \d+$/.test(frame.number),
+      `the ${label}-refs frame must show a page number: ${JSON.stringify(frame)}`
+    );
+  }
+
+  // The bibliography itself still paginates: page 1 caps at its `item="5"`, the height
+  // measurement closes the next page at five as well, and the remainder spills onto a
+  // generated page. None of the three carries a page number. The `Continuation` frame
+  // between them is a bare heading the author gave no `item`, which is what keeps it a
+  // plain frame -- the same shape the templates use for their `参考文献（续）` page.
+  assert.equal(state.refsPages.length, 3, JSON.stringify(state));
+  assert.deepEqual(
+    state.refsPages.map((p) => p.entries),
+    [5, 5, 3],
+    `the declared page must cap at five and the rest must spill: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.refsPages.flatMap((p) => p.keys),
+    Array.from({ length: 13 }, (unused, index) => `ref${index + 1}`),
+    `\`refs-order: declaration\` must keep the .bib order: ${JSON.stringify(state)}`
+  );
+  assert.equal(state.totalEntries, 13, JSON.stringify(state));
+  assert.equal(state.uniqueEntries, 13, JSON.stringify(state));
+  assert(
+    state.refsPages.every((p) => p.visibility === "uncounted"),
+    `every reference page must be uncounted: ${JSON.stringify(state)}`
+  );
+  await page.close();
+};
+
+// The continuation page both shipped templates use. `hasAuthoredBody` must not read
+// `aside.notes` as a body: Quarto compiles `::: {.notes}` to an `<aside>` that stays a
+// direct child of the `<section>`, and an early version of the check counted it, so the
+// author's `## Continuation {item="5"}` page stopped being absorbed and the deck came out
+// as the declared page plus a GENERATED one instead of the two the author wrote.
+const testReferencesContinuation = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/refs-continuation.html#/refs-one`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  await delay(500);
+  const state = await page.evaluate(`(() => {
+    const pages = Array.from(
+      document.querySelectorAll("section.beamer-leaf-slide")
+    )
+      .filter((slide) => slide.querySelector("#refs"))
+      .map((slide) => ({
+        id: slide.id,
+        entries: slide.querySelectorAll(".csl-entry").length,
+        keys: Array.from(slide.querySelectorAll(".csl-entry")).map((e) =>
+          e.id.replace(/^ref-/, "")
+        ),
+        visibility: slide.dataset.visibility || null,
+        notesText: Array.from(slide.querySelectorAll("aside.notes"))
+          .map((note) => note.textContent.replace(/\\s+/g, " ").trim())
+          .join(" ") || null,
+      }));
+    const last = document.getElementById("last-normal");
+    const footer = last && last.querySelector(":scope > .beamer-footline");
+    return {
+      pages,
+      pageIds: Array.from(document.querySelectorAll("section.beamer-leaf-slide")).map(
+        (slide) => slide.id
+      ),
+      lastNumber: footer
+        ? (footer.querySelector(".beamer-footline-number") || {}).textContent || null
+        : null,
+      warnings: window.__beamerWarnings,
+    };
+  })()`);
+
+  // The author declared two pages on purpose, and the second is the bare `item` page
+  // whose only other child is the note. Both must be used.
+  //
+  // The split is 5 / 5 / 3 rather than 5 / 8: `item="5"` is a hard per-page cap, and a
+  // continuation page inherits the declared cap, so page two stops at five even though it
+  // has room to spare -- measured 287px of a 592px box in use on both pages. That is the
+  // documented behaviour of `item` ("a cap, not a promise"), and it is why the third page
+  // is generated. Reading the cap off the fixture instead of hard-coding it keeps this
+  // test about the continuation page rather than about the pagination arithmetic.
+  assert(
+    state.pages.length >= 2,
+    `the references must paginate: ${JSON.stringify(state)}`
+  );
+  assert(
+    state.pages.some((p) => p.id === "refs-two"),
+    `the author's continuation page must be absorbed, not replaced by a generated one: ${JSON.stringify(state)}`
+  );
+  const continuation = state.pages.find((p) => p.id === "refs-two");
+  assert(
+    continuation.entries > 0,
+    `the author's continuation page must hold entries: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.pages.map((p) => p.entries),
+    [5, 5, 3],
+    `the declared cap must hold on the declared page and on its continuation: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.pages.flatMap((p) => p.keys),
+    Array.from({ length: 13 }, (unused, index) => `ref${index + 1}`),
+    `\`refs-order: declaration\` must keep the .bib order: ${JSON.stringify(state)}`
+  );
+  assert(
+    state.pages.every((p) => p.visibility === "uncounted"),
+    `every reference page must be uncounted: ${JSON.stringify(state)}`
+  );
+  // The note has to survive, but not necessarily as a DIRECT child: `refs-two` does not
+  // scroll, so the note is still a direct child when `hasAuthoredBody` reads the page,
+  // and the scroll layer the pagination builds for it later takes the aside in as one of
+  // its children. What matters is that no pass dropped it.
+  assert(
+    state.pages.some((p) => p.notesText && p.notesText.includes("speaker note")),
+    `the author's note must survive on its page: ${JSON.stringify(state)}`
+  );
+  // The title slide is counted too, so the four countable pages are the title slide, the
+  // section page, `Body` and `Last normal`, and the last of them reads 4 / 4. Three
+  // reference pages exist and none of them moves the total.
+  assert.equal(
+    state.lastNumber,
+    "4 / 4",
+    `the footline must not count any reference page: ${JSON.stringify(state)}`
+  );
+  await page.close();
+};
+
+// `hasAuthoredBody` is an exclusion list, not a "does it render text" test, because a
+// frame can carry content that produces no text at all. A bare `![](figure.png)` is an
+// `<img>` whose `textContent` is empty, and a check written as `textContent.trim() !== ""`
+// counted such a frame as an empty continuation page: it was marked `uncounted` and had
+// reference entries prepended above the figure.
+const testReferencesImageFrame = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/refs-image-frame.html#/refs-one`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  await delay(500);
+  const state = await page.evaluate(`(() => {
+    const slide = document.getElementById("image-frame");
+    const footer = slide && slide.querySelector(":scope > .beamer-footline");
+    // The authored body only: reading the slide's whole text would also carry the frame
+    // title and the injected chrome, neither of which is what this fixture is about.
+    const authoredText = slide
+      ? Array.from(slide.children)
+          .filter(
+            (child) =>
+              !/^H[12]$/.test(child.tagName) &&
+              !child.matches("#refs, .beamer-headline, .beamer-footline, aside.notes")
+          )
+          .map((child) => child.textContent)
+          .join("")
+          .trim()
+      : null;
+    return {
+      exists: Boolean(slide),
+      authoredText,
+      images: slide ? slide.querySelectorAll("img").length : 0,
+      entries: slide ? slide.querySelectorAll(".csl-entry").length : -1,
+      visibility: slide ? slide.dataset.visibility || null : null,
+      number: footer
+        ? (footer.querySelector(".beamer-footline-number") || {}).textContent || null
+        : null,
+      refsPageIds: Array.from(
+        document.querySelectorAll("section.beamer-leaf-slide")
+      )
+        .filter((candidate) => candidate.querySelector("#refs"))
+        .map((candidate) => candidate.id),
+      warnings: window.__beamerWarnings,
+    };
+  })()`);
+
+  assert(state.exists, `the fixture must render the figure frame: ${JSON.stringify(state)}`);
+  assert.equal(
+    state.images,
+    1,
+    `the fixture must actually render an image: ${JSON.stringify(state)}`
+  );
+  // The point of the fixture: the frame's authored body renders no text at all, yet it is
+  // content. A predicate written as "textContent.trim() is not empty" calls this page
+  // empty, which is what the first version of the check did.
+  assert.equal(
+    state.authoredText,
+    "",
+    `an image-only frame is expected to render no text: ${JSON.stringify(state)}`
+  );
+  assert.equal(
+    state.entries,
+    0,
+    `the figure frame must not receive entries: ${JSON.stringify(state)}`
+  );
+  assert.notEqual(
+    state.visibility,
+    "uncounted",
+    `the figure frame must stay counted: ${JSON.stringify(state)}`
+  );
+  assert(
+    state.number && /^\d+ \/ \d+$/.test(state.number),
+    `the figure frame must show a page number: ${JSON.stringify(state)}`
+  );
+  // The bibliography keeps to its own pages -- the figure frame never joins them. It is
+  // free to spill onto further generated pages, since `item` is a cap and not a promise.
+  assert(
+    state.refsPageIds.length > 0 && !state.refsPageIds.includes("image-frame"),
+    `the bibliography must keep to its own pages: ${JSON.stringify(state)}`
+  );
+  await page.close();
+};
+
 const testReferencesScroll = async (connection, origin) => {
   const page = await BrowserPage.create(
     connection,
@@ -4037,6 +4324,88 @@ const testCjkChipAlignment = async (connection, origin) => {
   await page.close();
 };
 
+// The logo is absolutely positioned by Quarto and the frame title band's height
+// depends on the title, so the two can only be reconciled by measurement. Before
+// `positionLogo` existed, the logo was painted INSIDE the band in both variants:
+// measured y=24..52 against the band's y=0..58 with the headline off (Madrid's
+// default) and y=82..110 against y=32..90 with it on (CambridgeUS). Both are
+// asserted below, because the two variants reach the bug by different routes.
+const testLogoPlacement = async (connection, origin, fixture, variantClass) => {
+  const page = await BrowserPage.create(connection, `${origin}/${fixture}.html`);
+  const state = await page.evaluate(`(async () => {
+    // positionNativeUi runs from finishDecorate and the logo's line is measured
+    // there, so give the pass a frame to land before reading boxes.
+    const reveal = document.querySelector(".reveal");
+    const logo = document.querySelector(".reveal .slide-logo");
+    if (!reveal || !logo) {
+      return { missing: true };
+    }
+    const slides = Array.from(
+      document.querySelectorAll("section.beamer-leaf-slide")
+    ).filter((slide) => slide.querySelector(":scope > h2"));
+    const measured = [];
+    for (const slide of slides) {
+      const indices = window.Reveal.getIndices(slide);
+      window.Reveal.slide(indices.h, indices.v);
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+      );
+      await new Promise((resolve) => setTimeout(resolve, 160));
+      const band = slide.querySelector(":scope > h2").getBoundingClientRect();
+      const headline = slide.querySelector(":scope > .beamer-headline");
+      const head = headline ? headline.getBoundingClientRect() : null;
+      const rect = logo.getBoundingClientRect();
+      const overlaps = (a, b) =>
+        !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+      measured.push({
+        id: slide.id,
+        bandTop: Math.round(band.top),
+        bandBottom: Math.round(band.bottom),
+        logoTop: Math.round(rect.top),
+        logoBottom: Math.round(rect.bottom),
+        headlineBottom: head ? Math.round(head.bottom) : null,
+        insideBand: overlaps(rect, band),
+        insideHeadline: head ? overlaps(rect, head) : false,
+      });
+    }
+    return {
+      missing: false,
+      cssTop: getComputedStyle(reveal).getPropertyValue("--beamer-logo-top").trim(),
+      measured,
+    };
+  })()`);
+  assert.equal(state.missing, false, `${fixture} must render a logo`);
+  assert(
+    state.measured.length >= 2,
+    `the ${fixture} fixture must have frame slides: ${JSON.stringify(state)}`
+  );
+  for (const entry of state.measured) {
+    assert.equal(
+      entry.insideBand,
+      false,
+      `the logo must not be painted inside the frame title band (${fixture} #${entry.id}): ${JSON.stringify(entry)}`
+    );
+    assert.equal(
+      entry.insideHeadline,
+      false,
+      `the logo must not be painted inside the headline (${fixture} #${entry.id}): ${JSON.stringify(entry)}`
+    );
+    // The logo sits ON its own line clear of the band, not merely tangent to it.
+    assert(
+      entry.logoTop >= entry.bandBottom,
+      `the logo must clear the frame title band (${fixture} #${entry.id}): ${JSON.stringify(entry)}`
+    );
+    if (entry.headlineBottom !== null) {
+      assert(
+        entry.logoTop >= entry.headlineBottom,
+        `the logo must clear the headline (${fixture} #${entry.id}): ${JSON.stringify(entry)}`
+      );
+    }
+  }
+  await page.screenshot(`logo-placement-${variantClass}`);
+  await page.close();
+};
+
 const testBlockTitles = async (connection, origin) => {
   renderFixture("block-titles");
   const page = await BrowserPage.create(
@@ -4143,8 +4512,13 @@ try {
     "refs-surplus",
     "refs-auto",
     "refs-empty",
+    "refs-adjacent",
+    "refs-continuation",
+    "refs-image-frame",
     "scroll-layers",
     "chip-cjk",
+    "logo",
+    "logo-cambridgeus",
   ]) {
     renderFixture(fixture);
   }
@@ -4227,10 +4601,20 @@ try {
   await testOverflowDiagnostics(chrome.connection, local.origin);
   await testPaletteOverrides(chrome.connection, local.origin);
   await testCjkChipAlignment(chrome.connection, local.origin);
+  await testLogoPlacement(chrome.connection, local.origin, "logo", "madrid");
+  await testLogoPlacement(
+    chrome.connection,
+    local.origin,
+    "logo-cambridgeus",
+    "cambridgeus"
+  );
   await testBlockTitles(chrome.connection, local.origin);
   await testReferencesPagination(chrome.connection, local.origin);
   await testReferencesMultifile(chrome.connection, local.origin);
   await testReferencesAutoPages(chrome.connection, local.origin);
+  await testReferencesAdjacentItems(chrome.connection, local.origin);
+  await testReferencesContinuation(chrome.connection, local.origin);
+  await testReferencesImageFrame(chrome.connection, local.origin);
   await testReferencesScroll(chrome.connection, local.origin);
   await testScrollLayers(chrome.connection, local.origin);
   await testPaletteAlgebra(chrome.connection, local.origin);

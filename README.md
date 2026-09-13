@@ -250,7 +250,7 @@ refs-overflow: scroll   # 默认 paginate；scroll = 文献留在 Quarto 生成�
 ```
 
 - **`item` 是每页条数的上限，不是保证值。** 断页还受**实测高度**约束（一条长文献可能占两倍高度），装不下时这一页会被切得更短，**多出来的条目自动排到后续页**（不够就生成续页）。反过来条目短也不会超过 `item` 硬塞——想一页放更多就把 `item` 调大。续页会复制声明页的版式与标题。
-- 续页必须**紧跟**在带 `::: {#refs}` 的那一页后面，中间不能插入别的 frame：扩展只把**相邻**的 `item` 页当作续页，这样文档别处一个无关的 `## 某页 {item="3"}` 不会被误当成文献页而吸走条目。
+- 续页必须**紧跟**在带 `::: {#refs}` 的那一页后面，中间不能插入别的 frame；而且**续页本身必须是裸标题**——`## 标题 {item="N"}`，标题下不写正文。两条都要满足：`item` 只是通用的每页条数提示，任何 frame 都能写，扩展因此要靠「这一页有没有自己的正文」来判断它是不是续页。于是文档别处一个带正文的 `## 某页 {item="3"}` 不会被误当成文献页而吸走条目；反过来，续页一旦带上正文就会被当成普通 frame，文献改排到自动生成的页上。对照：两个模板的续页说明现在都写在 `::: {.notes}` 讲者备注里，备注不算正文。
 - **所有参考文献页都标记为 `uncounted`**，页脚总页数**不会因为文献分成几页而变化**。
 - **默认模式下**断页是**量出来**的，所以参考文献页不需要滚动就能看全（Quarto 给文献页带的 `.scrollable` 只是保底）。唯一的例外是**单条文献自己就比整页高**：它独占一页，那一页仍可滚动（兜底规则是「一页至少要放下一条」，否则分页无法推进）。除此之外，任何一页要滚动才能看完都是扩展的 bug。
 - 声明页数与实际需要不符时会在控制台告警：**不够**时报出加了几页以及**第一条被移走的条目**（方便你把断点往前挪）；**多声明**时报出哪一页是空的。空页**不会**被自动删除（删掉可能连带删掉你在那页写的内容），只提示你处理。
@@ -294,7 +294,7 @@ structure!50!black = darkred!50!black = #660000
 
 ### 变量参考
 
-下表按用途分组覆盖 `_palette.scss` 里的全部 48 个变量；`-fg` 是同一行的前景变量，`/ -2`、`/ -3` 是它的两个暗阶，`--beamer-block-alert-title-stroke` 一行的三项分别对应宽度、颜色与字重。CambridgeUS 覆盖其中 41 个，未标注“同左”或另列的取值与 Madrid 相同。`--beamer-active-headline-height` 由 `beamer-no-headline` 在关闭页眉时折叠为 `0px`。
+下表按用途分组覆盖 `_palette.scss` 里的全部 49 个变量；`-fg` 是同一行的前景变量，`/ -2`、`/ -3` 是它的两个暗阶，`--beamer-block-alert-title-stroke` 一行的三项分别对应宽度、颜色与字重。CambridgeUS 覆盖其中 41 个，未标注“同左”或另列的取值与 Madrid 相同。`--beamer-active-headline-height` 由 `beamer-no-headline` 在关闭页眉时折叠为 `0px`；`--beamer-logo-top` 由样式表给出兜底值、再由 `beamer.js` 按实测的 frame title 底边覆写（见 `版面几何`）。两套变体里 `--beamer-primary-3` 都等于同行的 `--beamer-structure-3`：样式表只用到 `primary` 与 `-2`，第三阶同样列出来，是因为 `-2` / `-3` 是成对暴露的暗阶契约，覆盖时两者应当一起给。
 
 | 用途 | 变量 | Madrid | CambridgeUS |
 |:---|:---|:---|:---|
@@ -312,7 +312,7 @@ structure!50!black = darkred!50!black = #660000
 | 进度线 | `--beamer-progress` | `rgba(255,255,255,.8)` | `#cc0000` |
 | block 标题 | `--beamer-block-title-bg`/`-fg`、`-example-title-bg`/`-fg`、`-alert-title-bg`/`-fg` | `#262686`/`#fff`、`#006000`/`#fff`、`#bf0000`/`#fff` | `transparent`/`--beamer-structure`、`transparent`/`--beamer-example`、`transparent`/`#ffcd00` |
 | 警示标题描边 | `--beamer-block-alert-title-weight`、`-stroke`、`-stroke-color` | `650`、`0`、未设 | `700`、`3px`、`#000000` |
-| 几何 | `--beamer-headline-height`、`--beamer-frame-height`、`--beamer-footline-height`、`--beamer-logo-reserve` | `32px`、`58px`、`30px`、`225px` | 同左 |
+| 几何 | `--beamer-headline-height`、`--beamer-frame-height`、`--beamer-footline-height`、`--beamer-logo-top`、`--beamer-logo-reserve` | `32px`、`58px`、`30px`、`max(32,58)+7px`、`225px` | 同左 |
 | 文献表 | `--beamer-refs-font-size` | `0.9em` | 同左 |
 
 ### 覆盖方式
@@ -364,6 +364,8 @@ format:
 **内容超页**会在浏览器控制台输出一条包含 frame id 与实际溢出像素的告警（`.scrollable`、`.smaller` 或超长标题导致的滚动页除外），避免内容被静默裁切。给 frame 加 `.scrollable`（或 `.smaller`、由超长标题触发的 `beamer-long-frame-title`）后，**正文在 frame 内部滚动，而页眉、frame title 与页脚固定不动**：`beamer.js` 把正文搬进一个 `.beamer-scroll` 内层，它内缩到 frame 的 padding box，所以正文位置与不滚动时完全一致。Quarto 的文档级脚注页与参考文献页默认就带 `.smaller .scrollable`，同样适用。
 
 **长 frame title** 会自动缩小（两档：超过基准 1.59 倍、2.03 倍时各降一档）并增高标题带，不会被固定高度裁切；高度超过基准的 2.28 倍时整页转为可滚动。
+
+**Logo 独占一行**，压在 frame title 色带下方而不是色带里面。色带的横向预留（`--beamer-logo-reserve`，由实测 logo 宽度写入）与菜单按钮的避让一直都在，纵向这一行则由 `positionLogo` 量出当前这页的 chrome 底边（有 frame title 时取它，否则取 headline）写入 `--beamer-logo-top`；样式表里的 `max(headline 高度, frame 高度) + 7px` 只是没有 JavaScript 时的兜底。配色见 `变量参考`。
 
 ## 文件结构
 
@@ -420,6 +422,8 @@ npm test
 
 ### 环境变量
 
+下表列出套件读取的**全部 12 个**变量——`beamer.js` 本身不读任何环境变量，它们只影响测试如何运行。前八个是调参与选择，后四个是排障用的开关。
+
 | 变量 | 默认 | 用途 |
 |:---|:---|:---|
 | `BEAMERSLIDES_PAGE_READY_TIMEOUT_MS` | `20000` | 页面就绪等待上限 |
@@ -427,7 +431,11 @@ npm test
 | `BEAMERSLIDES_CDP_TIMEOUT_MS` | `300000` | 单条 Chrome DevTools 命令的上限 |
 | `BEAMERSLIDES_COMMAND_TIMEOUT_MS` | `300000` | 外部命令（如 `quarto render`）的上限 |
 | `BEAMERSLIDES_CHROME_STARTUP_TIMEOUT_MS` | `45000` | 启动 Chrome 的上限 |
+| `BEAMERSLIDES_CHROME_LAUNCH_ATTEMPTS` | `3` | 启动 Chrome 失败后的重试次数 |
+| `BEAMERSLIDES_QUARTO_BIN` | `quarto` | 指定要测试的 Quarto 可执行文件（CI 用它跑 1.4 那一格） |
 | `CHROME_BIN` | 自动探测 | 指定 Chrome/Chromium 可执行文件 |
+| `BEAMERSLIDES_DEBUG` | 未设 | 设为 `1` 时打印每条外部命令的耗时与退出状态 |
+| `BEAMERSLIDES_DEBUG_CLEANUP` | 未设 | 设为 `1` 时打印清理（关浏览器、删临时目录）的每一步 |
 | `SKIP_VISUAL_REGRESSION` | 未设 | 设为 `1` 时只写截图、不比对基线 |
 | `UPDATE_VISUAL_BASELINES` | 未设 | 设为 `1` 时把当前截图写成新基线 |
 

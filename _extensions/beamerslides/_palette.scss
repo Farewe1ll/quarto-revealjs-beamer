@@ -96,6 +96,15 @@
 
   --beamer-headline-height: 32px;
   --beamer-active-headline-height: var(--beamer-headline-height);
+  /* The logo's top edge. The headline collapses to 0px when it is off, and the
+     frame title then moves up to `top: 0` -- it is pinned at
+     `--beamer-active-headline-height` -- so the logo has to clear the frame
+     band instead of the headline. Dropping this and reading
+     `--beamer-active-headline-height` directly put the logo at y=24..52 inside
+     the band's y=0..58 (measured, Madrid with the headline off). */
+  --beamer-logo-top: calc(
+    max(var(--beamer-active-headline-height), var(--beamer-frame-height)) + 7px
+  );
   --beamer-frame-height: 58px;
   --beamer-footline-height: 30px;
   --beamer-logo-reserve: 225px;

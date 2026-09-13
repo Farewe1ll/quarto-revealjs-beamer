@@ -1,0 +1,38 @@
+---
+title: "Item frames next to the bibliography"
+author: "Pagination Author"
+date: "2026"
+short-title: "Adjacent items"
+short-author: "Pagination Author"
+short-institute: "Pagination Institute"
+short-date: "2026"
+beamer-variant: madrid
+bibliography: tests/fixtures/refs-pagination.bib
+refs-title: "References"
+refs-order: declaration
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+# Section
+
+## Item frame before the bibliography {#before-refs item="3"}
+
+`item` here is the author's own density hint. This frame must keep its text, must
+stay counted, and must receive no entries.
+
+Every entry is cited [@ref1] [@ref2] [@ref3] [@ref4] [@ref5] [@ref6] [@ref7]
+[@ref8] [@ref9] [@ref10] [@ref11] [@ref12] [@ref13].
+
+## References {#refs-one item="5"}
+
+::: {#refs}
+:::
+
+## Continuation
+
+## Item frame after the bibliography {#after-refs item="3"}
+
+This frame is adjacent to the bibliography and declares `item` too, but it carries
+the author's own body. It must keep its text, stay counted, and receive no entries.

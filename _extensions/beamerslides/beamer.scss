@@ -369,9 +369,6 @@ $border-radius: 4px !default;
   letter-spacing: 0;
 }
 
-/* Beamer renders a \section page through the same frametitle template as an
-   ordinary frame, so the section title is a full-text-width band pinned under
-   the headline -- not a centred badge floating in the middle of the slide. */
 /* Section pages come in three looks, chosen per heading with an attribute on
    the `#` line -- Quarto copies heading classes onto the <section>, so nothing
    has to be rewritten in the AST:
@@ -379,6 +376,11 @@ $border-radius: 4px !default;
      # Title                    full-bleed band under the headline (default)
      # Title {.section-badge}   centred rounded badge
      # Title {.section-minimal} plain text, no fill
+
+   The default band is what Beamer itself draws: it renders a \section page
+   through the same frametitle template as an ordinary frame, so the section
+   title is a full-text-width band pinned under the headline -- not a centred
+   badge floating in the middle of the slide.
 
    The look is expressed in custom properties, and the geometry is declarative:
    the band is in the flow (see the `h1` rule below), so nothing has to tell the
@@ -1272,7 +1274,7 @@ $border-radius: 4px !default;
 }
 
 .reveal .slide-logo {
-  top: calc(var(--beamer-active-headline-height) + 7px) !important;
+  top: var(--beamer-logo-top, 39px) !important;
   right: 22px !important;
   bottom: auto !important;
   left: auto !important;
@@ -1296,6 +1298,17 @@ $border-radius: 4px !default;
   margin: auto;
 }
 
+/* The paragraph that opens a frame's body. This rule is load-bearing for a frame
+   that does NOT scroll: the title band is absolutely positioned, so it is out of
+   the flow and `.reveal p { margin: 0.48em 0 }` above leaves the body's top margin
+   uncollapsed against nothing, pushing the prose 14.4px further down than the 22px
+   the padding already reserves (measured: gap 22px with this rule, 36px without).
+   It wins on specificity -- (0,4,2) against `.reveal p`'s (0,1,1) -- so it does not
+   depend on source order and must not be "simplified" to a tie.
+   It does NOT reach a scrolling frame: `wrapScrollableSlide` moves the paragraph
+   into `.beamer-scroll`, so `h2 + *` then matches the layer and never the
+   paragraph. That asymmetry is untouched here -- closing it is a layout decision,
+   not a fix. */
 .reveal .slides section.beamer-frame-slide > h2:first-of-type + * {
   margin-block-start: 0;
 }

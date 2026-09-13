@@ -1,0 +1,21 @@
+---
+title: "Logo and frame band"
+author: "Logo Author"
+date: "2026"
+short-title: "Logo"
+short-author: "Logo Author"
+short-institute: "Logo Institute"
+short-date: "2026"
+logo: assets/normal-density.svg
+beamer-variant: cambridgeus
+format: beamerslides-revealjs
+---
+
+## CambridgeUS, headline on
+
+CambridgeUS shows the headline by default, so the frame title band starts below it.
+The logo has to clear the band, not just the headline strip.
+
+## Second frame
+
+A second one-line frame, so the assertion does not rest on a single slide.

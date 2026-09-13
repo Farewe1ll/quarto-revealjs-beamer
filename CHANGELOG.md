@@ -8,9 +8,31 @@ Earlier releases predate this file; their history is in the git log.
 
 ## [Unreleased]
 
+### Breaking
+
+- **A bibliography continuation page must now be a bare heading — `## Title {item="N"}`
+  with no body.** Previously the adjacency test alone decided which pages belonged to
+  the bibliography, so ANY `item` page immediately after the `#refs` page was consumed
+  as a continuation page. That was wrong for a frame the author gave `item` on its own
+  account: it was marked `uncounted` (losing its page number) and had reference entries
+  prepended above the author's own paragraph. `item` is a general per-page density hint,
+  so it cannot distinguish the two on its own; the authored body can, and now does
+  (`refsPages` in `beamer.js`).
+  - If you wrote a continuation page **with** prose under its title, that frame is now a
+    plain frame and the bibliography will spill onto generated pages instead. Move the
+    prose off the page — both shipped templates keep their explanation in a
+    `::: {.notes}` block, which is a speaker note and does not count as a body — or drop
+    `item` from that frame and let the surplus paginate.
+  - A continuation page that is a bare heading keeps working unchanged, and the
+    `item`-declared page caps and the .bib declaration order are unaffected.
+
 ### Changed
 
-- **The two templates became complete feature tours, and their front matter now
+- **Both templates' reference continuation page became a bare heading.** Its
+  explanation of the continuation rules moved into a `::: {.notes}` block, because the
+  page can no longer carry prose (see Breaking above). The reader-visible content of the
+  deck is otherwise unchanged — measured, each template still renders two reference
+  pages of three entries (`references:3` + `参考文献续:3`).- **The two templates became complete feature tours, and their front matter now
   shows each variant's defaults.** They previously showed the frame title, three
   blocks and a few inline classes, and the README called them "complete examples"
   while they demonstrated no YAML option beyond the `short-*` values and the
@@ -63,8 +85,9 @@ Earlier releases predate this file; their history is in the git log.
   zero changed pixels — Chrome's PNG encoder is not byte-deterministic, which is
   also why the suite compares pixels rather than files.
 - **README reorganised and recalibrated against the repository.** Facts that were
-  scattered are now tables: `变量参考` lists all 48 `--beamer-*` variables with both
-  variants' values, and the test section lists the six environment variables.
+  scattered are now tables: `变量参考` lists every `--beamer-*` variable with both
+  variants' values (49 today, `--beamer-logo-top` included), and the test section lists
+  all 12 environment variables the suite reads instead of claiming six.
   Content that had drifted into the wrong section moved — math and the title-page
   note out of 配色, the palette test coverage into 测试, the page-geometry
   paragraphs into their own 版面几何 section. The section band's relationship to
@@ -76,6 +99,27 @@ Earlier releases predate this file; their history is in the git log.
 
 ### Fixed
 
+- **A logo is no longer painted inside the frame title band.** The band already
+  reserved the logo's WIDTH — `--beamer-logo-reserve` is written from the measured logo
+  box — and the menu button already cleared the band, but the logo's own line was never
+  implemented: its CSS top was `--beamer-active-headline-height + 7px`, and that variable
+  collapses to `0px` whenever the headline is off. So the logo sat inside the band in
+  both variants, by two different routes: measured at y=24..52 against the band's
+  y=0..58 with the headline off (Madrid's default) and y=82..110 against y=32..90 with it
+  on (CambridgeUS). `positionLogo` now measures the slide's own chrome bottom — the frame
+  title when there is one, the headline otherwise — and writes `--beamer-logo-top`, with
+  the stylesheet's `max(headline, frame-height)` as the no-JavaScript fallback. Covered
+  by `testLogoPlacement` on both variants; with the fix disabled the test reproduces the
+  original numbers exactly.
+- **An `item` frame next to the bibliography is no longer absorbed, on either side of
+  it.** The case *after* the `#refs` page is the Breaking entry above, and it is the one
+  that used to fail. The case *before* it was already handled. Both are now pinned by
+  tests rather than by the rule alone: `testReferencesAdjacentItems` (an unrelated frame
+  keeps its text, receives no entries, stays counted and shows a page number),
+  `testReferencesContinuation` (a bare `## Title {item="N"}` page with a speaker note is
+  still absorbed, and the note's presence must not disqualify it) and
+  `testReferencesImageFrame` (a frame whose only content is a figure renders no text yet
+  is still content). Each of the three fails against the code it was written for.
 - **Inline code: sized to the body's x-height, centred on its line, and slim enough
   that two chips on consecutive lines stay apart.** Four defects, all measured on the
   rendered page, and one rule now covers them.

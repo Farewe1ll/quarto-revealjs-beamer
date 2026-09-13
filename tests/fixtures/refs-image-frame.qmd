@@ -1,0 +1,32 @@
+---
+title: "Image-only frame next to the bibliography"
+author: "Pagination Author"
+date: "2026"
+short-title: "Image frame"
+short-author: "Pagination Author"
+short-institute: "Pagination Institute"
+short-date: "2026"
+beamer-variant: madrid
+bibliography: tests/fixtures/refs-pagination.bib
+refs-title: "References"
+refs-order: declaration
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+# Section
+
+## Body
+
+Every entry is cited [@ref1] [@ref2] [@ref3] [@ref4] [@ref5] [@ref6] [@ref7]
+[@ref8] [@ref9] [@ref10] [@ref11] [@ref12] [@ref13].
+
+## References {#refs-one item="5"}
+
+::: {#refs}
+:::
+
+## Figure-only frame {#image-frame item="3"}
+
+![](assets/normal-density.svg){width=45%}

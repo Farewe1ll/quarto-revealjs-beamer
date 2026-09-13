@@ -656,10 +656,66 @@
   // footline's page count does not move.
   //
   // Which pages belong to the bibliography: the one holding `::: {#refs}`, plus the
-  // `item`-declared pages that follow it with no gap. Taking every `item` page in the
-  // deck instead would hand the bibliography to an unrelated `## Frame {item="3"}`
-  // anywhere else -- either by making that frame the master (no `#refs`, so nothing
-  // paginates at all) or, when it comes after, by moving entries into it.
+  // `item`-declared pages that follow it with no gap AND that carry no content of their
+  // own. Taking every `item` page in the deck instead would hand the bibliography to an
+  // unrelated `## Frame {item="3"}` anywhere else -- either by making that frame the
+  // master (no `#refs`, so nothing paginates at all) or, when it comes after, by moving
+  // entries into it.
+  //
+  // `item` alone cannot tell a continuation page from an unrelated frame, because `item`
+  // is a general density hint an author may put on any frame. The authored body is what
+  // separates them: a continuation page is a bare `## Title {item="N"}`, while a real
+  // frame has prose under its title. Measured on the case the adjacency test used to
+  // swallow -- `## References {item="5"}` then `## Unrelated {item="3"}` with a
+  // paragraph -- the unrelated page was marked `uncounted` (losing its page number) and
+  // had reference entries prepended above the author's own paragraph.
+  //
+  // The body is read from the section's OWN children, not from `:scope > .beamer-scroll`.
+  // `refsPages` runs inside the decoration pass, BEFORE `slides.forEach(applySlideBox)`
+  // builds the scroll layers, so at this point a body is still a direct child and the
+  // layer does not exist yet -- an earlier version of this check looked for the layer and
+  // therefore returned `false` for every slide, leaving the adjacency test in charge.
+  // Measured at this moment, the authored frame was `H2,P` and the continuation page was
+  // `H2` alone.
+  //
+  // Excluded from "content": the frame title (`H1`/`H2`), the injected chrome, an
+  // `#refs` container, and speaker notes. Everything else counts. It is an exclusion list
+  // rather than "does it render text" on purpose: a frame's content can produce no text at
+  // all. A bare `![](figure.png)` is the measured case -- 1.10 wraps it in a `<p>` and 1.4
+  // puts the `<img>` straight into the `<section>`, and either way its `textContent` is
+  // empty -- and the safe direction for this decision is to NOT absorb a page. A page
+  // wrongly treated as a real frame spills the bibliography onto a generated page
+  // instead, which is visible; a page wrongly absorbed loses the author's numbering
+  // silently.
+  //
+  // The notes exclusion is load-bearing. Quarto compiles `::: {.notes}` to
+  // `<aside class="notes">`, which stays a DIRECT child of the `<section>` -- Reveal reads
+  // notes from there -- so without this exclusion a continuation page carrying a speaker
+  // note counts as having a body. Both shipped templates keep their continuation page's
+  // explanation in exactly such a note, and a version of this check that did not exclude
+  // it silently stopped absorbing them: measured, the author's
+  // `## Continuation {item="5"}` page received NO entries and the deck came out as
+  // `refs-one` / `refs-one-2` / `refs-one-2-3`, all generated, with the author's own page
+  // left empty.
+  //
+  // A DOCUMENT footnote is the other `<aside>` a slide can carry, and it is NOT excluded
+  // here. Quarto wraps the footnote list in a bare `<aside>` that is a direct child of the
+  // `<section>` and is itself empty -- `<aside><ol class="aside-footnotes">...</ol></aside>`
+  // in both 1.4 and 1.10, verified on `spacing-endnotes-madrid.html`'s `#footnote` page
+  // and on a minimal 1.10 fixture -- so the class lives on the `<ol>`, not on the
+  // `<aside>`, and an `aside.notes` exclusion does not describe it. That aside is empty, so
+  // this predicate does not see it as content anyway; a footnote page that carried nothing
+  // else would be read as a continuation page, which is unreachable in practice because
+  // every footnote has an anchor in the author's own prose.
+  const hasAuthoredBody = (slide) =>
+    Array.from(slide.children).some(
+      (child) =>
+        !/^H[12]$/.test(child.tagName) &&
+        !child.matches(
+          "#refs, .beamer-headline, .beamer-footline, aside.notes"
+        )
+    );
+
   const refsPages = () => {
     const order = leafSlides();
     const first = order.findIndex((slide) => slide.querySelector("#refs"));
@@ -669,7 +725,10 @@
     const pages = [order[first]];
     for (let index = first + 1; index < order.length; index += 1) {
       const slide = order[index];
-      if (!slide.querySelector("#refs") && slide.dataset.item === undefined) {
+      if (
+        !slide.querySelector("#refs") &&
+        (slide.dataset.item === undefined || hasAuthoredBody(slide))
+      ) {
         break;
       }
       pages.push(slide);
@@ -1368,6 +1427,54 @@
     }
   };
 
+  // The logo's line. Quarto positions the logo itself, and the stylesheet cannot
+  // know how tall a frame title band will be, so the line is measured here and
+  // written back as `--beamer-logo-top`.
+  //
+  // Measured evidence for the rule: with the headline off (Madrid's default)
+  // `--beamer-active-headline-height` is 0, so a CSS-only top put the logo at
+  // y=24..52 inside the band's y=0..58; with the headline on (CambridgeUS) it put
+  // the logo at y=82..110 inside the band's y=32..90. Both were painted over by
+  // the band, even though the band already reserves the logo's WIDTH through
+  // `--beamer-logo-reserve` -- the two halves of the same reservation were
+  // implemented in different places. This is the vertical half.
+  //
+  // The band is only a slide's own box when the slide HAS a frame title. A
+  // generated reference page can be titleless, so the fallback chain ends at the
+  // slide's top rather than at a stale title from another slide.
+  const positionLogo = (reveal, slide) => {
+    const logo = reveal.querySelector(".slide-logo");
+    if (!logo) {
+      return;
+    }
+    const logoRect = logo.getBoundingClientRect();
+    if (logoRect.width <= 0 || logoRect.height <= 0) {
+      return;
+    }
+    const revealRect = reveal.getBoundingClientRect();
+    const frameTitleRect = directHeading(slide, "h2")?.getBoundingClientRect();
+    const headlineRect = slide
+      .querySelector(":scope > .beamer-headline")
+      ?.getBoundingClientRect();
+    const scale = Math.max(
+      0.0001,
+      typeof window.Reveal?.getScale === "function"
+        ? window.Reveal.getScale()
+        : 1
+    );
+    const chromeBottom =
+      frameTitleRect?.bottom ??
+      headlineRect?.bottom ??
+      slide.getBoundingClientRect().top;
+    // `chromeBottom` falls back to the slide's top when neither chrome box can be
+    // measured -- the print and PDF paths -- and there the offset is just
+    // `spacing`, i.e. a positive 8px rather than a value this pass guessed.
+    const top =
+      (Math.max(chromeBottom, revealRect.top) - revealRect.top + 8 * scale) /
+      scale;
+    reveal.style.setProperty("--beamer-logo-top", `${Math.round(top)}px`);
+  };
+
   const positionNativeUi = (reveal, requestedSlide) => {
     const slide =
       requestedSlide ||
@@ -1377,6 +1484,11 @@
     if (!slide) {
       return;
     }
+
+    // The logo moves first: `--beamer-menu-top` below is `max(chrome, logo)`, so
+    // reading the logo's box before its new line is in force would place the menu
+    // against the old one.
+    positionLogo(reveal, slide);
 
     const slideRect = slide.getBoundingClientRect();
     const revealRect = reveal.getBoundingClientRect();
@@ -1476,12 +1588,13 @@
     reveal.classList.add(`beamer-${variant}`);
     reveal.classList.toggle("beamer-no-headline", !showHeadline);
 
-    // Ordering runs before pagination, and it has to: pagination decides the page
-    // breaks by walking the entries in DOM order, so reordering afterwards reorders
-    // entries inside pages that were already cut in citeproc's order -- measured on
-    // the pagination fixture as `ref13..ref9 / ref8..ref4 / ref3..ref1` where
-    // `refs-order: declaration` had been asked for `ref1..ref5 / ref6..ref10 /
-    // ref11..ref13`.
+    // The mode is resolved before the boxes are applied: it is what makes the references page
+    // scrollable, and the scroll layer is built from those classes.
+    const scrollReferences = refsOverflowScroll();
+    if (scrollReferences) {
+      prepareScrollableReferences();
+    }
+
     // Every slide gets its box before anything measures one. `beamer-frame-slide` is
     // what reserves the frame title's height in the slide's padding -- 58px + 22px
     // against the base 34px -- and this used to be applied in the decoration loop below,
@@ -1490,15 +1603,14 @@
     // late and came back with 37px of overflow, a scrollbar on a page that was supposed
     // to fit. `wrapScrollableSlide` belongs here too, because the layer's inset is read
     // from that same padding.
-    // The mode is resolved before the boxes are applied: it is what makes the references page
-    // scrollable, and the scroll layer is built from those classes.
-    const scrollReferences = refsOverflowScroll();
-    if (scrollReferences) {
-      prepareScrollableReferences();
-    }
-
     slides.forEach(applySlideBox);
 
+    // Ordering runs before pagination, and it has to: pagination decides the page
+    // breaks by walking the entries in DOM order, so reordering afterwards reorders
+    // entries inside pages that were already cut in citeproc's order -- measured on
+    // the pagination fixture as `ref13..ref9 / ref8..ref4 / ref3..ref1` where
+    // `refs-order: declaration` had been asked for `ref1..ref5 / ref6..ref10 /
+    // ref11..ref13`.
     reorderReferences();
 
     // Pagination runs before anything counts, numbers or measures the slides: it

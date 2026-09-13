@@ -1,0 +1,21 @@
+---
+title: "Logo and frame band"
+author: "Logo Author"
+date: "2026"
+short-title: "Logo"
+short-author: "Logo Author"
+short-institute: "Logo Institute"
+short-date: "2026"
+logo: assets/normal-density.svg
+format: beamerslides-revealjs
+---
+
+## Madrid, headline off
+
+Madrid runs with the headline off by default, so the frame title band is pinned at
+the top of the slide. The logo has to clear that band rather than the collapsed
+headline.
+
+## Second frame
+
+A second one-line frame, so the assertion does not rest on a single slide.

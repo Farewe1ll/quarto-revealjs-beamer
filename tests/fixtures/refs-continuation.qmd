@@ -1,0 +1,41 @@
+---
+title: "Bare continuation page"
+author: "Pagination Author"
+date: "2026"
+short-title: "Bare continuation"
+short-author: "Pagination Author"
+short-institute: "Pagination Institute"
+short-date: "2026"
+beamer-variant: madrid
+bibliography: tests/fixtures/refs-pagination.bib
+refs-title: "References"
+refs-order: declaration
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+# Section
+
+## Body
+
+Every entry is cited [@ref1] [@ref2] [@ref3] [@ref4] [@ref5] [@ref6] [@ref7]
+[@ref8] [@ref9] [@ref10] [@ref11] [@ref12] [@ref13].
+
+## References {#refs-one item="5"}
+
+::: {#refs}
+:::
+
+## Continuation {#refs-two item="5"}
+
+::: {.notes}
+This is the shape both shipped templates use, and it is what a continuation page has to
+be: a bare `## Title {item="N"}`. The explanation lives here, in a speaker note, because
+a note is not a body -- `hasAuthoredBody` has to exclude `aside.notes` or this page stops
+being recognised as a continuation page.
+:::
+
+## Last normal {#last-normal}
+
+The page number here must ignore every reference page.
