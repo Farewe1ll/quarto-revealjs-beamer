@@ -702,10 +702,7 @@ const testMadrid = async (connection, origin) => {
     `the chip must carry its air above the text, not below it: ` +
       JSON.stringify(chipPosition)
   );
-  await formatsPage.screenshot("chip-position");
-  const chipShot = PNG.sync.read(
-    readFileSync(join(artifactsDir, "chip-position.png"))
-  );
+  const chipShot = await captureForMeasurement(connection, formatsPage);
   // "HHH" is capitals only, so its ink top row is the cap line and its bottom row
   // is the baseline: the two lines the eye measures the chip's box against.
   const inkRows = (x0, x1, y0, y1) => scanInkRows(chipShot, x0, x1, y0, y1);
@@ -3523,6 +3520,20 @@ const testSectionStyles = async (connection, origin) => {
 // position is checked: a baseline derived from canvas metrics is 1.4px off on the
 // fixture pages and the test's difference doubles that error, so the measurement
 // has to come from the render.
+// A capture for MEASURING, deliberately without a committed baseline: these
+// assertions compare parts of one capture, so they hold wherever the fallback fonts
+// differ. A stored baseline would not -- the runner image ships no CJK font at all
+// (only fonts-noto-color-emoji), so a Chinese fixture renders as tofu boxes there and
+// any baseline made on a machine with a real CJK face would drift past the tolerance.
+const captureForMeasurement = async (connection, page) => {
+  const { data } = await connection.send(
+    "Page.captureScreenshot",
+    { format: "png", fromSurface: true, captureBeyondViewport: false },
+    page.sessionId
+  );
+  return PNG.sync.read(Buffer.from(data, "base64"));
+};
+
 const scanInkRows = (png, x0, x1, y0, y1, maximumLuminance = 150) => {
   let first = -1;
   let last = -1;
@@ -3916,22 +3927,46 @@ const testCjkChipAlignment = async (connection, origin) => {
     `chips on consecutive lines must have room between them: ` +
       JSON.stringify({ clearance, ...state })
   );
-  await page.screenshot("chip-cjk");
-  const shot = PNG.sync.read(readFileSync(join(artifactsDir, "chip-cjk.png")));
   const y0 = Math.round(state.chip.top) - 6;
   const y1 = Math.round(state.chip.bottom) + 6;
-  const cjkInk = scanInkRows(shot, Math.round(state.cjk.left), Math.round(state.cjk.right), y0, y1, 120);
-  const codeInk = scanInkRows(shot, Math.round(state.chip.left) + 5, Math.round(state.chip.right) - 5, y0, y1, 120);
+  const centres = async () => {
+    const shot = await captureForMeasurement(connection, page);
+    const cjkInk = scanInkRows(shot, Math.round(state.cjk.left), Math.round(state.cjk.right), y0, y1, 120);
+    const codeInk = scanInkRows(shot, Math.round(state.chip.left) + 5, Math.round(state.chip.right) - 5, y0, y1, 120);
+    assert(
+      cjkInk.first >= 0 && codeInk.first >= 0,
+      `both runs must paint ink on that line: ${JSON.stringify({ cjkInk, codeInk, state })}`
+    );
+    return {
+      delta: (codeInk.first + codeInk.last) / 2 - (cjkInk.first + cjkInk.last) / 2,
+      cjkInk,
+      codeInk
+    };
+  };
+  const raised = await centres();
+  // Same page, same fonts, raise switched off: the effect has to be real, and this
+  // half of the check cannot depend on which ideograph face the platform resolves.
+  await page.evaluate(`(() => {
+    const style = document.createElement("style");
+    style.textContent =
+      ".reveal:lang(zh) code:not(pre code), .reveal:lang(ja) code:not(pre code), " +
+      ".reveal:lang(ko) code:not(pre code) { vertical-align: baseline; }";
+    style.id = "no-raise";
+    document.head.appendChild(style);
+  })()`);
+  const unraised = await centres();
+  await page.evaluate(`(() => { const style = document.getElementById("no-raise"); if (style) style.remove(); })()`);
   assert(
-    cjkInk.first >= 0 && codeInk.first >= 0,
-    `both runs must paint ink on that line: ${JSON.stringify({ cjkInk, codeInk, state })}`
+    Math.abs(unraised.delta) - Math.abs(raised.delta) >= 1.5,
+    `the CJK raise must move the code towards the hanzi's optical centre: ` +
+      JSON.stringify({ raised, unraised })
   );
-  const cjkCentre = (cjkInk.first + cjkInk.last) / 2;
-  const codeCentre = (codeInk.first + codeInk.last) / 2;
+  // Loose, because the ideograph face is whatever the platform has -- on a machine
+  // without one the reference band is a tofu box, which is not a glyph's ink.
   assert(
-    Math.abs(codeCentre - cjkCentre) <= 2,
+    Math.abs(raised.delta) <= 3,
     `inline code must sit optically centred on a CJK line: ` +
-      JSON.stringify({ cjkCentre, codeCentre, cjkInk, codeInk })
+      JSON.stringify({ raised, unraised })
   );
   await page.close();
 };
