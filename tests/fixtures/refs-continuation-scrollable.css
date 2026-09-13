@@ -1,0 +1,7 @@
+/*-- scss:rules --*/
+
+/* Deliberately large, so a page holds few entries and "the surplus must spill"
+   is decidable without depending on the platform's font metrics. */
+.reveal {
+  --beamer-refs-font-size: 2em;
+}

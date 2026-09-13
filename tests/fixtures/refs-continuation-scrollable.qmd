@@ -1,0 +1,39 @@
+---
+title: "Scrollable continuation page"
+author: "Pagination Author"
+date: "2026"
+short-title: "Scrollable continuation"
+short-author: "Pagination Author"
+short-institute: "Pagination Institute"
+short-date: "2026"
+beamer-variant: madrid
+bibliography: tests/fixtures/refs-pagination.bib
+format:
+  beamerslides-revealjs:
+    reference-location: document
+    css: tests/fixtures/refs-continuation-scrollable.css
+---
+
+# Section
+
+## Body
+
+Every entry is cited [@ref1] [@ref2] [@ref3] [@ref4] [@ref5] [@ref6] [@ref7]
+[@ref8] [@ref9] [@ref10] [@ref11] [@ref12] [@ref13].
+
+## References {#refs-one item="50"}
+
+::: {#refs}
+:::
+
+## Continuation {#refs-two item="50" .scrollable .refs-page-two}
+
+::: {.notes}
+A continuation page that also scrolls. The note is what gives this page a scroll
+layer before the pagination runs, so the entry list has to be placed inside that
+layer -- otherwise the overflow test measures an empty box.
+:::
+
+## Last normal {#last-normal}
+
+The page number here must ignore every reference page.

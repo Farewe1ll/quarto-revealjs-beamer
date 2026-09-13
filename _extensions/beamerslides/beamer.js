@@ -697,13 +697,20 @@
   // paragraph -- the unrelated page was marked `uncounted` (losing its page number) and
   // had reference entries prepended above the author's own paragraph.
   //
-  // The body is read from the section's OWN children, not from `:scope > .beamer-scroll`.
-  // `refsPages` runs inside the decoration pass, BEFORE `slides.forEach(applySlideBox)`
-  // builds the scroll layers, so at this point a body is still a direct child and the
-  // layer does not exist yet -- an earlier version of this check looked for the layer and
-  // therefore returned `false` for every slide, leaving the adjacency test in charge.
-  // Measured at this moment, the authored frame was `H2,P` and the continuation page was
-  // `H2` alone.
+  // The body is read from the section's OWN children, one level through a scroll layer
+  // when the page has one. The two callers of `refsPages` reach this at different points:
+  // `prepareScrollableReferences` runs before `applySlideBox`, so no page has a layer yet,
+  // while `paginateReferences` runs after it, so every page that scrolls has had its body
+  // moved into `:scope > .beamer-scroll`. Reading only the direct children therefore saw
+  // the LAYER as the body of a scrolling continuation page, and a page carrying a speaker
+  // note (which is enough to build a layer) stopped being recognised as a continuation
+  // page at all -- it rendered empty, stayed in the page count, and the bibliography
+  // spilled onto generated pages instead. Looking through the layer is what makes the
+  // predicate mean the same thing at both call sites, and it is why `aside.notes` has to
+  // be excluded here rather than by the layer's absence.
+  //
+  // Measured with the layout this produces: the authored frame is `H2,P` and the
+  // continuation page is `H2` alone, whether or not either has a scroll layer.
   //
   // Excluded from "content": the frame title (`H1`/`H2`), the injected chrome, an
   // `#refs` container, and speaker notes. Everything else counts. It is an exclusion list
@@ -734,8 +741,16 @@
   // this predicate does not see it as content anyway; a footnote page that carried nothing
   // else would be read as a continuation page, which is unreachable in practice because
   // every footnote has an anchor in the author's own prose.
+  //
+  // A page's authored content, with a scroll layer replaced by its own children: the layer
+  // is furniture this script builds, not something the author wrote.
+  const authoredChildren = (slide) =>
+    Array.from(slide.children).flatMap((child) =>
+      child.matches(".beamer-scroll") ? Array.from(child.children) : [child]
+    );
+
   const hasAuthoredBody = (slide) =>
-    Array.from(slide.children).some(
+    authoredChildren(slide).some(
       (child) =>
         !/^H[12]$/.test(child.tagName) &&
         !child.matches(
@@ -804,6 +819,15 @@
   // The list that holds the entries, creating it when the page does not have one yet.
   // A continuation page declared with `item` but without `::: {#refs}` starts empty,
   // and the fill loop needs somewhere to put its entries.
+  //
+  // A page that already scrolls gets the container INSIDE its layer, not beside it.
+  // `layerOverflows` asks the layer, so a list parked next to an empty layer made the
+  // overflow test read zero for every entry: the page then took as many entries as
+  // `item` allowed no matter how few fitted, and the surplus was never spilled. Measured
+  // on a continuation page carrying a speaker note -- the note is enough to build the
+  // layer -- with `item="50"`: 11 of 13 entries landed on one page and it overflowed by
+  // 63px, with no warning and no page added; the same deck without the note spilled at
+  // the measured limit instead.
   const entryList = (slide, master) => {
     let container = refsContainer(slide);
     if (!container) {
@@ -812,8 +836,11 @@
         .filter(Boolean)
         .join(" ");
       container.setAttribute("role", master.getAttribute("role") || "list");
+      const layer = slide.querySelector(":scope > .beamer-scroll");
       const before = slide.querySelector(":scope > .beamer-footline");
-      if (before) {
+      if (layer) {
+        layer.appendChild(container);
+      } else if (before) {
         slide.insertBefore(container, before);
       } else {
         slide.appendChild(container);
@@ -916,14 +943,26 @@
     // entry is 49px on one page and 105px on the next (measured), and the generated
     // pages get no scroll layer at all. Every page takes page 1's layout classes, so
     // the author declares the look once.
+    //
+    // Merged, not assigned. `slide.className = ...` looked equivalent but replaced the
+    // whole list, so a continuation page lost whatever the author had put on it -- a
+    // `{.center}` stopped centring, and a document's own hook class (measured with
+    // `{.center .my-refs-page}`) was gone from the rendered deck. Reveal's own state
+    // classes are excluded for the same reason they must not be copied: they describe
+    // which slide is current, not how a page looks.
     // `.beamer-leaf-slide` is added later in the decoration pass, so it is not in the
     // class list read here -- assigning `className` outright would strip it from any
     // page that already had it and leave that page without its scroll layer.
-    const layoutClasses = master.closest("section").className
-      .split(/\s+/)
-      .filter((name) => name && name !== "beamer-leaf-slide");
+    const transientClasses = new Set(["present", "past", "future"]);
+    const layoutClasses = master
+      .closest("section")
+      .className.split(/\s+/)
+      .filter(
+        (name) =>
+          name && name !== "beamer-leaf-slide" && !transientClasses.has(name)
+      );
     pages.forEach((slide) => {
-      slide.className = layoutClasses.join(" ");
+      layoutClasses.forEach((name) => slide.classList.add(name));
       // The scroll layer is what makes `layerOverflows` meaningful, and this runs
       // before the decoration pass that would normally create it, so it is created
       // here. Without it the overflow check falls back to measuring the slide, which
@@ -934,20 +973,34 @@
     });
 
     const declared = pages.map(refsItemCount);
+    // The heading a bibliography page carries, whichever level it is written at: the
+    // README documents `# References` + `::: {#refs}` and `## References` + `::: {#refs}`
+    // as equivalent, so the text and the tag have to be read the same way. Reading only
+    // `h2` here left a level-1 bibliography's generated pages titled with the English
+    // fallback while their tag was correctly `h1` -- measured `references-2` and its
+    // successors reading "References" under a `# 参考文献` page.
+    const pageHeading = (slide) =>
+      directHeading(slide, "h1") || directHeading(slide, "h2");
     const baseTitle =
-      meta("beamer-refs-title") ||
-      text(directHeading(pages[0], "h2")) ||
-      "References";
+      meta("beamer-refs-title") || text(pageHeading(pages[0])) || "References";
 
-    // Page `index` may not exist yet; the class unification above makes page 1 a
-    // faithful template for it.
+    // Page `index` may not exist yet. It is modelled on the LAST page rather than on
+    // page 1: after the class unification above, every page carries page 1's layout
+    // classes, so the two agree on everything that decides the box -- while a class the
+    // author put on the last page (`.scrollable`, say) is the look this page continues.
     const ensurePage = (index) => {
       if (pages[index]) {
         return pages[index];
       }
       const template = pages[pages.length - 1];
       const slide = document.createElement("section");
-      slide.className = template.className;
+      // Reveal's own state classes are dropped, for the reason the unification above
+      // excludes them: they say which slide is current, and a page created while the
+      // template happens to be current would otherwise be marked `present` as well.
+      slide.className = template.className
+        .split(/\s+/)
+        .filter((name) => name && !transientClasses.has(name))
+        .join(" ");
       slide.id = `${template.id || "references"}-${index + 1}`;
       if (baseTitle) {
         // The template's own level, not a fixed `h2`. The band a title gets is
@@ -1347,7 +1400,14 @@
     }
     if (layer) {
       for (const child of Array.from(layer.children)) {
-        if (!isSlideTitle(slide, child)) {
+        if (isSlideTitle(slide, child)) {
+          // Not a state this builder produces -- it never moves a title in -- but a
+          // title that ended up in the layer has to come back OUT before the layer is
+          // discarded, or `layer.remove()` deletes the frame title along with it. A
+          // later reordering that places the title after the layer would otherwise
+          // drop it silently.
+          slide.insertBefore(child, layer);
+        } else {
           content.push(child);
         }
       }

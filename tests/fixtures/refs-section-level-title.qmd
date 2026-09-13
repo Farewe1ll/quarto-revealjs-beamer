@@ -1,0 +1,27 @@
+---
+title: "Section-level references without refs-title"
+author: "Section Refs Author"
+date: "2026"
+short-title: "Section refs title"
+short-author: "Section Refs Author"
+beamer-variant: madrid
+bibliography: tests/fixtures/refs-pagination.bib
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+# Body {#section-title-body}
+
+Every entry is cited so citeproc renders all of them [@ref1] [@ref2] [@ref3] [@ref4]
+[@ref5] [@ref6] [@ref7] [@ref8] [@ref9] [@ref10] [@ref11] [@ref12] [@ref13].
+
+# 参考文献 {#section-title-main item="3"}
+
+::: {#refs}
+:::
+
+# Last normal {#section-title-last}
+
+The generated continuation pages must take their text from this file's own `#`
+heading, not from an English default.
