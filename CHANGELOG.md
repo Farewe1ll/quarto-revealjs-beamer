@@ -128,6 +128,22 @@ Earlier releases predate this file; their history is in the git log.
   A new fixture (`chip-cjk`) and assertion check the CJK half in pixels; the
   Latin half is what the `chip-position` assertion above already guards, since a
   leaked raise would break its balance by 2.4px.
+- **Chips on consecutive lines no longer crowd each other.** Reported from the
+  same screenshot: the box sits in a 38.4px line box, so every pixel it grows comes
+  straight out of the clearance to the chip below it. Four changes, each measured on
+  the template page that was reported:
+
+  - The 1px ring is drawn INSIDE the box (`box-shadow: inset`), so it no longer
+    spends 2px of clearance outside it.
+  - A CJK line no longer needs the top padding at all: the 0.1em raise added in the
+    entry above is already doing the centring (the two centres still measure 0.00px
+    apart). Dropping it takes the box from 32.2px to 29.0px, which is the font's own
+    box — an inline element cannot go below that, and `line-height` demonstrably does
+    not move it (measured: identical at 1, 1.1 and 1.5).
+  - Net effect on the reported page: the chips on two consecutive lines went from
+    4.2px of visible clearance to 9.4px, with the box still centred on the hanzi.
+  - Latin decks keep the top padding, because there the padding is what centres the
+    box against the cap line and the baseline; nothing about their geometry changed.
 - **The `.section-minimal` section page splits its air evenly instead of leaving
   the title floating.** The look kept the band's `min-height` and the heading's
   bottom margin, which around bare text pushed the body away and left 13px of air
