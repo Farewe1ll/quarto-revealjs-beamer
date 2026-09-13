@@ -122,15 +122,23 @@ Earlier releases predate this file; their history is in the git log.
   padding balanced the box almost exactly but grew it to 36.1px, leaving 2.3px between
   those chips, and that is the shape that was reported.
 
-  The suite checks the halves separately and in pixels: `chip-position` screenshots the
-  Latin fixture and compares the air above the body's cap line with the air below its
-  baseline (3px tolerance — it rejects the old symmetric padding, and a leaked CJK
-  raise would break it by 2.4px), and `chip-cjk` screenshots a Chinese fixture and
-  compares the two ink bands' centres (2px), asserting the box carries no top padding
-  and that the line box leaves at least 8px between consecutive chips. Two fixtures
-  gained the spans those captures need: `madrid.qmd` an inline-code chip on a
-  screenshotted page plus a deliberately single-line probe paragraph, and the new
-  `chip-cjk.qmd` a hanzi line with a chip.
+  The suite checks the halves separately, in pixels, and deliberately without
+  baselines: it captures the page and compares parts of that one capture. On the Latin
+  fixture it measures the air above the body's cap line against the air below its
+  baseline, once with the shipped padding and once with the old symmetric value
+  injected, and requires the shipped one to be better balanced. That direction holds on
+  every monospace fallback, where the magnitude does not — it is 1.2px on the stack this
+  was measured on, and the runner resolves Liberation Mono through Chrome's own
+  dependency. On the Chinese fixture it does the same for the raise: the code's ink band
+  against the hanzi's, raise on and raise off, requiring the raise to close the gap by
+  at least 1.5px, plus the box carrying no top padding and the line box leaving at least
+  8px between consecutive chips. Baselines are not used for either because the runner
+  ships no CJK font at all (the ubuntu image lists only fonts-noto-color-emoji), so a
+  Chinese fixture renders as tofu boxes there and any baseline made on a machine with a
+  real CJK face would drift past the 1.5% tolerance. Two fixtures gained the spans those
+  captures need: `madrid.qmd` an inline-code chip on a screenshotted page plus a
+  deliberately single-line probe paragraph, and the new `chip-cjk.qmd` a hanzi line with
+  a chip.
 - **The `.section-minimal` section page splits its air evenly instead of leaving
   the title floating.** The look kept the band's `min-height` and the heading's
   bottom margin, which around bare text pushed the body away and left 13px of air
