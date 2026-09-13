@@ -17,3 +17,22 @@ format:
 ## Frame {#palette-frame}
 
 A document-level `:root` override must reach the CambridgeUS palette too.
+
+# Badge look {.section-badge}
+
+The badge fill is derived at its point of use, so it must follow the override.
+
+# Minimal look {.section-minimal}
+
+The minimal title is derived at its point of use, so it must follow the override.
+
+## A frame with a block {#palette-block-frame}
+
+::: {.block title="Block title"}
+The block title's text colour is a derivation surface too.
+:::
+
+::: {.exampleblock title="Example title"}
+The example title is a derivation surface too: CambridgeUS takes `example text`,
+Madrid pins its own literal.
+:::

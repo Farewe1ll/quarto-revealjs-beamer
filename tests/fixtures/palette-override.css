@@ -5,7 +5,10 @@
    - `--beamer-primary` (the variant accent) and `--beamer-structure` (the
      colour bullets and block titles derive from) are separate roles and must
      both be overridable. The stock values differ per variant: Madrid keeps
-     Beamer's blendedblue, CambridgeUS uses its own darkred. */
+     Beamer's blendedblue, CambridgeUS uses its own darkred;
+   - values that DERIVE from another variable must follow a `.reveal`-level
+     override too, which is why the badge and the minimal section title are
+     asserted as well: they are the surfaces that used to resolve on <html>. */
 :root {
   --beamer-footline-author-bg: #123456;
 }
@@ -13,8 +16,18 @@
 .reveal.beamer-madrid {
   --beamer-primary: #2c7550;
   --beamer-frame-bg: #2c7550;
+  /* Read by the badge through `--beamer-section-fill`. */
+  --beamer-section-title-bg: #1f6f8b;
+  /* Read by the bullets, by `h3`-`h6` and by the `.section-minimal` title. */
+  --beamer-structure: #7a3ea8;
+  /* Madrid pins the example title as a literal, so this must NOT reach it. */
+  --beamer-example: #b06000;
 }
 
 .reveal.beamer-cambridgeus {
   --beamer-primary: #a30000;
+  /* Read by the bullets, the block titles and the `.section-minimal` title. */
+  --beamer-structure: #7a3ea8;
+  /* CambridgeUS derives its example title from this, so it must follow. */
+  --beamer-example: #b06000;
 }

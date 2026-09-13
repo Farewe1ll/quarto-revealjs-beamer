@@ -54,6 +54,13 @@ $border-radius: 4px !default;
 .reveal {
   color: var(--beamer-ink);
   font-synthesis: none;
+  /* Derived here rather than in `_palette.scss`, and that placement is the point:
+     `var()` is substituted where a custom property is DECLARED, so a palette-level
+     `--beamer-active-headline-height: var(--beamer-headline-height)` froze at the
+     value `<html>` carried and left a `.reveal`-level `--beamer-headline-height`
+     override with no effect on the layout. Collapsed by `.beamer-no-headline`
+     below, which is the only other value it takes. */
+  --beamer-active-headline-height: var(--beamer-headline-height);
 }
 
 .reveal .slides {
@@ -137,6 +144,13 @@ $border-radius: 4px !default;
 }
 
 /* Headline and footline */
+
+/* The headline is off for Madrid's default layout; the layout then reserves no
+   room for it. Kept beside the rule above so the two values of
+   `--beamer-active-headline-height` are read together. */
+.reveal.beamer-no-headline {
+  --beamer-active-headline-height: 0px;
+}
 
 .beamer-headline,
 .beamer-footline {
@@ -431,10 +445,39 @@ $border-radius: 4px !default;
      point is the rounded box, and a shadow drawn around a transparent one
      reads as a stray rule under the text. Variants that leave the section band
      transparent supply their own fill through these two properties.
-     No fallback here: the palette defines both badge variables unconditionally
-     for every variant, so a fallback could never be reached. */
-  --beamer-section-fill: var(--beamer-section-badge-bg);
-  --beamer-section-fg: var(--beamer-section-badge-fg);
+     The fallbacks are the band's own colours, which is what Madrid's badge has
+     always used; CambridgeUS overrides the fill below, because its band is
+     transparent and a transparent badge would vanish. */
+  /* Derived at the point of use, so a document overriding the section colours
+     (or the accent) on `.reveal` reaches the badge too. A palette-level
+     `--beamer-section-badge-bg: var(--beamer-section-title-bg)` resolved on
+     `<html>` and left the badge on the stock fill -- measured before this moved:
+     the bands turned green and the badge stayed #3333b2. CambridgeUS, whose band
+     is transparent, supplies its own fill through the variant rule below. */
+  --beamer-section-fill: var(--beamer-section-badge-bg, var(--beamer-section-title-bg));
+  --beamer-section-fg: var(--beamer-section-badge-fg, var(--beamer-section-title-fg));
+}
+
+/* CambridgeUS leaves the block title unfilled and colours it with `structure`
+   (and its example titles with `example text`). Both roles have to be re-pointed
+   for this variant, because the palette's stock values for them are Madrid's
+   literals, which `:root` hands to both variants. Written HERE rather than in
+   `_palette.scss`: a value containing `var()` is substituted on the element it is
+   declared on, so the palette's own CambridgeUS block resolved both against
+   `<html>` and a `.reveal`-level `--beamer-structure` never reached the block
+   titles. Declared on `.reveal.beamer-cambridgeus`, the substitution happens
+   below any document override, and this rule still outranks `:root`. */
+.reveal.beamer-cambridgeus {
+  --beamer-block-title-fg: var(--beamer-structure);
+  --beamer-block-example-title-fg: var(--beamer-example);
+}
+
+/* CambridgeUS fills the section band with nothing, so the badge would inherit a
+   transparent "fill" and vanish. The variant accent is the documented fallback. */
+.reveal.beamer-cambridgeus
+  .slides
+  section.beamer-section-slide.section-badge {
+  --beamer-section-fill: var(--beamer-section-badge-bg, var(--beamer-primary));
 }
 
 /* In the badge look the title is part of the centred flow, so it must not keep
@@ -872,7 +915,9 @@ $border-radius: 4px !default;
   display: block;
   margin: -0.62em -0.76em 0.5em;
   padding: 0.36em 0.76em 0.24em;
-  color: var(--beamer-block-title-fg);
+  /* Derived at the point of use: CambridgeUS reads `--beamer-structure` here, which a
+     palette-level declaration would have frozen on `<html>`. Madrid pins the literal. */
+  color: var(--beamer-block-title-fg, var(--beamer-structure));
   background: var(--beamer-block-title-band);
   font-size: 0.82em;
   font-weight: 650;
@@ -888,13 +933,13 @@ $border-radius: 4px !default;
    (CambridgeUS) the difference shows up as the title text colour instead. */
 .beamer-block.beamer-example > .beamer-block-title,
 .beamer-block.beamer-example[data-title]::before {
-  color: var(--beamer-block-example-title-fg, var(--beamer-block-title-fg));
+  color: var(--beamer-block-example-title-fg, var(--beamer-example));
   background: var(--beamer-block-example-title-bg);
 }
 
 .beamer-block.beamer-alert > .beamer-block-title,
 .beamer-block.beamer-alert[data-title]::before {
-  color: var(--beamer-block-alert-title-fg, var(--beamer-block-title-fg));
+  color: var(--beamer-block-alert-title-fg, var(--beamer-block-title-fg, var(--beamer-structure)));
   background: var(--beamer-block-alert-title-bg);
   /* Whatever `--beamer-block-alert-title-weight` carries. CambridgeUS makes
      this 700 against ~600 for the other titles, so the alert outranks them by
@@ -1280,7 +1325,17 @@ $border-radius: 4px !default;
 }
 
 .reveal .slide-logo {
-  top: var(--beamer-logo-top, 39px) !important;
+  /* The fallback is the palette's documented `max(active headline, frame title) +
+     7px`, computed HERE rather than in `_palette.scss`: it reads
+     `--beamer-active-headline-height`, which is declared on `.reveal`, and a
+     palette-level copy would have resolved on `<html>` where that variable is not
+     in scope -- measured, the palette entry then computed to nothing and this rule
+     fell through to a flat 39px, 26px above the value it documents. `beamer.js`
+     overwrites the variable with the measured chrome bottom once Reveal is ready. */
+  top: var(
+    --beamer-logo-top,
+    calc(max(var(--beamer-active-headline-height), var(--beamer-frame-height)) + 7px)
+  ) !important;
   right: 22px !important;
   bottom: auto !important;
   left: auto !important;
@@ -1394,7 +1449,10 @@ html.print-pdf .reveal .slides section.beamer-center-slide {
 
 html.reveal-print .reveal .slides section.beamer-section-slide,
 html.print-pdf .reveal .slides section.beamer-section-slide {
-  padding: var(--beamer-active-headline-height) 58px calc(var(--beamer-footline-height) + 34px) !important;
+  /* 22px, matching the screen rule: this used to reserve 34px while the screen
+     reserved 22px, which was the only page kind whose print and screen boxes
+     disagreed (the leaf, frame and title pages all carry the same value in both). */
+  padding: var(--beamer-active-headline-height) 58px calc(var(--beamer-footline-height) + 22px) !important;
 }
 
 /* Print re-applies the `center` class's `justify-content: center` at a

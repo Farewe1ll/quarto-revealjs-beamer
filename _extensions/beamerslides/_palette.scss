@@ -3,6 +3,18 @@
    overrides, so `:root { --beamer-primary: ... }` silently did nothing.
    Custom properties inherit, so every element still sees them.
 
+   EVERY VALUE HERE IS A LITERAL, and that is a rule rather than a style: a
+   declaration whose value contains `var()` is substituted on the element it is
+   written on, and `<html>` is the one element no document-level override sits
+   below. `--beamer-section-badge-bg: var(--beamer-section-title-bg)` written
+   here, for instance, froze at the stock title colour, so overriding
+   `--beamer-section-title-bg` on `.reveal` -- which the README documents as
+   supported -- recoloured the section bands and left the badge behind. Values
+   that DERIVE from another variable therefore live at their point of use, in
+   `beamer.scss`, where the substitution happens against whatever the element
+   actually inherited. See `--beamer-section-fill` and the block title colours
+   there.
+
    Colour roles follow Beamer's own colour algebra rather than taste. Madrid
    loads `whale` + `orchid` + `beamerouterthemeinfolines`, whose values are all
    derived from `structure` (= `beamer@blendedblue` = rgb(0.2,0.2,0.7)).
@@ -61,9 +73,8 @@
   --beamer-ink: #202124;
   --beamer-muted: #5f6670;
 
-  /* Madrid already fills its bands, so the badge keeps the section fill. */
-  --beamer-section-badge-bg: var(--beamer-section-title-bg);
-  --beamer-section-badge-fg: var(--beamer-section-title-fg);
+  /* Madrid already fills its bands, so the badge keeps the section fill --
+     derived in `beamer.scss` from `--beamer-section-title-bg` / `-fg`. */
 
   --beamer-title-bg: #3333b2;
   --beamer-title-fg: #ffffff;
@@ -72,8 +83,8 @@
   --beamer-section-title-fg: #ffffff;
   /* The minimal look drops the band's fill, so it cannot keep the band's
      white text -- on a light page that is white on white. It uses the accent
-     instead, which also makes it read consistently in both variants. */
-  --beamer-section-minimal-fg: var(--beamer-structure);
+     instead, which also makes it read consistently in both variants. Derived
+     from `--beamer-structure` at the point of use, in `beamer.scss`. */
 
   /* Reference lists are the one place where a document can put an unbounded
      amount of text on a slide, so they get their own size knob. Lowering it lets
@@ -105,16 +116,17 @@
   --beamer-block-alert-title-stroke: 0;
 
   --beamer-headline-height: 32px;
-  --beamer-active-headline-height: var(--beamer-headline-height);
-  /* The logo's top edge. The headline collapses to 0px when it is off, and the
-     frame title then moves up to `top: 0` -- it is pinned at
-     `--beamer-active-headline-height` -- so the logo has to clear the frame
-     band instead of the headline. Dropping this and reading
-     `--beamer-active-headline-height` directly put the logo at y=24..52 inside
-     the band's y=0..58 (measured, Madrid with the headline off). */
-  --beamer-logo-top: calc(
-    max(var(--beamer-active-headline-height), var(--beamer-frame-height)) + 7px
-  );
+  /* `--beamer-active-headline-height` is derived from it in `beamer.scss`, on
+     `.reveal`, so that overriding `--beamer-headline-height` there moves the
+     layout as well as the headline itself. */
+  /* The logo's top edge (`max(active headline, frame title) + 7px`) is the other
+     derivation that moved to `beamer.scss`: the headline collapses to 0px when
+     it is off and the frame title then moves up to `top: 0` -- it is pinned at
+     `--beamer-active-headline-height` -- so the logo has to clear the FRAME BAND
+     instead of the headline. Reading the headline alone put the logo at y=24..52
+     inside the band's y=0..58 (measured, Madrid with the headline off). It has to
+     be computed at the logo, because the variable it reads is declared on
+     `.reveal`. */
   --beamer-frame-height: 58px;
   --beamer-footline-height: 30px;
   --beamer-logo-reserve: 225px;
@@ -176,7 +188,6 @@
   --beamer-title-subtitle-fg: #7a0000;
   --beamer-section-title-bg: transparent;
   --beamer-section-title-fg: #cc0000;
-  --beamer-section-minimal-fg: var(--beamer-structure);
 
   --beamer-headline-section-bg: #a30000;
   --beamer-headline-section-fg: #f2f2f2;
@@ -199,15 +210,17 @@
        example  #008000  green           `example text`, pinned by beamer
        alert    #ffcd00  yellow + black  stroke, weight 700 */
   /* CambridgeUS gives the section band no fill, so a shadow would outline an
-     invisible box. The centred badge needs one to be visible at all, so it
-     falls back to the variant accent. */
-  --beamer-section-badge-bg: var(--beamer-primary);
+     invisible box. The centred badge needs one to be visible at all, and takes
+     the variant accent through `--beamer-section-fill` in `beamer.scss`. Only
+     the foreground is pinned here, because the accent would leave the badge's
+     own text red on red. */
   --beamer-section-badge-fg: #ffffff;
 
   --beamer-block-title-bg: transparent;
-  --beamer-block-title-fg: var(--beamer-structure);
+  /* The title's text colour is `--beamer-structure` for this variant, derived at
+     the point of use in `beamer.scss`. */
   --beamer-block-example-title-bg: transparent;
-  --beamer-block-example-title-fg: var(--beamer-example);
+  /* Its text colour is `--beamer-example`, likewise derived at the point of use. */
 
   /* Alert title: yellow text on the slide background, unfilled, as requested.
      NOTE ON CONTRAST: this yellow measures 1.48:1 against the light slide
@@ -230,8 +243,4 @@
      outline than the neighbouring titles while leaving the most yellow. */
   --beamer-block-alert-title-stroke: 3px;
   --beamer-block-alert-title-stroke-color: #000000;
-}
-
-.reveal.beamer-no-headline {
-  --beamer-active-headline-height: 0px;
 }

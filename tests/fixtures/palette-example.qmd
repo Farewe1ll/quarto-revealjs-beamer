@@ -17,3 +17,24 @@ format:
 ## Frame {#palette-frame}
 
 The shipped single-seed example must derive the whole palette.
+
+# Badge look {.section-badge}
+
+The badge fill comes from `--beamer-section-badge-bg`, which the palette derives from
+`--beamer-section-title-bg`: it must follow the seed too.
+
+# Minimal look {.section-minimal}
+
+The minimal section title takes `--beamer-section-minimal-fg`, derived from
+`--beamer-structure`, and must follow the seed as well.
+
+## A frame with a block {#palette-block-frame}
+
+::: {.block title="Block title"}
+The block title's text colour is a derivation surface too.
+:::
+
+::: {.exampleblock title="Example title"}
+The example title is a derivation surface too: CambridgeUS takes `example text`,
+Madrid pins its own literal.
+:::
