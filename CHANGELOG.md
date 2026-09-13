@@ -19,7 +19,12 @@ Earlier releases predate this file; their history is in the git log.
   the `data-title` fallback, a native callout, a panel tabset, a task list, the
   `start` / `value` / `reversed` numbering semantics, the `h3`–`h6` ladder,
   `{.center}`, `visibility="uncounted"`, the auto-shrinking long frame title, and a
-  `.scrollable` frame. The front matter itself keeps only the document's own data —
+  `.scrollable` frame that genuinely overflows. That last one was reported as "the
+  scrolling page does not scroll": it did not, because its body was 440px in a 560px
+  area — the class only scrolls when the content exceeds the frame, which is the
+  documented behaviour, but a page advertising scrolling with nothing to scroll reads
+  as broken. Its body now runs to 787px, so a wheel over it moves the layer (measured
+  227px scrolled) while the headline and the frame title stay at 0 and 32px. The front matter itself keeps only the document's own data —
   title, author, date, `bibliography`, `lang` — plus `beamer-variant`, so a template
   opens on the stock look: Madrid without a headline, CambridgeUS with one,
   references in citation order and paginated. Every optional switch
