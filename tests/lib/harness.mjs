@@ -33,7 +33,17 @@ const rootDir = resolve(testsDir, "..");
 const outputDir = join(testsDir, "_output");
 const artifactsDir = join(testsDir, "_artifacts");
 const baselinesDir = join(testsDir, "baselines");
-const chromeTemporaryDir = mkdtempSync(join(tmpdir(), "beamerslides-chrome-"));
+// Created by `launchChrome`, NOT here, and cleared again by `shutdownChrome`. A
+// module-level `mkdtempSync` allocated a Chrome profile directory for every import of
+// this module, including one that never launched a browser at all -- and the only
+// thing that removes it is `removeTemporaryDirectory`, which a caller that throws on
+// the way there never reaches. Measured: a throwaway probe that imported this module
+// and hit an assertion left a profile directory behind on every run.
+//
+// A `let` rather than a `const`, because the path only exists once a browser does; the
+// signal handler below and the suite's teardown both read it late, and ESM exports are
+// live bindings, so importers see whatever `launchChrome` assigned.
+let chromeTemporaryDir = null;
 const temporaryInputs = [];
 
 const generatedFixtureIgnore = join(testsDir, "fixtures", ".gitignore");
@@ -142,9 +152,13 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(signal, () => {
     terminateChildProcessGroups();
     // The graceful teardown is async and so never runs on a signal; remove the
-    // profile directory synchronously or it is left behind for good.
+    // profile directory synchronously or it is left behind for good. `null` when no
+    // browser was ever launched, which is now the common case for a run that fails
+    // during rendering.
     try {
-      rmSync(chromeTemporaryDir, { recursive: true, force: true });
+      if (chromeTemporaryDir) {
+        rmSync(chromeTemporaryDir, { recursive: true, force: true });
+      }
     } catch (error) {
       // Best effort.
     }
@@ -243,6 +257,9 @@ const stopChildProcess = async (processHandle) => {
 };
 
 const removeTemporaryDirectory = async (target) => {
+  if (!target) {
+    return;
+  }
   let lastError;
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
@@ -833,6 +850,9 @@ const launchChromeAttempt = async ({
 // stale first-run state). Each attempt gets a fresh profile and its own stderr
 // log, and the previous process is stopped before the next one starts.
 const launchChrome = async () => {
+  if (!chromeTemporaryDir) {
+    chromeTemporaryDir = mkdtempSync(join(tmpdir(), "beamerslides-chrome-"));
+  }
   const chromePath = findChrome();
   let lastError;
   for (let attempt = 1; attempt <= chromeLaunchAttempts; attempt += 1) {
@@ -885,6 +905,37 @@ const shutdownChrome = async ({ connection, processHandle }) => {
     console.warn(`Warning: could not close Chrome DevTools connection: ${error.message}`);
   }
   await stopChildProcess(processHandle);
+
+  // The profile directory belongs to the browser that just stopped, and nothing wants
+  // it afterwards. Removing it HERE, rather than trusting every caller to pair
+  // `shutdownChrome` with a separate `removeTemporaryDirectory`, is what makes a bare
+  // launch/shutdown pair leak-free: measured, nine throwaway probe runs that shut the
+  // browser down correctly still left nine profile directories behind, because
+  // stopping the process is the obvious half and deleting the directory is not.
+  // `removeTemporaryDirectory` already retries, which is what covers a helper that is
+  // still letting go of the profile as this runs.
+  await removeTemporaryDirectory(chromeTemporaryDir);
+  chromeTemporaryDir = null;
+};
+
+// Own the browser's whole lifetime, so a caller cannot leak it.
+//
+// `launchChrome` + `BrowserPage.create` are only safe when EVERY failure path reaches
+// `shutdownChrome`; the suite enforces that with its `teardownStep` blocks, but a
+// throwaway probe usually does not, and the failure mode is invisible -- the script
+// exits, the browser does not. Measured: a probe that threw inside a page evaluation
+// left 18 Chrome processes (two browsers, each with its helper tree) and two profile
+// directories behind, and nothing on screen said so.
+//
+// `run` receives the launched handle and returns whatever it likes; the shutdown and
+// the profile removal happen even when it throws, which is the entire point.
+const withBrowser = async (run) => {
+  const chrome = await launchChrome();
+  try {
+    return await run(chrome);
+  } finally {
+    await shutdownChrome(chrome);
+  }
 };
 
 class BrowserPage {
@@ -1415,4 +1466,5 @@ export {
   temporaryInputs,
   testsDir,
   visibleInkMeasurementSource,
+  withBrowser,
 };
