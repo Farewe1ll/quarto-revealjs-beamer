@@ -32,7 +32,9 @@ Earlier releases predate this file; their history is in the git log.
   explanation of the continuation rules moved into a `::: {.notes}` block, because the
   page can no longer carry prose (see Breaking above). The reader-visible content of the
   deck is otherwise unchanged — measured, each template still renders two reference
-  pages of three entries (`references:3` + `参考文献续:3`).- **The two templates became complete feature tours, and their front matter now
+  pages of three entries (`references:3` + `参考文献续:3`).
+
+- **The two templates became complete feature tours, and their front matter now
   shows each variant's defaults.** They previously showed the frame title, three
   blocks and a few inline classes, and the README called them "complete examples"
   while they demonstrated no YAML option beyond the `short-*` values and the
@@ -98,6 +100,96 @@ Earlier releases predate this file; their history is in the git log.
   what makes Madrid's default no-headline layout faithful rather than a deviation.
 
 ### Fixed
+
+- **A references continuation page that carries a speaker note and asks to scroll is
+  recognised again, and its entry list is measured where it lives.** Two defects met on
+  the same page. `hasAuthoredBody` read only the section's direct children, but
+  `applySlideBox` had already moved a scrolling page's body into `:scope > .beamer-scroll`
+  before the pagination ran — so the note's layer was read as authored prose and the page
+  stopped being a continuation page at all: measured, it rendered EMPTY, kept its page
+  number in the footline, and all 13 entries spilled onto generated pages. `entryList`
+  then created the container beside that layer rather than inside it, and `layerOverflows`
+  asks the layer — so on a page that had one, the overflow test read zero for every entry
+  and the page took as many as `item` allowed however few fitted: measured with
+  `item="50"`, 11 of 13 entries on one page, 63px past the slide's bottom edge, no page
+  added and no warning. The same deck without the note spilled at the measured limit, so
+  the split depended on a speaker note. Both are pinned by
+  `refs-continuation-scrollable` and `testReferencesScrollableContinuation`.
+- **A generated references page under a level-1 bibliography is titled after that page,
+  not "References".** The fallback chain asked for a direct `h2` while the tag beside it
+  already handled both levels, so `# 参考文献 {item="4"}` produced pages tagged `h1` and
+  headed with the English default. Measured `参考文献` on the author's page and
+  `References` on all four generated ones; `refs-section-level-title` now covers the
+  `refs-title`-less path the older fixture never took.
+- **The pagination no longer replaces the classes on the pages it fills in.** It assigned
+  `slide.className = <page 1's classes>`, so a continuation page lost whatever the author
+  had written on it — measured with `{.center .my-refs-page}`, both were gone from the
+  rendered deck, and `beamer-center-slide` with them. Layout classes are merged now, and
+  Reveal's own `present` / `past` / `future` are excluded rather than copied.
+- **Every value that derives from another variable now follows a `.reveal`-level
+  override.** `var()` is substituted on the element a custom property is DECLARED on, so
+  the palette's derived entries resolved on `<html>` and a document patch written against
+  `.reveal` — which the README documents as supported — reached only the rules that read
+  the upstream variable directly. Measured with `--beamer-structure` on `.reveal`: the
+  bullets and `h3`–`h6` turned while the CambridgeUS block titles and the
+  `.section-minimal` title stayed red; with `--beamer-primary`, the CambridgeUS badge
+  stayed `#cc0000`; with `--beamer-headline-height`, the layout did not move at all.
+  `_palette.scss` now holds literals only and the derivations live where they are used —
+  `--beamer-active-headline-height` and the CambridgeUS block-title colours on `.reveal`,
+  the badge fill, the minimal title and the logo's `max(headline, frame) + 7px` fallback
+  at their own rules (that last one is the sharpest case: moved out from under the logo,
+  its palette copy resolved to nothing and the rule silently fell back to a flat 39px, 26px
+  above the value it documents). Stock values are unchanged; the palette test now asserts
+  the badge, the minimal title, the block title colour and the example block title colour on
+  four override paths, and the
+  three `.reveal`-level ones (`css:`, `theme:`, CambridgeUS) were measured to fail against
+  the pre-change stylesheets -- six red assertions. The shipped example passes either way,
+  because that file was moved to `:root` in the same release.
+- **A print/PDF section page reserves the same bottom padding as the screen one.** It
+  reserved 34px against the screen's 22px, the only page kind whose print and screen boxes
+  disagreed — the leaf, frame and title pages already carried the same value in both. The
+  invariant is now asserted for all three kinds by `testPrintMatchesScreenPadding`, which
+  reads the screen values and requires print to match them (measured: print 64px against
+  screen 52px on the section page before the fix, the other two passing throughout).
+- **`examples/custom-palette.css` seeds the whole palette instead of most of it.** Seeding
+  from `.reveal.beamer-madrid` left the badge fill (from `--beamer-section-title-bg`) and
+  the `.section-minimal` title (from `--beamer-structure`) on Madrid's stock blue while
+  every band, frame title and bullet turned green — measured on a deck with all three
+  looks. The file now uses `:root.beamer-madrid`, which reads as the same layer as the
+  palette it replaces; with the derivations moved to their point of use either placement
+  works. The palette test asserts both derived surfaces on the `palette-example` fixture.
+- **The menu's line is covered by a deck that has the boxes it clears.** The old probe ran
+  on Madrid without a logo, so its headline and logo overlap checks were handed their own
+  expected `false` and could never fail. `testMenuClearsChrome` renders a CambridgeUS deck
+  with a logo and the menu switched on, asserts the fixture really carries all three, and
+  then judges the placements.
+- **The README's palette guidance matches the code.** The CambridgeUS recipe, the
+  "overrides must go on `:root`" caveat (now obsolete), and the variable counts in
+  `_palette.scss` (45 literals, 35 re-declared by CambridgeUS) were all corrected.
+- **A frame title that ends up inside a scroll layer is put back on the slide rather than
+  deleted with the layer.** Not a state the decoration pass produces today, but
+  `wrapScrollableSlide` dropped such a title silently, and a later reordering that placed
+  one after the layer would have lost it without a symptom.
+- **The README's palette guidance matches the code.** The CambridgeUS "restore upstream
+  blue" recipe, the "derived variables must be overridden on `:root`" caveat it needed
+  before this release (now obsolete and replaced by a statement of where derivations
+  live), the count of variables in `_palette.scss` (46 literals, 35 re-declared by
+  CambridgeUS) and the `short-*` / `refs-title` rows of the options table.
+- **The suite can no longer pass for the wrong reason in the places it names.** The
+  section-styles probe reports `hasLayer`, so a page that loses its scroll layer fails
+  instead of reporting the fallback count; the section-styles fixture asserts `sec-frame`
+  exists, so `frameIsSection` cannot be satisfied by a missing element through `?.`; the
+  `refs-overflow` page-count comparison asserts both sides still match `N / N` rather
+  than passing as two `null`s; the menu probe's headline and logo overlap checks moved to
+  `testMenuClearsChrome`, which renders a CambridgeUS deck that actually has a headline, a
+  frame band and a logo, instead of being handed their own expected `false` by a Madrid
+  deck with neither; and `blockTitleIsRealText`, which only restated the text assertion
+  above it, is gone — the claim it named is asserted by `searchable`, which reads
+  `innerText` and so cannot be satisfied by a `::before`. The new references test also
+  treats the scroll layer as something to CHECK FOR rather than assume: whether the
+  references page is `.scrollable` is Quarto's decision (1.10 marks it, and CI covers
+  1.4), so the "list sits in the layer that is measured" assertion applies to the pages
+  that have one, with the author's own `.scrollable` page pinned as the canary.
 
 - **A logo is no longer painted inside the frame title band.** The band already
   reserved the logo's WIDTH — `--beamer-logo-reserve` is written from the measured logo

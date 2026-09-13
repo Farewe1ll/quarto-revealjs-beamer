@@ -49,8 +49,8 @@ beamer-variant: madrid
 | `beamer-variant` | `madrid` | `madrid` 或 `cambridgeus` |
 | `beamer-secheader` | 按变体 | Madrid 关闭、CambridgeUS 开启；可用 `true` / `false` 覆盖 |
 | `beamer-progress` | `false` | footline 顶部的细进度条；格式里的 `progress: true` 也会启用同一条线 |
-| `short-title` / `short-author` / `short-institute` / `short-date` | 无 | footline 与页眉优先使用的短值；缺省时回退到 Quarto 生成的标题、作者、机构、日期 |
-| `refs-title` | 第一页标题 | 参考文献续页的基础标题 |
+| `short-title` / `short-author` / `short-institute` / `short-date` | 无 | footline 优先使用的短值（作者与机构合并进左格，标题居中格，日期在右格）；`short-title` 另在第一个章节标题出现之前充当页眉左格。缺省时回退到 Quarto 生成的标题、作者、机构、日期。页眉右格是当前 frame 的标题（章节页上为空，除非用 `data-subsection` 覆盖） |
+| `refs-title` | 第一页标题（`#` 或 `##`） | 自动生成的参考文献续页使用的基础标题 |
 | `refs-order` | `citation` | 设为 `declaration` 时按 `.bib` 声明顺序排列文献 |
 | `refs-overflow` | `paginate` | 设为 `scroll` 时文献留在同一页内滚动 |
 
@@ -255,7 +255,7 @@ refs-overflow: scroll   # 默认 paginate；scroll = 文献留在 Quarto 生成�
 - **文献页挂在一级标题下也可以**：把上面的 `##` 全部换成 `#`（`# 参考文献 {item="6"}` + `::: {#refs}`）同样成立，续页也照旧是裸标题。此时每一页用的都是**章节页的外观**（通栏色带），包括自动生成的续页——层级不会中途从 `h1` 变成 `h2`。Quarto 自己会给这一页加 `.smaller .scrollable`，所以这条路径是躲不开的，扩展对它做了与二级标题完全相同的处理（`refs-section-level` fixture 覆盖）。
 - **默认模式下**断页是**量出来**的，所以参考文献页不需要滚动就能看全（Quarto 给文献页带的 `.scrollable` 只是保底）。唯一的例外是**单条文献自己就比整页高**：它独占一页，那一页仍可滚动（兜底规则是「一页至少要放下一条」，否则分页无法推进）。除此之外，任何一页要滚动才能看完都是扩展的 bug。
 - 声明页数与实际需要不符时会在控制台告警：**不够**时报出加了几页以及**第一条被移走的条目**（方便你把断点往前挪）；**多声明**时报出哪一页是空的。空页**不会**被自动删除（删掉可能连带删掉你在那页写的内容），只提示你处理。
-- `refs-title` 设置续页的基础标题，不写就取第一页的 `##` 标题；某一页自己写的 `##` 标题始终优先。
+- `refs-title` 设置续页的基础标题，不写就取第一页的标题（`#` 与 `##` 都算）；某一页自己写的标题始终优先。
 - `refs-order: declaration` 按 `.bib` 的**声明顺序**排列文献（多个文件按列出顺序拼接）；默认 `citation` 保持 citeproc 的排序，**既有文档不受影响**。citeproc 排完序后 HTML 里没有任何字段记录原始位置，所以扩展直接读 `.bib` 抽 key——这是一次**保守的模式匹配**，读不出或数量对不上时会**告警并退回 citeproc 序**，不会猜。
 - `--beamer-refs-font-size`（默认 `0.9em`）是文献表唯一的字号开关；调小它会装下更多条目，自动断页会跟着适应。
 - `refs-overflow: scroll` 完全不分组：所有条目留在 `::: {#refs}` 那一页，装不下就**页内滚动**，页眉、frame title、页脚仍固定不动。它同样标记 `uncounted`，所以两种模式**不会改变页脚的总页数**。它是 `item` 的对立面，同时声明 `item` 时会告警并**忽略**分页断点。
@@ -290,7 +290,7 @@ structure!75!black = darkred!75!black = #990000
 structure!50!black = darkred!50!black = #660000
 ```
 
-受影响的只有列表符号与无填充 block 的标题文字。恢复上游蓝色只需一行：
+受影响的是一切取 `structure` 的家具：列表符号、`h3`–`h6` 标题、block 的标题文字，以及 `.section-minimal` 章节页标题。徽标底色取的是 `--beamer-primary`，不在其中。恢复上游蓝色：
 
 ```css
 .reveal.beamer-cambridgeus {
@@ -300,11 +300,13 @@ structure!50!black = darkred!50!black = #660000
 }
 ```
 
+写在 `.reveal.beamer-cambridgeus` 或 `:root` 上都可以：CambridgeUS 的 block 标题色与 `.section-minimal` 标题色是在使用处派生的（见「覆盖方式」），所以 `.reveal` 级的改动同样能传到它们。
+
 `example text` 在 Beamer 里被 `beamercolorthemedefault` 钉死为 `green!50!black`，**与 `structure` 无关**（beaver/orchid 都不重定义），所以两个变体取值相同。
 
 ### 变量参考
 
-下表按用途分组覆盖 `_palette.scss` 里的全部 48 个变量；`-fg` 是同一行的前景变量，`/ -2` 是它的暗阶，`--beamer-block-alert-title-stroke` 一行的三项分别对应宽度、颜色与字重。CambridgeUS 覆盖其中 39 个，未标注“同左”或另列的取值与 Madrid 相同。`--beamer-active-headline-height` 由 `beamer-no-headline` 在关闭页眉时折叠为 `0px`；`--beamer-logo-top` 由样式表给出兜底值、再由 `beamer.js` 按实测的 chrome 底边覆写（见 `版面几何`）。`--beamer-primary` 只有 `-2` 这一个暗阶：它没有第三阶的用处，样式表从不读取，因此不再列出（`--beamer-structure` 的 `-3` 是列表三级符号的边框色，仍然使用）。
+下表覆盖 `_palette.scss` 里的全部 45 个字面量，外加四个**在使用处派生**、因而同样可以直接覆盖的变量：`--beamer-section-minimal-fg`（兜底 `--beamer-structure`）、`--beamer-section-badge-bg`（兜底 `--beamer-section-title-bg`，CambridgeUS 兜底 `--beamer-primary`）、`--beamer-section-badge-fg`（兜底 `--beamer-section-title-fg`，CambridgeUS 为字面量 `#ffffff`）、`--beamer-logo-top`（兜底 `max(页眉, frame 标题) + 7px`，`beamer.js` 就绪后按实测覆写）。`-fg` 是同一行的前景变量，`/ -2` 是它的暗阶，`--beamer-block-alert-title-stroke` 一行的三项分别对应宽度、颜色与字重。CambridgeUS 覆盖其中 35 个（其中 `--beamer-section-badge-fg`、`--beamer-block-alert-title-stroke-color` 只有它有），未标注“同左”或另列的取值与 Madrid 相同。`--beamer-active-headline-height` 由样式表在 `.reveal` 上从 `--beamer-headline-height` 派生、由 `.beamer-no-headline` 在关闭页眉时折叠为 `0px`。`--beamer-primary` 只有 `-2` 这一个暗阶：它没有第三阶的用处，样式表从不读取，因此不再列出（`--beamer-structure` 的 `-3` 是列表三级符号的边框色，仍然使用）。
 
 | 用途 | 变量 | Madrid | CambridgeUS |
 |:---|:---|:---|:---|
@@ -328,6 +330,8 @@ structure!50!black = darkred!50!black = #660000
 ### 覆盖方式
 
 两个变体的调色板都按 `:root` 级选择器声明（CambridgeUS 用 `:where(:root).beamer-cambridgeus` 保持同等特异性），所以写在 `.reveal`、`.reveal.beamer-*` 或直接写在 `:root` 上都能生效——文档级 `:root` 覆盖对两种变体都有效。
+
+**派生值也是同样规则，这不是巧合。** 自定义属性的 `var()` 替换发生在**声明它的那个元素**上，所以凡是"由另一个变量算出来"的东西，都写在 `beamer.scss` 的使用处、而不是 `_palette.scss`（那里只放字面量）：`--beamer-active-headline-height`（← `--beamer-headline-height`）、`--beamer-logo-top` 的兜底（← `--beamer-active-headline-height` / `--beamer-frame-height`）、`--beamer-section-fill`（← `--beamer-section-badge-bg`，再兜底 `--beamer-section-title-bg`；CambridgeUS 兜底 `--beamer-primary`）、`.section-minimal` 的标题色（← `--beamer-structure`）、CambridgeUS 的 block 标题色（← `--beamer-structure` / `--beamer-example`）。因此改上游（`--beamer-structure`、`--beamer-primary`、`--beamer-headline-height`……）时，写在 `.reveal` 上一样会连带改到这些派生面——这一条有回归测试守着（`palette-css` / `palette-theme` / `palette-example` / `palette-cambridgeus` 断言徽标、minimal 标题与 block 标题三条派生面）。
 
 最省事的做法是复制 `examples/custom-palette.css`，只改一个种子色，其余由 `color-mix()` 按 Beamer 的关系派生：
 
