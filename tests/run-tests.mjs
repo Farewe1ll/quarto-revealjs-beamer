@@ -680,17 +680,13 @@ const testMadrid = async (connection, origin) => {
   );
   // And its box must not sag below the line. A chip is an inline element, so its
   // box is anchored to the baseline and sized by the MONOSPACE font's ascent and
-  // descent -- lopsided around the text a reader sees, by 22.98px against 7.98px on
-  // the stack this machine resolves. With equal padding the box's top edge sat only
-  // 5.1px above the body's cap line while its bottom edge reached 9.4px under the
-  // baseline, which reads as the highlight hanging out of the line (reported, then
-  // confirmed on a magnified line). The theme puts its air on top instead, which
-  // measures 6.0 against 7.2 here.
-  // The tolerance is 3px because the tolerance has to leave room for the monospace
-  // fallback's metrics, and because 1.2px of residual is deliberate: a taller box
-  // would balance exactly (0.21em of top padding reaches 0.8px) but it also brought
-  // the chips on consecutive lines of a wrapped list item to 2.3px apart, close
-  // enough that their fills read as one slab -- which is what the slim box is for.
+  // descent, which are lopsided around the text a reader sees: with equal padding the
+  // box's top edge sat only 5.1px above the body's cap line while its bottom edge
+  // reached 9.4px under the baseline -- the highlight hung out of the line even
+  // though the glyphs were exactly on it. The theme puts its air on top instead,
+  // which measures 6.0 against 7.2 here.
+  // "HHH" is capitals only, so the probe's ink top row is the cap line and its
+  // bottom row is the baseline: the two lines the eye measures the box against.
   const chipPosition = formatsState.chipPosition;
   assert(
     Math.abs(chipPosition.paragraphHeight - chipPosition.lineHeight) <= 1,
@@ -702,28 +698,73 @@ const testMadrid = async (connection, origin) => {
     `the chip must carry its air above the text, not below it: ` +
       JSON.stringify(chipPosition)
   );
-  const chipShot = await captureForMeasurement(connection, formatsPage);
-  // "HHH" is capitals only, so its ink top row is the cap line and its bottom row
-  // is the baseline: the two lines the eye measures the chip's box against.
-  const inkRows = (x0, x1, y0, y1) => scanInkRows(chipShot, x0, x1, y0, y1);
-  const bodyLeft = Math.round(chipPosition.bodyLeft);
-  const bodyInk = inkRows(
-    bodyLeft,
-    bodyLeft + 40,
-    Math.round(chipPosition.chipTop) - 6,
-    Math.round(chipPosition.chipBottom) + 6
+  // Re-read the geometry every time: the whole point is to compare two paddings, and
+  // the box moves when they change. Measuring against the rect captured before the
+  // change returns the same numbers twice and the comparison silently passes.
+  const balance = async () => {
+    const frame = await formatsPage.evaluate(`(() => {
+      const chip = document.querySelector("#chip-probe code");
+      const paragraph = chip.closest("p");
+      const chipRect = chip.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(
+        Array.from(paragraph.childNodes).find((node) => node.nodeType === 3)
+      );
+      const bodyRect = range.getBoundingClientRect();
+      return {
+        chipTop: chipRect.top,
+        chipBottom: chipRect.bottom,
+        bodyLeft: bodyRect.left
+      };
+    })()`);
+    const shot = await captureForMeasurement(connection, formatsPage);
+    const left = Math.round(frame.bodyLeft);
+    const ink = scanInkRows(
+      shot,
+      left,
+      left + 40,
+      Math.round(frame.chipTop) - 6,
+      Math.round(frame.chipBottom) + 6
+    );
+    assert(
+      ink.first >= 0 && ink.last > ink.first,
+      `the body text's ink must be found for the chip scan: ` +
+        JSON.stringify({ ink, frame })
+    );
+    return {
+      above: ink.first - frame.chipTop,
+      below: frame.chipBottom - ink.last,
+      ink,
+      frame
+    };
+  };
+  const shipped = await balance();
+  // The magnitude of the fix follows the monospace fallback -- it is 1.2px on the
+  // stack this was measured on, and the runner resolves Liberation Mono through
+  // Chrome's own dependency -- so an absolute bound here would be a flake waiting to
+  // happen. What holds on every font is the direction: moving the air from below the
+  // baseline to above the cap line always brings the two margins closer, because the
+  // box hangs low whenever (ascent - cap - descent) is negative, which it is for
+  // every monospace face in the stack.
+  await formatsPage.evaluate(`(() => {
+    const style = document.createElement("style");
+    style.textContent = ".reveal code:not(pre code) { padding: 0.05em 0.2em; }";
+    style.id = "symmetric-padding";
+    document.head.appendChild(style);
+  })()`);
+  const symmetric = await balance();
+  await formatsPage.evaluate(`(() => { const style = document.getElementById("symmetric-padding"); if (style) style.remove(); })()`);
+  const shippedDelta = Math.abs(shipped.above - shipped.below);
+  const symmetricDelta = Math.abs(symmetric.above - symmetric.below);
+  assert(
+    shippedDelta <= symmetricDelta - 0.3,
+    `the chip's air must sit on top, where it balances the two margins: ` +
+      JSON.stringify({ shipped, symmetric, shippedDelta, symmetricDelta })
   );
   assert(
-    bodyInk.first >= 0 && bodyInk.last > bodyInk.first,
-    `the body text's ink must be found for the chip scan: ` +
-      JSON.stringify({ bodyInk, chipPosition })
-  );
-  const chipAbove = bodyInk.first - chipPosition.chipTop;
-  const chipBelow = chipPosition.chipBottom - bodyInk.last;
-  assert(
-    Math.abs(chipAbove - chipBelow) <= 3,
-    `the chip's box must sit centred between the body's cap line and baseline: ` +
-      JSON.stringify({ chipAbove, chipBelow, bodyInk, chipPosition })
+    shippedDelta <= 5,
+    `the chip's box must sit roughly centred between the body's cap line and ` +
+      `baseline: ` + JSON.stringify({ shipped, shippedDelta })
   );
   assert.notEqual(formatsState.filenameBackground, formatsState.filenameColor);
   assert.equal(formatsState.filenameLabelBorderWidth, 0);
@@ -3927,15 +3968,40 @@ const testCjkChipAlignment = async (connection, origin) => {
     `chips on consecutive lines must have room between them: ` +
       JSON.stringify({ clearance, ...state })
   );
-  const y0 = Math.round(state.chip.top) - 6;
-  const y1 = Math.round(state.chip.bottom) + 6;
+  // Same rule as the Latin check: the raise moves the box, so the rects have to be
+  // read again for each state instead of reused from the first measurement.
   const centres = async () => {
+    const frame = await page.evaluate(`(() => {
+      const slide = document.getElementById("cjk-chip");
+      const chip = slide.querySelector("p code");
+      const chipRect = chip.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(chip.previousSibling);
+      const chipCentre = (chipRect.top + chipRect.bottom) / 2;
+      const rects = Array.from(range.getClientRects()).map((rect) => ({
+        top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right
+      }));
+      const shared = rects.length === 0 ? null : rects.reduce((best, rect) =>
+        Math.abs((rect.top + rect.bottom) / 2 - chipCentre) <
+        Math.abs((best.top + best.bottom) / 2 - chipCentre)
+          ? rect
+          : best
+      );
+      return {
+        chip: { top: chipRect.top, bottom: chipRect.bottom, left: chipRect.left, right: chipRect.right },
+        cjk: shared
+      };
+    })()`);
+    assert(
+      frame.cjk !== null,
+      `the hanzi run beside the chip must have a rect: ${JSON.stringify(frame)}`
+    );
     const shot = await captureForMeasurement(connection, page);
-    const cjkInk = scanInkRows(shot, Math.round(state.cjk.left), Math.round(state.cjk.right), y0, y1, 120);
-    const codeInk = scanInkRows(shot, Math.round(state.chip.left) + 5, Math.round(state.chip.right) - 5, y0, y1, 120);
+    const cjkInk = scanInkRows(shot, Math.round(frame.cjk.left), Math.round(frame.cjk.right), Math.round(frame.chip.top) - 6, Math.round(frame.chip.bottom) + 6, 120);
+    const codeInk = scanInkRows(shot, Math.round(frame.chip.left) + 5, Math.round(frame.chip.right) - 5, Math.round(frame.chip.top) - 6, Math.round(frame.chip.bottom) + 6, 120);
     assert(
       cjkInk.first >= 0 && codeInk.first >= 0,
-      `both runs must paint ink on that line: ${JSON.stringify({ cjkInk, codeInk, state })}`
+      `both runs must paint ink on that line: ${JSON.stringify({ cjkInk, codeInk, frame })}`
     );
     return {
       delta: (codeInk.first + codeInk.last) / 2 - (cjkInk.first + cjkInk.last) / 2,
