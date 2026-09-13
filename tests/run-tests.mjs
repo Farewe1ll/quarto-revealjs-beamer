@@ -579,11 +579,16 @@ const testMadrid = async (connection, origin) => {
       Array.from(probeParagraph.childNodes).find((n) => n.nodeType === 3)
     );
     const probeBody = probeRange.getBoundingClientRect();
+    const probeStyle = getComputedStyle(probeParagraph);
     const chipPosition = {
       chipTop: probeChip.getBoundingClientRect().top,
       chipBottom: probeChip.getBoundingClientRect().bottom,
       bodyLeft: probeBody.left,
-      lines: probeParagraph.getClientRects().length,
+      // A block element's getClientRects() is always a single rect, so counting
+      // rects cannot tell us whether the paragraph wrapped. Its height can: one
+      // line box means height == line-height.
+      paragraphHeight: probeParagraph.getBoundingClientRect().height,
+      lineHeight: parseFloat(probeStyle.lineHeight),
       paddingTop: parseFloat(getComputedStyle(probeChip).paddingTop),
       paddingBottom: parseFloat(getComputedStyle(probeChip).paddingBottom)
     };
@@ -687,10 +692,10 @@ const testMadrid = async (connection, origin) => {
   // the chips on consecutive lines of a wrapped list item to 2.3px apart, close
   // enough that their fills read as one slab -- which is what the slim box is for.
   const chipPosition = formatsState.chipPosition;
-  assert.equal(
-    chipPosition.lines,
-    1,
-    `the chip probe paragraph must stay on one line: ${JSON.stringify(chipPosition)}`
+  assert(
+    Math.abs(chipPosition.paragraphHeight - chipPosition.lineHeight) <= 1,
+    `the chip probe paragraph must stay on one line, or its rect is not the line ` +
+      `box the chip is measured against: ${JSON.stringify(chipPosition)}`
   );
   assert(
     chipPosition.paddingTop >= chipPosition.paddingBottom + 2,
@@ -3867,7 +3872,7 @@ const testCjkChipAlignment = async (connection, origin) => {
       top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right
     }));
     const chipCentre = (chipRect.top + chipRect.bottom) / 2;
-    const shared = rects.reduce((best, rect) =>
+    const shared = rects.length === 0 ? null : rects.reduce((best, rect) =>
       Math.abs((rect.top + rect.bottom) / 2 - chipCentre) <
       Math.abs((best.top + best.bottom) / 2 - chipCentre)
         ? rect
@@ -3887,6 +3892,10 @@ const testCjkChipAlignment = async (connection, origin) => {
     };
   })()`);
   assert.match(state.lang, /^zh/, `the fixture must render as Chinese: ${state.lang}`);
+  assert(
+    state.cjk !== null,
+    `the hanzi run beside the chip must have a rect: ${JSON.stringify(state)}`
+  );
   assert.notEqual(
     state.verticalAlign,
     "baseline",

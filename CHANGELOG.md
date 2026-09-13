@@ -71,79 +71,61 @@ Earlier releases predate this file; their history is in the git log.
 
 ### Fixed
 
-- **Inline code no longer reads as larger than the sentence around it, and its
-  highlight no longer sags below the line.** Two separate defects, both measured.
+- **Inline code: sized to the body's x-height, centred on its line, and slim enough
+  that two chips on consecutive lines stay apart.** Four defects, all measured on the
+  rendered page, and one rule now covers them.
 
-  The size: the theme asked for a monospace stack whose x-height is about 8% larger
-  than Libertinus Sans's, so at Quarto's default `0.875em` the chip's lowercase
-  measured 14px against the body's 13px. `$code-inline-font-size` is now `0.8125em`
-  (= 0.875 / 1.077), which measures at x-height parity (ratio 1.000) with the
-  baseline unmoved; cap height ends up about a tenth under the body's, the usual
-  trade for a monospace face. The size is declared in the theme's own rule as well
-  as in the variable, because the versions disagree about where it comes from: 1.10
-  derives `.reveal code`'s size as `$code-font-size * 0.875` (so naming a size on
-  the *shared* `$code-font-size` shrinks the chip to 0.7175em instead — which is
-  what the first attempt did, and what the new assertion on the computed ratio now
-  catches), while 1.4 and 1.5 set no inline size at all and let the chip inherit the
-  body's 1em.
+  *Size.* The theme asks for a monospace stack whose x-height is about 8% larger than
+  Libertinus Sans's, so at Quarto's default `0.875em` a chip's lowercase measured 14px
+  against the body's 13px. `$code-inline-font-size` is now `0.8125em` (= 0.875 / 1.077),
+  which measures at x-height parity (ratio 1.000) with the baseline unmoved; cap height
+  ends up about a tenth under the body's, the usual trade for a monospace face. It has
+  to be that variable, and the size is also declared in the theme's own rule, because
+  the versions disagree about where it comes from: 1.10 derives `.reveal code`'s size
+  as `$code-font-size * 0.875` — so naming a size on the *shared* `$code-font-size`
+  shrinks the chip to 0.7175em instead, which is what the first attempt did and what
+  the new assertion on the computed ratio catches — while 1.4 and 1.5 set no inline
+  size at all and let the chip inherit the body's 1em.
 
-  The position, which the size fix did not touch: a chip's box is anchored to the
-  baseline and sized by the *monospace* font's ascent and descent, and those are
-  lopsided around the text a reader sees — 22.98px above the baseline against 7.98px
-  below on the stack this machine resolves, with the body's cap height at 20px. With
-  equal padding the box's top edge sat 5.1px above the body's cap line while its
-  bottom edge reached 9.4px under the baseline — measured on the rendered line — so
-  the highlight read as hanging out of the line even though the glyphs were exactly
-  on it.
+  *Position.* A chip's background is the FONT's box: 29.0px here, which is 1.19em and
+  already 1.45x the body's 20px cap height, and `line-height` demonstrably cannot move
+  it (measured identical at 1, 1.1 and 1.5). With equal padding the box's top edge sat
+  5.1px above the body's cap line while its bottom edge reached 9.4px under the
+  baseline, so the highlight read as hanging out of the line even though the glyphs
+  were exactly on it. All of the air now goes on top: 6.0px against 7.2px, a sag of
+  1.2px where equal padding gave 4.3.
 
-  Balancing that by growing the box was the wrong first answer, and it showed: at
-  0.21em of top padding the box reached 36.1px inside a 38.4px line box, so the chips
-  on two consecutive lines of a wrapped list item sat 2.3px apart and their fills read
-  as a single slab. The box is now kept as slim as the fix allows — `padding: 0.13em
-  0.2em 0` — which is 32.2px, leaves 6.2px between those chips, and still measures
-  6.0px above the body's cap line against 7.2px below the baseline: a sag of 1.2px
-  where the original symmetric padding gave 4.3. Its 1px border became a 1px ring
-  drawn with `box-shadow` (the same definition on a block's or a table's tinted fill,
-  and 2px less height), and `box-decoration-break: clone` gives each fragment of a
-  wrapped chip its own fill, ring and radius instead of one slab sliced across the
-  break. How much top padding balances the box follows the monospace fallback, so the
-  new assertion measures the RENDERED line — see the chip-position capture — rather
-  than trusting a model, and its tolerance admits the fonts in the stack while
-  rejecting the old symmetric padding on every one of them.
-  `tests/fixtures/madrid.qmd` gained an inline-code span on a screenshotted page
-  plus a deliberately single-line probe paragraph, so the chip now has both visual
-  coverage and a measurable box position — it previously had neither.
-- **Inline code in Chinese, Japanese and Korean text no longer reads as sitting
-  low.** The shared baseline is not enough there: an ideograph's ink is much taller
-  than a Latin run's, so although both sit on the baseline their bands are centred
-  differently. Measured on the CambridgeUS template's prose — 27px of CJK ink
-  against 18px of code ink, the bottoms 2px apart (the ideographs' overshoot) and
-  the centres 2.5px apart, which is what the eye reads as the code sinking. The
-  theme now raises the chip by 0.1em, which puts the two centres 0.00px apart and
-  also centres the chip's own box on such a line (3.6px of air above it against
-  3.6px below). A Latin line wants the chip exactly on the baseline, so the rule is
-  scoped with `:lang(zh)`, `:lang(ja)`, `:lang(ko)` — `lang` is inherited from the
-  document, so it follows the front matter without any per-slide markup, and the
-  Latin fixture still measures the code's ink bottom flush with the caps' bottom.
-  A new fixture (`chip-cjk`) and assertion check the CJK half in pixels; the
-  Latin half is what the `chip-position` assertion above already guards, since a
-  leaked raise would break its balance by 2.4px.
-- **Chips on consecutive lines no longer crowd each other.** Reported from the
-  same screenshot: the box sits in a 38.4px line box, so every pixel it grows comes
-  straight out of the clearance to the chip below it. Four changes, each measured on
-  the template page that was reported:
+  *CJK.* The shared baseline is not enough in Chinese, Japanese or Korean text: an
+  ideograph's ink is much taller (27px against the code's 18px), so although both sit
+  on the baseline their centres are 2.5px apart — which is what the eye reads as the
+  code sinking. The chip is raised 0.1em there, which puts the centres 0.00px apart on
+  the fonts this was measured on — ideographs fall back to a different system face on
+  every platform, so the assertion allows 2px. A Latin line wants the chip exactly on
+  the baseline, so the rule is scoped with
+  `:lang(zh)`, `:lang(ja)`, `:lang(ko)`; `lang` is inherited from the document, so it
+  follows the front matter without any per-slide markup.
 
-  - The 1px ring is drawn INSIDE the box (`box-shadow: inset`), so it no longer
-    spends 2px of clearance outside it.
-  - A CJK line no longer needs the top padding at all: the 0.1em raise added in the
-    entry above is already doing the centring (the two centres still measure 0.00px
-    apart). Dropping it takes the box from 32.2px to 29.0px, which is the font's own
-    box — an inline element cannot go below that, and `line-height` demonstrably does
-    not move it (measured: identical at 1, 1.1 and 1.5).
-  - Net effect on the reported page: the chips on two consecutive lines went from
-    4.2px of visible clearance to 9.4px, with the box still centred on the hanzi.
-  - Latin decks keep the top padding, because there the padding is what centres the
-    box against the cap line and the baseline; nothing about their geometry changed.
+  *Clearance and wrapping.* The box shares its 38.4px line box with the chip below it,
+  so every pixel it grows comes out of the gap between them. Three changes buy that
+  gap back: the 1px outline became a ring drawn inside the box (`box-shadow: inset`,
+  which no longer spends 2px of clearance outside it); a CJK line drops the top padding
+  entirely, since the raise is already centring the box there, taking it from 32.2px
+  back to the font's own 29.0px; and `box-decoration-break: clone` gives each fragment
+  of a wrapped chip its own fill, ring and radius instead of one slab sliced across the
+  break. Net effect on the reported page: 4.2px of visible clearance became 9.4px. An
+  earlier attempt at the position problem had gone the other way — 0.21em of top
+  padding balanced the box almost exactly but grew it to 36.1px, leaving 2.3px between
+  those chips, and that is the shape that was reported.
+
+  The suite checks the halves separately and in pixels: `chip-position` screenshots the
+  Latin fixture and compares the air above the body's cap line with the air below its
+  baseline (3px tolerance — it rejects the old symmetric padding, and a leaked CJK
+  raise would break it by 2.4px), and `chip-cjk` screenshots a Chinese fixture and
+  compares the two ink bands' centres (2px), asserting the box carries no top padding
+  and that the line box leaves at least 8px between consecutive chips. Two fixtures
+  gained the spans those captures need: `madrid.qmd` an inline-code chip on a
+  screenshotted page plus a deliberately single-line probe paragraph, and the new
+  `chip-cjk.qmd` a hanzi line with a chip.
 - **The `.section-minimal` section page splits its air evenly instead of leaving
   the title floating.** The look kept the band's `min-height` and the heading's
   bottom margin, which around bare text pushed the body away and left 13px of air

@@ -1133,23 +1133,25 @@ $border-radius: 4px !default;
      the chip the same size on every supported version -- and `$code-inline-font-size`
      above still feeds the upstream variable where it exists, so both paths agree. */
   font-size: $code-inline-font-size;
-  /* A chip is an inline box, so its background is the FONT's box -- ascent plus
-     descent, 1.27em here, which is already 1.8x the body's cap height. Any
-     vertical padding makes that worse, and worse is visible: at 0.21em of top
-     padding the box reached 36.1px inside a 38.4px line box, so the chips on two
-     consecutive lines of a wrapped list item sat 2.3px apart and their fills
-     nearly merged into one slab. The air is therefore kept to the minimum that
-     fixes the sag: the box is bottom-heavy by (ascent - descent) / 2 = 2.3px
-     relative to the line, so 0.13em on top and none below shifts it back to within
-     1.2px of centred and still measures 6.0px above the body's cap line against
-     7.2px below the baseline. That leaves the box at 32.2px, which leaves 6.2px
-     between the chips of consecutive lines.
-     The 1px border becomes a 1px ring drawn with box-shadow, which defines the
-     chip -- including on the tinted fills of blocks and tables -- without adding
-     to the box the way a border does: the ring costs 2px of height that a border
-     would spend, and the chip is 4px slimmer than it was with both.
-     The figures above are for the SFMono stack this was measured on; the balance
-     point follows the monospace fallback, so the suite asserts on the RENDERED line
+  /* A chip is an inline box (and `line-height` does not move it -- measured
+     identical at 1, 1.1 and 1.5), so its background is the FONT's box: 29.0px at
+     this size on the stack it was measured on, which is 1.19em, and already 1.45x
+     the body's 20px cap height. Any vertical padding comes on top of that, and it
+     is spent straight out of the clearance to the chip on the next line: the line
+     box is 38.4px, and at 0.21em of top padding the box reached 36.1px, leaving
+     2.3px between the chips of two consecutive lines, close enough that their fills
+     read as one slab. The air is therefore the minimum that fixes the sag -- 0.13em
+     on top, none below. That measures 6.0px above the body's cap line against 7.2px
+     below the baseline (a sag of 1.2px, where equal padding gave 4.3), and leaves
+     the box at 32.2px with 6.2px of clearance. In a CJK document the rule below
+     drops the padding entirely, because the raise it applies is doing the centring
+     there and the box goes back to the font's own 29.0px.
+     The 1px outline is a ring drawn with box-shadow rather than a border: it defines
+     the chip on a block's or a table's tinted fill just the same, but a border is
+     part of the box and would spend 2px of that clearance, while the ring spends
+     none.
+     These figures are for the SFMono stack this was measured on; the balance point
+     follows the monospace fallback, so the suite asserts on the RENDERED line
      instead of trusting a model -- see the chip-position capture. */
   padding: 0.13em 0.2em 0;
   box-shadow: inset 0 0 0 1px $code-border;
