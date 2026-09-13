@@ -21,9 +21,15 @@
  * plus Chrome >= 118 interpolating `color-mix()` in oklab rather than srgb. That is
  * the tolerance the regression suite asserts. Use the literals if you need
  * byte-exact colours.
+ *
+ * The selectors are `:root.beamer-madrid`. `.reveal.beamer-madrid` works too --
+ * the theme resolves everything that derives from another variable at its point
+ * of use, so a `.reveal`-level seed reaches the badge fill and the
+ * `.section-minimal` title as well -- and `:root` is used here only because the
+ * palette it replaces is written there, so the two read as the same layer.
  */
 
-.reveal.beamer-madrid {
+:root.beamer-madrid {
   --beamer-seed: #2c7550;
 
   /* palette primary = structure */
@@ -37,7 +43,7 @@
 }
 
 @supports (color: color-mix(in srgb, red, black)) {
-  .reveal.beamer-madrid {
+  :root.beamer-madrid {
     /* palette secondary = structure!75!black */
     --beamer-primary-2: color-mix(in srgb, var(--beamer-seed) 75%, black);
     --beamer-structure-2: color-mix(in srgb, var(--beamer-seed) 75%, black);

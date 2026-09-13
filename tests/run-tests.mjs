@@ -216,7 +216,6 @@ const testMadrid = async (connection, origin) => {
         block
           .querySelector(":scope > .beamer-block-title")
           ?.textContent.trim() || "",
-      blockTitleIsRealText: slide.textContent.includes("定义"),
       blockTitleHasNoDataAttribute: !block.hasAttribute("data-title"),
       blockTitleInk: (() => {
         const title = block.querySelector(":scope > .beamer-block-title");
@@ -250,15 +249,16 @@ const testMadrid = async (connection, origin) => {
   }
   assert.equal(state.listsAreStacked, true);
   assert.equal(state.blockTitleText, "定义");
-  assert.equal(
-    state.blockTitleIsRealText,
-    true,
-    "block titles must be real text so they stay selectable and searchable"
-  );
   assert.equal(state.blockTitleHasNoDataAttribute, true);
+  // A precondition for the measurement below, not a finding of its own: the element is
+  // already required by `blockTitleText` above, so this cannot fail on its own account --
+  // its job is to replace a raw TypeError on the dereference with a message that names
+  // the markup contract. (The "real text, not a ::before" half of that contract is
+  // asserted where it can actually fail: `searchable` reads `innerText`, which no
+  // pseudo-element contributes to.)
   assert(
     state.blockTitleInk !== null,
-    "block title element is missing; the Lua filter must emit .beamer-block-title"
+    `block title element is missing; the Lua filter must emit .beamer-block-title: ${JSON.stringify(state.blockTitleText)}`
   );
   assert(Math.abs(state.blockTitleInk.centerDelta) < 1, JSON.stringify(state));
   await listsPage.screenshot("madrid-lists");
@@ -918,6 +918,99 @@ const testMadrid = async (connection, origin) => {
   await printPage.close();
 };
 
+// The menu button's line is `max(chrome bottom, logo bottom) + 8px`, written back as
+// `--beamer-menu-top` by `positionNativeUi`. That line is only observable on a deck that
+// HAS the three boxes it clears, which is why this fixture is CambridgeUS (headline and
+// frame band) with a logo and the menu switched on: the probe it replaces ran on Madrid
+// without a logo, so its headline and logo overlap checks were handed their own expected
+// `false` and could never fail.
+//
+// The fixture is asserted to be exercising all three before the placements are judged --
+// otherwise a later edit that drops the logo would quietly restore the vacuum.
+const testMenuClearsChrome = async (connection, origin) => {
+  const page = await BrowserPage.create(connection, `${origin}/menu-chrome.html`);
+  await delay(500);
+  const state = await page.evaluate(`(() => {
+    const overlaps = (first, second) =>
+      first.left < second.right &&
+      first.right > second.left &&
+      first.top < second.bottom &&
+      first.bottom > second.top;
+    const box = (element) => {
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 ? rect : null;
+    };
+    const menu = box(document.querySelector(".slide-menu-button"));
+    const logo = box(document.querySelector(".slide-logo"));
+    const slides = Array.from(document.querySelectorAll("section.beamer-leaf-slide"));
+    return {
+      menuPresent: Boolean(menu),
+      logoPresent: Boolean(logo),
+      menuOverlapsLogo: menu && logo ? overlaps(menu, logo) : null,
+      slides: slides.map((slide) => {
+        const slideRect = slide.getBoundingClientRect();
+        const menuRect = box(document.querySelector(".slide-menu-button"));
+        const headline = box(slide.querySelector(":scope > .beamer-headline"));
+        const band = box(slide.querySelector(":scope > h2"));
+        const footer = box(slide.querySelector(":scope > .beamer-footline"));
+        return {
+          id: slide.id,
+          visible: slideRect.width > 0,
+          hasHeadline: Boolean(headline),
+          hasBand: Boolean(band),
+          overlapsHeadline: headline ? overlaps(menuRect, headline) : null,
+          overlapsBand: band ? overlaps(menuRect, band) : null,
+          overlapsFooter: footer ? overlaps(menuRect, footer) : null,
+          insideSlide:
+            menuRect.left >= slideRect.left - 1 && menuRect.right <= slideRect.right + 1
+        };
+      })
+    };
+  })()`);
+
+  assert.equal(state.menuPresent, true, "the fixture must render the menu button");
+  assert.equal(state.logoPresent, true, "the fixture must render a logo");
+  assert.equal(
+    state.menuOverlapsLogo,
+    false,
+    `the menu must clear the logo: ${JSON.stringify(state)}`
+  );
+  const frames = state.slides.filter((slide) => slide.hasBand);
+  assert(
+    frames.length >= 2,
+    `the fixture must keep its frames, or this measures nothing: ${JSON.stringify(state)}`
+  );
+  // Only laid-out slides are judged: Reveal leaves a slide out of the layout entirely
+  // once it is far enough from the current one (and a hidden slide's box is 0x0, which
+  // would fail the `insideSlide` test for a reason that has nothing to do with the menu).
+  // The population is pinned first, so judging fewer slides cannot pass silently.
+  const laidOut = state.slides.filter((slide) => slide.visible);
+  assert(
+    laidOut.length >= 3,
+    `every slide of this fixture must be laid out for the judgement to mean anything: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    laidOut.filter(
+      (slide) =>
+        slide.overlapsHeadline === true ||
+        slide.overlapsBand === true ||
+        slide.overlapsFooter === true ||
+        slide.insideSlide === false
+    ),
+    [],
+    `the menu must clear the headline, the frame band and the footline, and stay inside the slide: ${JSON.stringify(state)}`
+  );
+  // The frames are what the band check is for; the headline has to be there for its own
+  // check to mean anything.
+  assert.deepEqual(
+    laidOut.filter((slide) => slide.hasBand && !slide.hasHeadline),
+    [],
+    `CambridgeUS must show the headline this asserts against: ${JSON.stringify(state)}`
+  );
+  await page.close();
+};
+
 const testCambridgeUs = async (connection, origin) => {
   const titlePage = await BrowserPage.create(
     connection,
@@ -1267,12 +1360,8 @@ const testBehavior = async (connection, origin) => {
     const slideRect = slide.getBoundingClientRect();
     const headingRect = slide.querySelector(":scope > h2").getBoundingClientRect();
     const paragraphRect = slide.querySelector(":scope > p").getBoundingClientRect();
-    const headlineRect = slide
-      .querySelector(":scope > .beamer-headline")
-      ?.getBoundingClientRect();
     const footer = slide.querySelector(":scope > .beamer-footline");
     const footerRect = footer.getBoundingClientRect();
-    const logoRect = document.querySelector(".slide-logo")?.getBoundingClientRect();
     const menu = document.querySelector(".slide-menu-button");
     const menuRect = menu.getBoundingClientRect();
     const nativeProgress = document.querySelector(".reveal > .progress");
@@ -1285,10 +1374,12 @@ const testBehavior = async (connection, origin) => {
       menuInsideSlide:
         menuRect.left >= slideRect.left - 1 && menuRect.right <= slideRect.right + 1,
       menuOverlapsHeading: overlaps(menuRect, headingRect),
-      menuOverlapsHeadline: headlineRect ? overlaps(menuRect, headlineRect) : false,
+      // No headline and no logo checks here: this fixture is Madrid (headline off) and
+      // declares no logo, so both would be handed their own expected false by the
+      // optional-chained probes above -- assertions that cannot fail. They live in
+      // testMenuClearsChrome, which renders a CambridgeUS deck that HAS a headline,
+      // a frame band and a logo.
       menuOverlapsFooter: overlaps(menuRect, footerRect),
-      menuOverlapsLogo:
-        logoRect && logoRect.width > 0 ? overlaps(menuRect, logoRect) : false,
       nativeProgressDisplay: getComputedStyle(nativeProgress).display,
       nativeNumberDisplay: getComputedStyle(nativeNumber).display,
       customProgressCount: footer.querySelectorAll(".beamer-footline-progress").length,
@@ -1301,9 +1392,7 @@ const testBehavior = async (connection, origin) => {
   assert.equal(topState.menuVisible, true);
   assert.equal(topState.menuInsideSlide, true);
   assert.equal(topState.menuOverlapsHeading, false);
-  assert.equal(topState.menuOverlapsHeadline, false);
   assert.equal(topState.menuOverlapsFooter, false);
-  assert.equal(topState.menuOverlapsLogo, false);
   assert.equal(topState.nativeProgressDisplay, "none");
   assert.equal(topState.nativeNumberDisplay, "none");
   assert.equal(topState.customProgressCount, 1);
@@ -2354,6 +2443,52 @@ const testOverflowDiagnostics = async (connection, origin) => {
   await page.close();
 };
 
+// Print and screen must reserve the SAME bottom space on every kind of page. The print
+// block re-states each page's padding with `!important` (Reveal paginates the deck there,
+// so the screen box no longer applies), and one of those restatements had drifted: the
+// section page reserved `footline + 34px` against the screen's `+ 22px`, while the leaf,
+// frame and title pages all carried the same value in both. Nothing observed it -- the
+// print assertions check that content stays inside its slide, not how big the box is.
+//
+// Read as a comparison rather than a literal: the screen values are whatever the theme
+// computes on this platform, and print has to match them.
+const testPrintMatchesScreenPadding = async (connection, origin) => {
+  const read = `(() => {
+    const bottom = (selector) => {
+      const slide = document.querySelector(selector);
+      return slide ? getComputedStyle(slide).paddingBottom : null;
+    };
+    return {
+      section: bottom("section.beamer-section-slide"),
+      frame: bottom("section.beamer-frame-slide"),
+      title: bottom("#title-slide")
+    };
+  })()`;
+
+  const screenPage = await BrowserPage.create(connection, `${origin}/madrid.html`);
+  const screen = await screenPage.evaluate(read);
+  await screenPage.close();
+
+  const printPage = await BrowserPage.create(connection, `${origin}/madrid.html?print-pdf`);
+  await printPage.emulateMedia("print");
+  const print = await printPage.evaluate(read);
+  await printPage.close();
+
+  // All three kinds have to be present, or the comparison is between two sets of nulls.
+  for (const kind of ["section", "frame", "title"]) {
+    assert.equal(
+      typeof screen[kind],
+      "string",
+      `the madrid fixture must carry a ${kind} page for this to measure anything: ${JSON.stringify(screen)}`
+    );
+    assert.equal(
+      print[kind],
+      screen[kind],
+      `a ${kind} page must reserve the same bottom space in print as on screen: print ${JSON.stringify(print)} against screen ${JSON.stringify(screen)}`
+    );
+  }
+};
+
 // Documented customisation paths: an extra stylesheet, and re-referencing the
 // extension theme by path. Both must reach the palette variables, and a
 // `:root`-level override must not be shadowed by the theme - for either variant.
@@ -2364,21 +2499,35 @@ const testPaletteOverrides = async (connection, origin) => {
     expectedAuthorBox,
     expectedPrimary,
     expectedFrameTitle,
+    expectedStructure,
+    expectedDerived,
   ] of [
-    ["palette-css", "css:", "rgb(18, 52, 86)", "#2c7550", "rgb(44, 117, 80)"],
-    ["palette-theme", "theme:", "rgb(18, 52, 86)", "#2c7550", "rgb(44, 117, 80)"],
-    ["palette-example", "examples/custom-palette.css", null, "#2c7550", "rgb(44, 117, 80)"],
+    ["palette-css", "css:", "rgb(18, 52, 86)", "#2c7550", "rgb(44, 117, 80)", "#3333b2", { badge: "rgb(31, 111, 139)", minimal: "rgb(122, 62, 168)", block: "rgb(255, 255, 255)", example: "rgb(255, 255, 255)" }],
+    ["palette-theme", "theme:", "rgb(18, 52, 86)", "#2c7550", "rgb(44, 117, 80)", "#3333b2", { badge: "rgb(31, 111, 139)", minimal: "rgb(122, 62, 168)", block: "rgb(255, 255, 255)", example: "rgb(255, 255, 255)" }],
+    // The shipped single-seed example re-points `structure` at the seed as well -- that
+    // is what "one seed" means -- and it must therefore also move the two surfaces the
+    // palette DERIVES from another variable: the badge fill (from
+    // `--beamer-section-title-bg`) and the `.section-minimal` title (from
+    // `--beamer-structure`). Both are resolved at their point of use, so any of the
+    // three placements works; an example written against `.reveal` used to leave them on
+    // the stock blue while every band turned green (measured).
+    ["palette-example", "examples/custom-palette.css", null, "#2c7550", "rgb(44, 117, 80)", "#2c7550", { badge: "rgb(44, 117, 80)", minimal: "rgb(44, 117, 80)", block: "rgb(255, 255, 255)", example: "rgb(255, 255, 255)" }],
     // CambridgeUS keeps its own palette, but a `.reveal.beamer-cambridgeus`
     // override must still win. The stock accent here is darkred (#cc0000);
     // #a30000 is the override, so this also proves the override is reaching
-    // the variant class rather than being shadowed.
-    ["palette-cambridgeus", "cambridgeus override", "rgb(18, 52, 86)", "#a30000", "rgb(242, 242, 242)"],
+    // the variant class rather than being shadowed. Its badge takes the accent,
+    // which is the second derived surface this checks.
+    ["palette-cambridgeus", "cambridgeus override", "rgb(18, 52, 86)", "#a30000", "rgb(242, 242, 242)", "#cc0000", { badge: "rgb(163, 0, 0)", minimal: "rgb(122, 62, 168)", block: "rgb(122, 62, 168)", example: "rgb(176, 96, 0)" }],
   ]) {
     renderFixture(fixture);
     const page = await BrowserPage.create(connection, `${origin}/${fixture}.html`);
     const state = await page.evaluate(`(() => {
       const reveal = document.querySelector(".reveal");
       const slide = document.getElementById("palette-frame");
+      const optional = (selector, property) => {
+        const element = document.querySelector(selector);
+        return element ? getComputedStyle(element)[property] : null;
+      };
       return {
         primary: getComputedStyle(reveal).getPropertyValue("--beamer-primary").trim(),
         structure: getComputedStyle(document.documentElement)
@@ -2389,7 +2538,19 @@ const testPaletteOverrides = async (connection, origin) => {
         ).backgroundColor,
         frameTitleBackground: getComputedStyle(slide.querySelector(":scope > h2")).backgroundColor,
         frameTitlePosition: getComputedStyle(slide.querySelector(":scope > h2")).position,
-        hasFootline: Boolean(slide.querySelector(":scope > .beamer-footline"))
+        hasFootline: Boolean(slide.querySelector(":scope > .beamer-footline")),
+        badgeBackground: optional("section.beamer-section-slide.section-badge > h1", "backgroundColor"),
+        minimalTitleColor: optional("section.beamer-section-slide.section-minimal > h1", "color"),
+        blockTitleColor: (() => {
+          const title = Array.from(document.querySelectorAll(".beamer-block > .beamer-block-title"))
+            .find((element) => element.textContent.trim() === "Block title");
+          return title ? getComputedStyle(title).color : null;
+        })(),
+        exampleTitleColor: (() => {
+          const title = Array.from(document.querySelectorAll(".beamer-block > .beamer-block-title"))
+            .find((element) => element.textContent.trim() === "Example title");
+          return title ? getComputedStyle(title).color : null;
+        })()
       };
     })()`);
     assert.equal(state.hasFootline, true, `${label} lost the Beamer footline`);
@@ -2406,12 +2567,41 @@ const testPaletteOverrides = async (connection, origin) => {
     );
     // Overriding the variant accent must not drag `structure` with it: they are
     // separate roles, and `structure` is what bullets and block titles use.
-    // Madrid keeps Beamer's blendedblue; CambridgeUS stocks its own darkred.
+    // Madrid keeps Beamer's blendedblue; CambridgeUS stocks its own darkred; the
+    // single-seed example is the one file that deliberately moves both.
     assert.equal(
       state.structure,
-      label.startsWith("cambridgeus") ? "#cc0000" : "#3333b2",
+      expectedStructure,
       `${label} must leave --beamer-structure at the variant's stock value`
     );
+    if (expectedDerived) {
+      assert.equal(
+        state.badgeBackground,
+        expectedDerived.badge,
+        `${label} left the badge on the stock palette: ${JSON.stringify(state)}`
+      );
+      assert.equal(
+        state.minimalTitleColor,
+        expectedDerived.minimal,
+        `${label} left the .section-minimal title on the stock palette: ${JSON.stringify(state)}`
+      );
+      // Madrid pins this one as a literal (white on the filled band), so an override of
+      // `--beamer-structure` must leave it alone; CambridgeUS derives it, so it must
+      // follow. Getting this backwards is what a palette-level derivation does.
+      assert.equal(
+        state.blockTitleColor,
+        expectedDerived.block,
+        `${label} block title colour: ${JSON.stringify(state)}`
+      );
+      // The same split one kind over: CambridgeUS derives its example title from
+      // `--beamer-example`, Madrid pins a literal. Both fixtures are given the same
+      // override, so this measures the difference rather than a constant.
+      assert.equal(
+        state.exampleTitleColor,
+        expectedDerived.example,
+        `${label} example block title colour: ${JSON.stringify(state)}`
+      );
+    }
     if (expectedAuthorBox) {
       assert.equal(
         state.authorBoxBackground,
@@ -3320,6 +3510,166 @@ const testReferencesContinuation = async (connection, origin) => {
   await page.close();
 };
 
+// A continuation page that also scrolls, and a level-1 bibliography whose continuation
+// pages have to take their title from the page's own heading.
+//
+// `refs-continuation` covers the bare page both templates use. This one differs in two
+// ways that used to defeat the pass completely: the page carries a speaker note, which is
+// enough to give it a scroll layer BEFORE the pagination runs, and it asks to scroll
+// itself. The entry list then has to be placed inside that layer -- `layerOverflows` asks
+// the layer, so a list parked beside an empty one makes the overflow test read zero and
+// the page swallows every remaining entry. Measured before the fix, with the fixture's
+// deliberately small page capacity: `refs-two` was not recognised as a continuation page
+// at all (0 entries, still counted by the footline, bibliography spilled onto seven
+// generated pages); with the recognition fixed but the list still outside the layer, it
+// took all 11 remaining entries on one page, overflowed, added no page and warned about
+// nothing.
+//
+// The capacity assertion is self-calibrating on purpose: `refs-one` is declared with the
+// same oversized `item`, so it fills to whatever this platform's fonts actually fit, and
+// the continuation page may not hold more than that. A hard-coded number would be a
+// different test on every machine.
+const testReferencesScrollableContinuation = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/refs-continuation-scrollable.html`,
+    undefined,
+    { preloadScript: consoleWarningCaptureSource }
+  );
+  await delay(500);
+  const state = await page.evaluate(`(() => {
+    const slides = Array.from(document.querySelectorAll("section.beamer-leaf-slide"));
+    const pages = slides.filter((slide) => slide.querySelector("#refs, .beamer-refs"));
+    return {
+      pages: pages.map((slide) => {
+        const layer = slide.querySelector(":scope > .beamer-scroll");
+        const container = slide.querySelector("#refs, .beamer-refs");
+        const classes = typeof slide.className === "string" ? slide.className : "";
+        const heading = slide.querySelector(":scope > h1, :scope > h2");
+        return {
+          id: slide.id,
+          entries: slide.querySelectorAll(".csl-entry").length,
+          hasLayer: Boolean(layer),
+          containerInLayer: Boolean(layer && container && layer.contains(container)),
+          keepsOwnClass: classes.split(/\\s+/).includes("refs-page-two"),
+          uncounted: slide.dataset.visibility === "uncounted",
+          heading: heading ? heading.textContent.trim() : null,
+          headingTag: heading ? heading.tagName : null,
+        };
+      }),
+      footline: (() => {
+        const last = document.getElementById("last-normal");
+        const footer = last && last.querySelector(":scope > .beamer-footline");
+        const number = footer && footer.querySelector(".beamer-footline-number");
+        return number ? number.textContent : null;
+      })(),
+      warnings: window.__beamerWarnings,
+    };
+  })()`);
+
+  const declared = state.pages.find((entry) => entry.id === "refs-two");
+  const master = state.pages.find((entry) => entry.id === "refs-one");
+  assert(
+    state.pages.length >= 3,
+    `the surplus entries must spill onto generated pages: ${JSON.stringify(state)}`
+  );
+  // Both pages are named by the assertions below, so a fixture that lost one would
+  // otherwise report a TypeError from the dereference instead of what went missing.
+  assert(
+    declared && master,
+    `the fixture must keep both declared reference pages: ${JSON.stringify(state)}`
+  );
+  assert(
+    declared && declared.entries > 0,
+    `a continuation page that scrolls is still a continuation page, and must hold entries: ${JSON.stringify(state)}`
+  );
+  assert(
+    declared.keepsOwnClass,
+    `the pagination must not replace a page's own classes: ${JSON.stringify(state)}`
+  );
+  // Conditional on the page HAVING a layer, because whether the references page is
+  // `.scrollable` is Quarto's decision and not this theme's: 1.10 marks it, and the
+  // suite's minimum supported release is checked in CI. A page without one is measured
+  // through the fallback (`slide.scrollHeight` against the section), which the spill
+  // assertion below covers either way. The author's own `.scrollable` page always has a
+  // layer, and that is pinned first so this cannot pass by having nothing to check.
+  assert(
+    state.pages.some((entry) => entry.hasLayer),
+    `the fixture must exercise the scroll-layer path: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.pages
+      .filter((entry) => entry.hasLayer && !entry.containerInLayer)
+      .map((entry) => entry.id),
+    [],
+    `an entry list on a page that scrolls must sit inside the layer that is measured: ${JSON.stringify(state)}`
+  );
+  assert(
+    declared.entries <= master.entries,
+    `no page may hold more entries than the measured capacity of a page: ${JSON.stringify(state)}`
+  );
+  assert(
+    state.pages.every((entry) => entry.uncounted),
+    `every reference page must be uncounted: ${JSON.stringify(state)}`
+  );
+  assert(
+    state.warnings.some((line) => line.includes("pages were added")),
+    `pages the author did not declare must be reported: ${JSON.stringify(state.warnings)}`
+  );
+  // The title page and `# Section` and `Body` and `Last normal` are the countable pages;
+  // the two reference pages here are uncounted, and the six generated ones too.
+  assert.equal(
+    state.footline,
+    "4 / 4",
+    `the footline must not count any reference page: ${JSON.stringify(state)}`
+  );
+  await page.close();
+};
+
+// The same fixture as `refs-section-level`, minus `refs-title`: the generated pages then
+// have to name themselves after the page's own `#` heading. Reading only an `h2` for that
+// title left them reading the English fallback while their TAG was correctly `h1` --
+// measured `参考文献` on the author's page and `References` on all four generated ones.
+const testReferencesSectionLevelDefaultTitle = async (connection, origin) => {
+  const page = await BrowserPage.create(
+    connection,
+    `${origin}/refs-section-level-title.html`
+  );
+  await delay(500);
+  const state = await page.evaluate(`(() => {
+    const pages = Array.from(document.querySelectorAll("section.beamer-leaf-slide"))
+      .filter((slide) => slide.querySelector("#refs, .beamer-refs"));
+    return pages.map((slide) => {
+      const heading = slide.querySelector(":scope > h1, :scope > h2");
+      return {
+        id: slide.id,
+        entries: slide.querySelectorAll(".csl-entry").length,
+        heading: heading ? heading.textContent.trim() : null,
+        headingTag: heading ? heading.tagName : null,
+      };
+    });
+  })()`);
+
+  const generated = state.filter((entry) => entry.id !== "section-title-main");
+  assert(generated.length > 0, `the fixture must generate continuation pages: ${JSON.stringify(state)}`);
+  assert.deepEqual(
+    generated.map((entry) => entry.heading),
+    generated.map(() => "参考文献"),
+    `a generated page takes the page's own heading text, not an English default: ${JSON.stringify(state)}`
+  );
+  assert.deepEqual(
+    state.map((entry) => entry.headingTag),
+    state.map(() => "H1"),
+    `a level-1 bibliography keeps one heading level throughout: ${JSON.stringify(state)}`
+  );
+  assert.equal(
+    state.reduce((total, entry) => total + entry.entries, 0),
+    13,
+    `every entry must be placed exactly once: ${JSON.stringify(state)}`
+  );
+  await page.close();
+};
+
 // `hasAuthoredBody` is an exclusion list, not a "does it render text" test, because a
 // frame can carry content that produces no text at all. A bare `![](figure.png)` is an
 // `<img>` whose `textContent` is empty, and a check written as `textContent.trim() !== ""`
@@ -3584,6 +3934,16 @@ const testReferencesScroll = async (connection, origin) => {
     emptyCounts.scroll.lastNormal,
     `refs-overflow must not move the page count: ${JSON.stringify(emptyCounts)}`
   );
+  // ...and the comparison above must not be two `null`s agreeing. `lastNormal` collapses
+  // to `null` when the footline number is missing, so without this the assertion passes
+  // in the one state it exists to catch: numbering lost on both modes at once.
+  for (const mode of ["paginate", "scroll"]) {
+    assert.match(
+      String(emptyCounts[mode].lastNormal),
+      /^\d+ \/ \d+$/,
+      `the frame after the references must still carry a page number in ${mode} mode: ${JSON.stringify(emptyCounts)}`
+    );
+  }
 };
 
 // A bibliography hung off a `#` heading instead of `##`. The docs and both templates
@@ -3802,6 +4162,11 @@ const testScrollLayers = async (connection, origin) => {
       const report = {
         isSectionSlide: slide.classList.contains("beamer-section-slide"),
         headingIsDirectChild: Boolean(heading),
+        // Reported explicitly, because paragraphsInLayer below falls back to the
+        // section's own children when there is no layer -- so without this, a page that
+        // lost its layer entirely still reports 12 paragraphs and the count assertion
+        // passes in exactly the state it exists to catch.
+        hasLayer: Boolean(layer),
         headingInLayer: Boolean(layer && layer.querySelector("h1")),
         paragraphsInLayer: paragraphs.length,
         bandFill: style ? style.backgroundColor : null,
@@ -3919,6 +4284,11 @@ const testScrollLayers = async (connection, origin) => {
     `the band must span the slide: ${JSON.stringify(state.section)}`
   );
   assert.equal(
+    state.section.hasLayer,
+    true,
+    `a scrollable section page must have a scroll layer at all: ${JSON.stringify(state.section)}`
+  );
+  assert.equal(
     state.section.paragraphsInLayer,
     12,
     `the section page's body must be in the layer, and the fixture must keep 12 paragraphs: ${JSON.stringify(state.section)}`
@@ -3937,6 +4307,11 @@ const testScrollLayers = async (connection, origin) => {
     state.control.isSectionSlide,
     true,
     JSON.stringify(state.control)
+  );
+  assert.equal(
+    state.control.hasLayer,
+    false,
+    `the control page must stay a plain page, with its body as direct children: ${JSON.stringify(state.control)}`
   );
   assert.equal(
     state.control.paragraphsInLayer,
@@ -4321,6 +4696,7 @@ const measureSectionStyles = async (connection, origin, variant) => {
         longTitle: read("sec-long"),
         // An H2 is an ordinary frame: it must NOT pick up a section look, which
         // is what keeps the attribute meaningful rather than universal.
+        framePresent: Boolean(document.getElementById("sec-frame")),
         frameIsSection: Boolean(
           document
             .getElementById("sec-frame")
@@ -4335,6 +4711,11 @@ const measureSectionStyles = async (connection, origin, variant) => {
 
 const assertSectionStyles = (variant, state) => {
   {
+    assert.equal(
+      state.framePresent,
+      true,
+      `${variant}: the fixture must still carry the ordinary frame this checks: ${JSON.stringify(state)}`
+    );
     assert.equal(
       state.frameIsSection,
       false,
@@ -4683,13 +5064,37 @@ const testLogoPlacement = async (connection, origin, fixture, variantClass) => {
         insideHeadline: head ? overlaps(rect, head) : false,
       });
     }
+    // The stylesheet's own fallback for the logo's line, with the value beamer.js wrote
+    // taken away: the theme promises max(active headline, frame title) + 7px, and that
+    // is the value in force between first paint and the measurement pass. Moving the
+    // derivation into the palette once left it resolving against an undeclared variable,
+    // so the rule silently fell back to a flat 39px -- 26px above the documented value --
+    // and only this reading would have noticed.
+    const inlineTop = reveal.style.getPropertyValue("--beamer-logo-top");
+    reveal.style.removeProperty("--beamer-logo-top");
+    const stylesheetTop = getComputedStyle(logo).top;
+    const activeHeadline = parseFloat(
+      getComputedStyle(reveal).getPropertyValue("--beamer-active-headline-height")
+    );
+    const frameHeight = parseFloat(
+      getComputedStyle(reveal).getPropertyValue("--beamer-frame-height")
+    );
+    reveal.style.setProperty("--beamer-logo-top", inlineTop);
+
     return {
       missing: false,
       cssTop: getComputedStyle(reveal).getPropertyValue("--beamer-logo-top").trim(),
+      stylesheetTop,
+      expectedStylesheetTop: Math.max(activeHeadline, frameHeight) + 7 + "px",
       measured,
     };
   })()`);
   assert.equal(state.missing, false, `${fixture} must render a logo`);
+  assert.equal(
+    state.stylesheetTop,
+    state.expectedStylesheetTop,
+    `the stylesheet's logo line must be max(active headline, frame title) + 7px (${fixture}): ${JSON.stringify(state.stylesheetTop)} vs ${JSON.stringify(state.expectedStylesheetTop)}`
+  );
   assert(
     state.measured.length >= 2,
     `the ${fixture} fixture must have frame slides: ${JSON.stringify(state)}`
@@ -4822,6 +5227,7 @@ try {
     "offline",
     "centering",
     "behavior",
+    "menu-chrome",
     "refs-pagination",
     "refs-multifile",
     "refs-surplus",
@@ -4829,8 +5235,10 @@ try {
     "refs-empty",
     "refs-adjacent",
     "refs-continuation",
+    "refs-continuation-scrollable",
     "refs-image-frame",
     "refs-section-level",
+    "refs-section-level-title",
     "scroll-layers",
     "chip-cjk",
     "logo",
@@ -4909,12 +5317,14 @@ try {
   await testOffline(chrome.connection, local.origin);
   await testCentering(chrome.connection, local.origin);
   await testBehavior(chrome.connection, local.origin);
+  await testMenuClearsChrome(chrome.connection, local.origin);
   await testFourThreeViewport(chrome.connection, local.origin);
   await testSpacing(chrome.connection, local.origin);
   await testDocumentFootnotes(chrome.connection, local.origin);
   await testInjectionTiming(chrome.connection, local.origin);
   await testInvalidOptions(chrome.connection, local.origin);
   await testOverflowDiagnostics(chrome.connection, local.origin);
+  await testPrintMatchesScreenPadding(chrome.connection, local.origin);
   await testPaletteOverrides(chrome.connection, local.origin);
   await testCjkChipAlignment(chrome.connection, local.origin);
   await testLogoPlacement(chrome.connection, local.origin, "logo", "madrid");
@@ -4930,6 +5340,8 @@ try {
   await testReferencesAutoPages(chrome.connection, local.origin);
   await testReferencesAdjacentItems(chrome.connection, local.origin);
   await testReferencesContinuation(chrome.connection, local.origin);
+  await testReferencesScrollableContinuation(chrome.connection, local.origin);
+  await testReferencesSectionLevelDefaultTitle(chrome.connection, local.origin);
   await testReferencesImageFrame(chrome.connection, local.origin);
   await testReferencesScroll(chrome.connection, local.origin);
   await testReferencesSectionLevel(chrome.connection, local.origin);

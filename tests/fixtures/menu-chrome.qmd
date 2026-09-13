@@ -1,0 +1,23 @@
+---
+title: "Menu clears the chrome"
+author: "Menu Author"
+date: "2026"
+short-title: "Menu"
+short-author: "Menu Author"
+short-institute: "Menu Institute"
+short-date: "2026"
+logo: assets/normal-density.svg
+beamer-variant: cambridgeus
+format:
+  beamerslides-revealjs:
+    menu: true
+---
+
+## A frame whose title band is present
+
+CambridgeUS shows the headline by default and the frame title band below it, and this
+deck carries a logo, so the menu button has three boxes to clear rather than one.
+
+## A second frame
+
+The same must hold on every frame, not only the first.
