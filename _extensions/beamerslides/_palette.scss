@@ -16,6 +16,9 @@
      block title alerted bg = red!75!black           = #bf0000        (orchid)
      block title example bg = (green!50!black)!75!black = #006000     (orchid)
 
+   The last three are the algebra the literals below were EVALUATED from; they
+   are not live relationships (see the `--beamer-alert` note in the :root block).
+
    The body tint is not a fixed value: it is derived per block kind from that
    kind's own title band, so beamer.scss computes it rather than reading it
    from here. `--beamer-soft` below is a separate theme surface, not the block
@@ -37,15 +40,22 @@
      #3333b2 -- not #3333b3. */
   --beamer-primary: #3333b2;
   --beamer-primary-2: #262686;
-  --beamer-primary-3: #1a1a59;
   --beamer-frame-bg: #3333b2;
   --beamer-frame-fg: #ffffff;
   --beamer-soft: #eaeaf4;
   --beamer-line: #b8b8d8;
   /* colorthemedefault: alert = red, example = green!50!black. xcolor's
      `green` is rgb(0,1,0), so the halved green is (0,0.5,0) = #008000.
-     These are the *base* colours; orchid derives each block title band from
-     its base at !75!black, so the bands below are the darkened forms. */
+     These are Beamer's BASE colours, and they drive inline emphasis
+     (`--beamer-alert` for `[text]{.alert}`) and CambridgeUS's example block
+     TITLE TEXT -- nothing else. They are NOT the inputs of the three
+     `--beamer-block-*-title-bg` values further down: orchid derives those from
+     the bases at !75!black, but this palette freezes the results as literals so
+     the stock colours are byte-exact (color-mix() drifts up to 2/255 from
+     xcolor). Overriding `--beamer-alert` therefore does NOT move the alert
+     band -- measured. What IS derived is the block BODY tint, which
+     `beamer.scss` computes from each kind's own title band (`bg!10!bg`); so to
+     recolour a block, override its title band and the body follows. */
   --beamer-alert: #ff0000;
   --beamer-example: #008000;
   --beamer-ink: #202124;
@@ -143,7 +153,6 @@
 
   --beamer-primary: #cc0000;
   --beamer-primary-2: #8f0000;
-  --beamer-primary-3: #7a0000;
   --beamer-frame-bg: #f2f2f2;
   --beamer-frame-fg: #cc0000;
   --beamer-soft: #f8f2f2;

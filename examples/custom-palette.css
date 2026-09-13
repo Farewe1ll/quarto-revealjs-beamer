@@ -45,7 +45,6 @@
     --beamer-block-title-bg: color-mix(in srgb, var(--beamer-seed) 75%, black);
 
     /* palette tertiary = structure!50!black */
-    --beamer-primary-3: color-mix(in srgb, var(--beamer-seed) 50%, black);
     --beamer-structure-3: color-mix(in srgb, var(--beamer-seed) 50%, black);
     --beamer-headline-section-bg: color-mix(in srgb, var(--beamer-seed) 50%, black);
     --beamer-footline-author-bg: color-mix(in srgb, var(--beamer-seed) 50%, black);
