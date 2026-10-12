@@ -50,6 +50,7 @@
 | [fonts](../_extensions/beamerslides/fonts)、[katex](../_extensions/beamerslides/katex) | 固定版本的第三方运行时资源 | 更新来源、版本、完整性信息与许可证 |
 | [template.qmd](../template.qmd)、[template-cambridgeus.qmd](../template-cambridgeus.qmd) | 两种变体逐页对应的功能总览 | 保持默认外观示例；可选开关与默认值分别展示 |
 | [tests/fixtures](../tests/fixtures)、[tests/baselines](../tests/baselines) | 可重复输入与审阅过的截图 | 新增有区分力的场景；基线变更须有设计依据 |
+| [tests/suites](../tests/suites)、[tests/reference-beamer](../tests/reference-beamer) | 新增场景的职责分组、固定上游视觉对照输入 | 仍用串行入口；原版对照编译不成为扩展或日常测试依赖 |
 | [tests/run-tests.mjs](../tests/run-tests.mjs)、[tests/lib/harness.mjs](../tests/lib/harness.mjs) | 功能断言与测试基础设施 | 主题规则留在用例，浏览器/服务/资源清理留在 harness |
 
 按职责拆分文件时保留现有分发入口和行为。新增构建步骤应同时解决产物更新、安装后路径、离线打开和 CI 验证，避免仅为文件拆分增加运行时依赖。
@@ -121,11 +122,11 @@ CambridgeUS 的普通和 example 标题文字分别从 `structure` 和 `example`
 
 1. 解析变体、headline、progress 和参考文献模式，设置主题类。
 2. 应用每页的布局类、基础标题预留空间及滚动层，让分页测量使用这些样式确定的内容区域。
-3. 按需排序文献，再分页；分页结果标记为 `uncounted`。
+3. 按需排序文献，显示待测量页和隐藏祖先并拟合真实标题，再分页；恢复显示状态，分页结果标记为 `uncounted`。
 4. 重新读取 leaf slides，计算页数并注入每页 chrome。
 5. 整理标题页、ORCID 和文字包装，进行首轮对齐。
 
-第二阶段等待 Reveal 就绪。自动创建了文献页时通过 `Reveal.sync()` 注册，再集成 Reveal 配置、测量动态标题高度、定位原生 UI，并绑定字体加载、resize、slidechanged 和打印事件。第一阶段也有必要的几何测量，两阶段的区分依据是 Reveal 集成依赖。分页尚未使用后续标题测量或字体加载得到的最终高度，见 R2 和待办。
+第二阶段等待 Reveal 就绪。自动创建了文献页时通过 `Reveal.sync()` 注册，再集成 Reveal 配置、更新动态标题高度、定位原生 UI，并绑定字体加载、resize、slidechanged 和打印事件。第一阶段也有必要的几何测量，两阶段的区分依据是 Reveal 集成依赖。文献资源/几何更新后的重新分页见 R2。
 
 ### L2：重复事件与失败路径可控
 
@@ -154,6 +155,8 @@ CambridgeUS 的普通和 example 标题文字分别从 `structure` 和 `example`
 长 frame title 自动降字号并增高标题带；严重超长时使用正文滚动。普通页面溢出时报告 frame id 与像素量；显式滚动页和打印布局采用各自规则。打印与屏幕应保持内容区域的 padding 约定。
 
 logo 与菜单位置依据当前页 chrome 和实测 logo 尺寸确定。章节标题区也属于固定 chrome；居中的 badge 不占据同一个顶部区域。运行时定位变量与静态兜底分别维护。
+
+格式预设关闭 Quarto 的 `auto-stretch`。Reveal 的剩余高度计算与本扩展固定高度页框组合时，会将单张顶层图片的宽高写为零；图片改用作者尺寸与主题最大尺寸。分发测试同时检查普通安装和隔离 HTML 中的图片实际解码及可见尺寸。手动 `.r-stretch` 或重新开启自动拉伸不属于当前支持范围。
 
 ### G3：保留原生语义与可访问文本
 
@@ -185,15 +188,19 @@ Lua 生成的 block 标题保持字面文本，输出真实文本节点以便搜
 
 **稳定约束：** 分页测量与最终条目所在容器采用一致的布局和列表层级；有滚动层时，条目列表必须位于层内，否则对空层的高度检查会失去意义。
 
-**当前实现：** 测量逐条加入 clone，通过浏览器的 `scrollHeight` / `clientHeight` 判断容纳能力，最后移动真实条目。每页布局类、基础标题预留空间及滚动层在分页前设置；动态标题高度随后才测量。分页只在初始化执行，字体、图片或标题后续改变可用高度时未重新断页，其可靠性仍需专项验证。
+**当前实现：** 测量逐条加入 clone，通过浏览器的 `scrollHeight` / `clientHeight` 判断容纳能力，最后移动真实条目。每页布局类、实际标题高度及滚动层在填入测量条目前确定，包括生成页与隐藏祖先。测量期间不报告尚未断页的正文溢出；所有临时显示状态在 `finally` 恢复。
+
+初始化保存已排序的真实条目、作者声明页及生成页。字体 ready/loadingdone/loadingerror、文献图片 load/error、resize、afterprint 和可见文献页的尺寸变化按尾沿合并后重新分页；打印布局不触发重分页。条目顺序、作者声明页与 notes 保留，多余生成页在移动真实条目后删除；新增页补齐 chrome 并加入尺寸观察，删除页解除观察，页集合变化时 `Reveal.sync()` 并保持当前页仍可导航。条目归属未变时恢复正文滚动位置，重复相同分页告警不重复输出。更新失败记录错误并停止后续重分页。
+
+延迟字体与图片、标题阈值两侧、h1/h2、4:3、重复事件和超高单条均有专项场景；任意作者脚本在不触发上述事件时修改文献，不属于自动重新分页保证。慢字体样例没有额外溢出，延迟图片样例在旧实现上产生 148px 溢出，更新后消除。首帧仍采用同步初始分页，不等待资源无限加载。
 
 ### R3：排序解析失败可诊断
 
 **稳定约束：** 选择 `refs-order: declaration` 时，按文献文件的声明顺序建立排序；识别到读取或 key 匹配异常时，回退 citeproc 序并告警。排序不应把已分页条目重新集中到首个容器。非 BibTeX 文献源、复杂 header 和 key 解析边界应明确说明。
 
-**当前实现及局限：** HTML 不保留 `.bib` 声明位置，Lua 因而直接扫描各文件的行首 entry-header，忽略 string/comment/preamble，并按文件顺序拼接 key。行首约束避免普通字段内的 `@` 提及产生伪 key，但不是完整 BibTeX 解析器：跨行 header 可能漏识别，多行字段里的伪 header 可能被误识别。JS 的数量检查原本是这些解析边界的安全网，却也会拒绝合法引用子集；后者是已复现缺陷。
+**当前实现：** HTML 不保留声明位置，Lua 使用 Pandoc 自带的 BibTeX/BibLaTeX 读取器取得各文件的 `references` 列表，再按文件顺序拼接 key；`.bib`、`.biblatex` 使用 `biblatex`，`.bibtex` 使用 `bibtex`。不再按行匹配 header，因此字段或 comment 中的伪 header 不构成声明，真实跨行 header 正常解析。不新增运行时依赖。
 
-**修复目标，尚未实现：** 支持引用子集，同时保留或替代解析不可靠时的诊断与回退。渲染 key 的唯一性和可匹配性是候选检查，但不能单独证明扫描所得顺序可信；方案需覆盖未引用条目、跨文件、重复或未匹配 key，以及伪 header 和跨行 header，不能仅删除数量检查。
+Lua 在不支持的文件类型、读取/解析失败或重复 key 时告警并不输出排序位置。JS 接受渲染条目为声明列表的子集，但拒绝重复声明/渲染 key 和没有声明位置的渲染 key；后者包括只在文档 `references` 元数据中定义的条目。排序仍发生在分页前，并限制在各现有容器中。停用重排不会跳过 Quarto/Pandoc 对文献源本身的校验。解析失败路径和浏览器排序路径分别测试，不能只依赖数量或成员检查证明解析正确。
 
 ## 分发与兼容性
 
@@ -201,7 +208,7 @@ Lua 生成的 block 标题保持字面文本，输出真实文本节点以便搜
 
 离线资源目录与单文件交付分别验证。普通输出随 HTML 携带引用的扩展资源；单文件模式需同时检查 `embed-resources` 与 `self-contained-math`。已在 Quarto 1.10.19 下验证现有 [offline fixture](../tests/fixtures/offline.qmd) 单独搬到临时目录后仍能渲染公式；其他版本的行为由对应验证确定。
 
-最低版本要求以 `_extension.yml` 为准，已测试版本以 [CI workflow](../.github/workflows/test.yml) 为准。两者当前最低补丁版本存在差距，详见[已知限制与待办](#已知限制与待办)。Node 与 Chrome 是开发测试要求，扩展使用者无需安装 Node 来渲染文档。
+最低版本要求以 `_extension.yml` 为准，为 Quarto 1.4.557，与 [CI workflow](../.github/workflows/test.yml) 的最低测试版本一致。此前声明的 1.4.0 没有对应官方发布记录，本次收紧至可获取并验证的补丁版本，不表示所有更早版本均已被证明不兼容。Node 与 Chrome 是开发测试要求，扩展使用者无需安装 Node 来渲染文档。分发集成用例需要 Git 与 zip，用于打包已跟踪和未忽略的待交付文件。
 
 ## 验证与变更流程
 
@@ -211,17 +218,21 @@ Lua 生成的 block 标题保持字面文本，输出真实文本节点以便搜
 
 当前套件共享临时输入和输出目录，运行锁在重置输出前取得。未来并行化应先隔离这些资源。
 
-**当前重试机制：** 渲染除 `ENOENT` / `EACCES` 外的失败都会进入有限重试，并最终抛出最后一次错误；它尚未按 Deno 崩溃等原因分类。重试包裹完整渲染操作，以便每次重建会在 `finally` 中删除的临时输入。页面未就绪可重载；求值中的特定 null/undefined 属性错误按消息模式重试，匹配消息不能证明原因就是竞态；PDF 重试以现有产物检查为条件。语义断言自身不被套件重试。缩小渲染重试范围、保留首次失败证据和用明确就绪条件替代消息推断，仍是待办。
+**当前重试机制：** 命令错误保留退出状态、信号、启动错误码和超时标记。渲染仅对 SIGSEGV/SIGBUS/SIGABRT，或对应的常规崩溃退出码与原生崩溃诊断组合，最多尝试三次；普通校验失败、权限、缺失命令、超时与未分类错误直接失败。各次失败和重试原因写入忽略的 artifacts；多次失败以首次错误为 cause 保留完整错误列表，即使重试成功仍保留之前的证据。每次 fixture 渲染重建临时输入并在 `finally` 清理。
 
-| 约定或变更范围 | 当前主要测试（均在 [run-tests.mjs](../tests/run-tests.mjs)） |
+页面就绪检查 document、Reveal、实际 chrome、公式与字体；只有该条件超时才可有限重载，浏览器运行时错误直接失败。页面求值异常不再按消息模式重试，创建失败的 target 由创建者关闭。PDF 重试仍限于签名/最小体积检查，不能证明 PDF 的完整语义。语义断言自身不重试；`tests/lib/check-harness.mjs` 验证普通失败次数、超时、暂态失败、首次证据、重试耗尽及页面创建失败清理。
+
+页面就绪重试也保留首次及后续失败状态，即使重载后恢复；重试耗尽、后续运行时错误和重载本身失败均保留首次错误为 cause。分发字体检查要求实际匹配且加载完成的 FontFace，不能仅使用对未声明字体也返回 true 的 `document.fonts.check()`。
+
+| 约定或变更范围 | 当前主要测试（串行入口为 [run-tests.mjs](../tests/run-tests.mjs)，新增文献/分发场景在 [reference-updates.mjs](../tests/suites/reference-updates.mjs)） |
 |:---|:---|
 | C1–C3：默认配色、覆盖和派生关系 | `testPaletteAlgebra`、`testPaletteOverrides` |
 | L1–L2：首帧与元数据集成 | `testInjectionTiming`、`testOptions`、`testInvalidOptions` |
 | G1：滚动、章节外观和还原 | `testScrollLayers`、`testSectionStyles`、`testBadgeScrollIsInert` |
 | G2：对齐、logo、菜单、打印 | `testMadrid`、`testCambridgeUs`、`testCjkChipAlignment`、`testLogoPlacement`、`testMenuClearsChrome`、`testPrintMatchesScreenPadding` |
 | G2–G3：内容间距、列表和可访问标题 | `testSpacing`、`testDocumentFootnotes`、`testBlockTitles`、`testBehavior` |
-| R1–R3：文献页 | `testReferencesPagination`、`testReferencesMultifile` 及其余 `testReferences*` 用例 |
-| 离线与视口 | `testOffline`、`testFourThreeViewport` |
+| R1–R3：文献页 | `testReferencesPagination`、`testReferencesMultifile`、`testReferencesDeclarationOrder`、`testReferencesFinalGeometry`、`testReferencesDelayedResources` 及其余 `testReferences*`；解析/读取失败另由 `tests/lib/check-bibliography.lua` 覆盖 |
+| 离线、分发与视口 | `testOffline`、`testDistribution`、`testFourThreeViewport`；分发归档与仓库外安装由 `tests/lib/distribution.mjs` 管理 |
 
 测试名定位现有覆盖，每个名称并不代表相关约定已被穷尽验证。修复缺陷时增加能在旧实现上失败的场景；跨变量派生、初始化顺序与文献分页修改应运行完整套件。
 
@@ -235,13 +246,13 @@ Lua 生成的 block 标题保持字面文本，输出真实文本节点以便搜
 
 | 状态 | 事项 | 修复或验证标准 |
 |:---|:---|:---|
-| 已复现缺陷 | `.bib` 有未引用条目时 declaration 排序因数量不等而回退 | 支持引用子集，并验证跨文件、重复或未匹配 key、伪 header 和跨行 header 的诊断与回退 |
+| 已修复并回归验证 | 引用子集曾因数量不等回退；逐行扫描曾静默产生错误声明顺序 | 已改用 Pandoc 读取器并验证子集、多文件、伪 header、跨行 header、重复与未匹配 key；见 R3 |
 | 实现限制 | badge 与正文滚动组合不生效 | 保留现有告警；改变组合语义时同时验证 centering 和滚动 |
-| 验证缺口 | 分页先于动态标题测量与字体完全加载，后续未重新断页 | 覆盖长文献标题、慢字体、图片及可用高度变化，检查条目完整及正文是否溢出 |
-| 测试基础设施缺口 | 渲染重试范围宽于“Deno 崩溃”，部分探针通过异常文本推断竞态 | 按退出状态分类；明确就绪条件，保留失败证据 |
-| 兼容性缺口 | 声明 Quarto >=1.4.0，CI 最低为 1.4.557 | 增加相应验证或调整最低版本声明 |
-| 分发验证缺口 | 干净目录的安装与模板复制路径缺少独立用例 | 验证扩展安装、模板资源与最终交付；限定复制开发文件的范围 |
-| 还原度验证缺口 | 截图基线由当前实现产生，缺少原版 Beamer 对照样张 | 用相同内容建立 Madrid/CambridgeUS 对照并记录容许偏差 |
+| 已修复并回归验证 | 长文献页标题与加载后的图片曾导致分页后正文溢出 | 初始分页拟合实际标题；资源/几何事件更新分页，保留条目、声明页与 Reveal 模型 |
+| 已修复并回归验证 | 渲染重试过宽、按异常文本推断竞态 | 分类重试、明确就绪条件、保留各次证据；参见验证流程 |
+| 已验证 | 最低版本声明收紧至 1.4.557，与 CI 一致 | 本机官方 1.4.557 的完整功能、打印与分发套件通过；固定视觉基线比较在当前版本执行 |
+| 已补充并验证 | 仓库外安装、模板复制与隔离离线打开 | 1.4.557 和 1.10.19 分别验证 add/template，两种变体渲染；复制开发文件范围由 `.quartoignore` 限定 |
+| 已建立有限对照 | 固定 Beamer v3.76 的同内容样张 | 两种主题各 5 页，与 HTML 逐页审查；[输入、环境与观察](../tests/reference-beamer/README.md)说明已接受偏离；不证明所有页面的像素一致 |
 
 ## 约定如何演进
 
@@ -258,3 +269,5 @@ Lua 生成的 block 标题保持字面文本，输出真实文本节点以便搜
 改变公共选项、CSS hook、默认外观或生命周期时，同步相关约定、README、模板和测试。涉及新的重大取舍时，补充简短记录：问题、最终决定、依据、影响范围、验证方式；记录可先放在本文，条目增多后再拆成独立设计决策文件。
 
 已知缺陷被修复后更新其状态和测试映射。未来模块拆分与测试并行化按独立变更推进，保持每一步可验证。
+
+本次复核后的实施顺序、变更边界与验收标准见[推进计划](implementation-plan.md)。计划中的候选方案经验证后才能成为设计约定。

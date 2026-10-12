@@ -206,6 +206,7 @@ print("每个标签页内部可以使用任意块级内容")
 :::: {.columns}
 
 ::: {.column width="56%"}
+<!-- 扩展关闭 auto-stretch；图片保留显式宽度并受主题最大尺寸限制。 -->
 ![标准正态分布密度曲线](assets/normal-density.svg){#fig-normal width="94%"}
 :::
 

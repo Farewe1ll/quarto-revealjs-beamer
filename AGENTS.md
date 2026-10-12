@@ -19,7 +19,7 @@
 
 ## 验证与交付
 
-- 测试需要 Quarto、Node 22+、Chrome/Chromium。依赖安装用 `npm ci`，回归套件用 `npm test`。
+- 测试需要 Quarto、Node 22+、Chrome/Chromium；分发集成用例还需要 Git 与 zip。依赖安装用 `npm ci`，回归套件用 `npm test`。
 - 修改配置、Lua、SCSS、JS 或模板结构后运行相关验证；配色派生、初始化和文献分页变更运行完整套件。修复缺陷时补充能区分旧行为的场景。
 - 同一 checkout 串行运行套件；它共享临时输入和输出目录，并有运行锁。
 - 一次性浏览器探针复用 `tests/lib/harness.mjs` 的 `withBrowser`；页面/CDP 会话与本地服务另由创建者在 `finally` 中关闭，清理失败不跳过其余资源。Moli 可作额外检查，现有套件使用 Chrome/CDP。

@@ -63,7 +63,6 @@ const chromeLaunchAttempts =
     ? requestedChromeLaunchAttempts
     : 3;
 const pdfAttempts = 3;
-const evaluateAttempts = 4;
 const requestedPageReadyAttempts = Number.parseInt(
   process.env.BEAMERSLIDES_PAGE_READY_ATTEMPTS || "",
   10
@@ -267,13 +266,14 @@ const commandTimeout = Number.parseInt(
 const resolvedCommandTimeout =
   Number.isFinite(commandTimeout) && commandTimeout > 0 ? commandTimeout : 300_000;
 
-const runCapture = (command, args) => {
+const runCapture = (command, args, options = {}) => {
+  const timeout = options.timeout ?? resolvedCommandTimeout;
   const startedAt = Date.now();
   const result = spawnSync(command, args, {
-    cwd: rootDir,
+    cwd: options.cwd ?? rootDir,
     encoding: "utf8",
     env: process.env,
-    timeout: resolvedCommandTimeout,
+    timeout,
     killSignal: "SIGKILL",
   });
   if (process.env.BEAMERSLIDES_DEBUG === "1") {
@@ -286,8 +286,8 @@ const runCapture = (command, args) => {
     const error = new Error(
       [
         `${command} ${args.join(" ")} failed` +
-          (result.signal === "SIGKILL"
-            ? ` (timed out after ${resolvedCommandTimeout}ms)`
+          (result.error?.code === "ETIMEDOUT"
+            ? ` (timed out after ${timeout}ms)`
             : ""),
         result.stdout,
         result.stderr,
@@ -296,13 +296,14 @@ const runCapture = (command, args) => {
         .filter(Boolean)
         .join("\n")
     );
-    // `spawnSync` reports "the process never started" here rather than in `status`
-    // (a missing or non-executable binary), and that failure is permanent. Carrying
-    // the code out lets the retry wrapper tell it apart from the intermittent crash
-    // the retries exist for; without it a missing Quarto burnt two extra attempts and
-    // two blocking sleeps before reporting the same error, under a warning that said
-    // the Deno runtime had crashed.
     error.code = result.error ? result.error.code : undefined;
+    error.status = result.status;
+    error.signal = result.signal;
+    error.timedOut = result.error?.code === "ETIMEDOUT";
+    error.stdout = result.stdout || "";
+    error.stderr = result.stderr || "";
+    error.command = command;
+    error.args = args;
     throw error;
   }
   return { stdout: result.stdout || "", stderr: result.stderr || "" };
@@ -312,27 +313,53 @@ const run = (command, args) => runCapture(command, args).stdout;
 
 
 // Render retry scope and limits: docs/architecture.md, '验证与变更流程'.
-// Current retries are broader than identified Deno crashes.
 const renderAttempts = 3;
+let retryRecord = 0;
+
+const renderRetryReason = (error) => {
+  if (error.code || error.timedOut) return null;
+  if (["SIGSEGV", "SIGBUS", "SIGABRT"].includes(error.signal)) {
+    return `renderer terminated by ${error.signal}`;
+  }
+  // Quarto's wrapper may turn a child crash into an exit status. Require both
+  // the conventional status and a native crash diagnostic, not generic stderr.
+  if ([134, 135, 139].includes(error.status) &&
+      /segmentation fault|bus error|abort trap|thread .* panicked at/i.test(error.stderr || "")) {
+    return `renderer crash diagnostic (exit ${error.status})`;
+  }
+  return null;
+};
 
 // Retry the full operation: renderFixture removes its temporary input in finally,
 // so retrying the old command arguments would target a deleted file.
 const withRenderRetries = (operation) => {
-  let lastError = null;
+  const failures = [];
+  let recordPath = null;
   for (let attempt = 1; attempt <= renderAttempts; attempt += 1) {
     try {
       return operation();
     } catch (error) {
-      lastError = error;
-      // A command that never started will not start on the next attempt either, and
-      // its failure has nothing to do with the crash this retry exists for.
-      const permanent = error.code === "ENOENT" || error.code === "EACCES";
-      if (attempt === renderAttempts || permanent) {
+      const reason = renderRetryReason(error);
+      failures.push({ error, reason });
+      if (reason || failures.length > 1) {
+        recordPath ||= join(artifactsDir, `render-retry-${process.pid}-${++retryRecord}.json`);
+        try {
+          mkdirSync(artifactsDir, { recursive: true });
+          writeFileSync(recordPath, JSON.stringify(failures.map(({ error: failure, reason }) => ({
+            message: failure.message, code: failure.code, status: failure.status,
+            signal: failure.signal, timedOut: failure.timedOut, stdout: failure.stdout,
+            stderr: failure.stderr, command: failure.command, args: failure.args, reason,
+          })), null, 2));
+        } catch (recordError) {
+          console.warn(`[harness] could not save retry evidence: ${recordError.message}`);
+        }
+      }
+      if (attempt === renderAttempts || !reason) {
         break;
       }
       console.warn(
         `[harness] quarto render failed (attempt ${attempt}/${renderAttempts}); ` +
-          "retrying -- Quarto's Deno runtime crashes intermittently"
+          `retrying: ${reason}; evidence: ${recordPath}`
       );
       // Synchronous sleep: the callers of this helper are synchronous.
       const until = Date.now() + 400 * attempt;
@@ -341,7 +368,10 @@ const withRenderRetries = (operation) => {
       }
     }
   }
-  throw lastError;
+  if (failures.length === 1) throw failures[0].error;
+  throw new AggregateError(failures.map(failure => failure.error),
+    `Render failed after ${failures.length} attempts. First failure: ${failures[0].error.message}`,
+    { cause: failures[0].error });
 };
 
 const renderFixture = (name, options = {}) => {
@@ -349,15 +379,14 @@ const renderFixture = (name, options = {}) => {
   const fixture = join(testsDir, "fixtures", `${source}.qmd`);
   const temporaryInput = join(rootDir, `.beamerslides-test-${name}.qmd`);
   temporaryInputs.push(temporaryInput);
-  copyFileSync(fixture, temporaryInput);
   const metadataArgs = Object.entries(options.metadata || {}).flatMap(
     ([key, value]) => ["-M", `${key}:${value}`]
   );
-  try {
-    // Quarto writes extension warnings to stderr; callers that assert on them
-    // receive the captured text.
-    return withRenderRetries(() =>
-      runCapture(quartoCommand, [
+  // Recreate the input per attempt, and preserve the command error if cleanup fails.
+  return withRenderRetries(() => {
+    try {
+      copyFileSync(fixture, temporaryInput);
+      return runCapture(quartoCommand, [
       "render",
       basename(temporaryInput),
       "--output",
@@ -366,13 +395,15 @@ const renderFixture = (name, options = {}) => {
       "tests/_output",
       "--no-clean",
       ...metadataArgs,
-      ])
-    ).stderr;
-  } finally {
-    if (existsSync(temporaryInput)) {
-      unlinkSync(temporaryInput);
+      ]).stderr;
+    } finally {
+      try {
+        if (existsSync(temporaryInput)) unlinkSync(temporaryInput);
+      } catch (error) {
+        console.warn(`[harness] could not remove fixture input ${temporaryInput}: ${error.message}`);
+      }
     }
-  }
+  });
 };
 
 const renderTemplate = (source) => {
@@ -430,7 +461,8 @@ const mimeTypes = {
   ".woff2": "font/woff2",
 };
 
-const startServer = async () => {
+const startServer = async ({ directory = outputDir } = {}) => {
+  const serveRoot = resolve(directory);
   const server = createServer((request, response) => {
     const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
     if (requestUrl.pathname === "/favicon.ico") {
@@ -450,8 +482,8 @@ const startServer = async () => {
       response.end("Bad request");
       return;
     }
-    const target = resolve(outputDir, `.${decodedPath}`);
-    if (target !== outputDir && !target.startsWith(`${outputDir}${sep}`)) {
+    const target = resolve(serveRoot, `.${decodedPath}`);
+    if (target !== serveRoot && !target.startsWith(`${serveRoot}${sep}`)) {
       response.writeHead(403);
       response.end("Forbidden");
       return;
@@ -900,63 +932,58 @@ class BrowserPage {
     const { targetId } = await connection.send("Target.createTarget", {
       url: "about:blank",
     });
-    const { sessionId } = await connection.send("Target.attachToTarget", {
-      flatten: true,
-      targetId,
-    });
-    const page = new BrowserPage(connection, targetId, sessionId, url, viewport);
-    await connection.send("Page.enable", {}, sessionId);
-    await connection.send("Runtime.enable", {}, sessionId);
-    await connection.send("Log.enable", {}, sessionId);
-    await connection.send(
-      "Emulation.setDeviceMetricsOverride",
-      { ...viewport, deviceScaleFactor: 1, mobile: false },
-      sessionId
-    );
-    if (options.preloadScript) {
+    try {
+      const { sessionId } = await connection.send("Target.attachToTarget", {
+        flatten: true,
+        targetId,
+      });
+      const page = new BrowserPage(connection, targetId, sessionId, url, viewport);
+      await connection.send("Page.enable", {}, sessionId);
+      await connection.send("Runtime.enable", {}, sessionId);
+      await connection.send("Log.enable", {}, sessionId);
       await connection.send(
-        "Page.addScriptToEvaluateOnNewDocument",
-        { source: options.preloadScript },
+        "Emulation.setDeviceMetricsOverride",
+        { ...viewport, deviceScaleFactor: 1, mobile: false },
         sessionId
       );
+      if (options.preloadScript) {
+        await connection.send(
+          "Page.addScriptToEvaluateOnNewDocument",
+          { source: options.preloadScript },
+          sessionId
+        );
+      }
+      if (options.blockedURLs) {
+        await connection.send("Network.enable", {}, sessionId);
+        await connection.send("Network.setBlockedURLs", { urls: options.blockedURLs }, sessionId);
+      }
+      await connection.send("Page.navigate", { url }, sessionId);
+      await page.waitForReady();
+      return page;
+    } catch (error) {
+      try {
+        await connection.send("Target.closeTarget", { targetId });
+      } catch (cleanupError) {
+        console.warn(`[harness] failed to close an incomplete page: ${cleanupError.message}`);
+      }
+      throw error;
     }
-    await connection.send("Page.navigate", { url }, sessionId);
-    await page.waitForReady();
-    return page;
   }
 
   async evaluate(expression) {
-    // Retry the specific null/undefined-property message pattern only.
-    // Matching it is a readiness heuristic, not proof that the cause is a race.
-    const transientNullProperty =
-      /Cannot read properties of (?:null|undefined) \(reading '[^']+'\)/;
-    for (let attempt = 1; attempt <= evaluateAttempts; attempt += 1) {
-      const response = await this.connection.send(
-        "Runtime.evaluate",
-        { expression, awaitPromise: true, returnByValue: true },
-        this.sessionId
-      );
-      if (!response.exceptionDetails) {
-        return response.result?.value;
-      }
+    const response = await this.connection.send(
+      "Runtime.evaluate",
+      { expression, awaitPromise: true, returnByValue: true },
+      this.sessionId
+    );
+    if (response.exceptionDetails) {
       const message =
         response.exceptionDetails.exception?.description ||
         response.exceptionDetails.text ||
         "Browser evaluation failed";
-      if (
-        attempt === evaluateAttempts ||
-        !transientNullProperty.test(message)
-      ) {
-        throw new Error(
-          attempt > 1 ? `${message} (after ${attempt} attempts)` : message
-        );
-      }
-      console.warn(
-        `[harness] ${this.url}: probe hit a not-yet-present element ` +
-          `(attempt ${attempt}/${evaluateAttempts}); retrying`
-      );
-      await delay(250 * attempt);
+      throw new Error(message);
     }
+    return response.result?.value;
   }
 
   async waitForReady() {
@@ -965,21 +992,46 @@ class BrowserPage {
     // The same page loads correctly on the next attempt, so a reload is the fix.
     // Retrying here only rescues a page that never became ready -- a page that
     // loads and then breaks an assertion still fails on its own merits.
+    const failures = [];
+    let recordPath = null;
+    const saveFailure = (error) => {
+      failures.push(error);
+      if (error.code !== "PAGE_READY_TIMEOUT" && failures.length === 1) return;
+      recordPath ||= join(artifactsDir, `page-ready-retry-${process.pid}-${++retryRecord}.json`);
+      try {
+        mkdirSync(artifactsDir, { recursive: true });
+        writeFileSync(recordPath, JSON.stringify({ url: this.url,
+          failures: failures.map(failure => ({ message: failure.message, code: failure.code })),
+        }, null, 2));
+      } catch (recordError) {
+        console.warn(`[harness] could not save page readiness evidence: ${recordError.message}`);
+      }
+    };
     for (let attempt = 1; attempt <= pageReadyAttempts; attempt += 1) {
       try {
         await this.waitForReadyOnce();
         return;
       } catch (error) {
-        if (attempt === pageReadyAttempts) {
-          throw error;
+        saveFailure(error);
+        if (error.code !== "PAGE_READY_TIMEOUT" || attempt === pageReadyAttempts) {
+          break;
         }
         console.warn(
           `[harness] ${this.url} was not ready (attempt ${attempt}/${pageReadyAttempts}); ` +
-            "reloading"
+            `reloading; evidence: ${recordPath}`
         );
-        await this.reload();
+        try {
+          await this.reload();
+        } catch (reloadError) {
+          saveFailure(reloadError);
+          break;
+        }
       }
     }
+    if (failures.length === 1) throw failures[0];
+    throw new AggregateError(failures,
+      `Page readiness failed for ${this.url}. First failure: ${failures[0].message}`,
+      { cause: failures[0] });
   }
 
   async reload() {
@@ -994,10 +1046,19 @@ class BrowserPage {
     const startedAt = Date.now();
     let ready = null;
     while (Date.now() - startedAt < pageReadyTimeout) {
+      const runtimeErrors = this.connection.events.filter(event =>
+        event.sessionId === this.sessionId &&
+        (event.method === "Runtime.exceptionThrown" ||
+          (event.method === "Runtime.consoleAPICalled" && ["error", "assert"].includes(event.params.type))));
+      if (runtimeErrors.length) {
+        throw new Error(`Runtime failed while waiting for ${this.url}: ${JSON.stringify(runtimeErrors[0].params)}`);
+      }
       ready = await this.evaluate(`(() => ({
         documentReady: document.readyState === "complete",
         revealReady: Boolean(window.Reveal && window.Reveal.isReady && window.Reveal.isReady()),
         decorated: document.querySelector(".reveal")?.dataset.beamerDecorated === "true",
+        chromeReady: [...document.querySelectorAll('section.beamer-leaf-slide')].length > 0 &&
+          [...document.querySelectorAll('section.beamer-leaf-slide')].every(s => s.querySelector(':scope > .beamer-footline')),
         mathReady: !document.querySelector(".math") || Boolean(document.querySelector(".math .katex")),
         fontsReady: !document.fonts || document.fonts.status === "loaded"
       }))()`);
@@ -1005,6 +1066,7 @@ class BrowserPage {
         ready.documentReady &&
         ready.revealReady &&
         ready.decorated &&
+        ready.chromeReady &&
         ready.mathReady &&
         ready.fontsReady
       ) {
@@ -1013,10 +1075,12 @@ class BrowserPage {
       }
       await delay(50);
     }
-    throw new Error(
+    const error = new Error(
       `Timed out waiting for ${this.url} after ${pageReadyTimeout} ms; ` +
         `last state: ${JSON.stringify(ready)}`
     );
+    error.code = "PAGE_READY_TIMEOUT";
+    throw error;
   }
 
   async screenshot(name) {
@@ -1388,6 +1452,7 @@ export {
   generatedFixtureIgnore,
   launchChrome,
   outputDir,
+  quartoCommand,
   removeTemporaryDirectory,
   renderFixture,
   renderTemplate,
@@ -1395,6 +1460,7 @@ export {
   rootDir,
   run,
   runCapture,
+  withRenderRetries,
   showSlide,
   shutdownChrome,
   startServer,

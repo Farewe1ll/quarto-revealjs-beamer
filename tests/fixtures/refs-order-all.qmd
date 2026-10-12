@@ -1,0 +1,20 @@
+---
+title: "Complete declaration order"
+bibliography:
+  - tests/fixtures/refs-order-a.bib
+  - tests/fixtures/refs-order-b.bib
+refs-order: declaration
+nocite: '@*'
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+## Citations
+
+Explicit citations are still a subset [@zulu; @alpha].
+
+## References {#references item="1"}
+
+::: {#refs}
+:::

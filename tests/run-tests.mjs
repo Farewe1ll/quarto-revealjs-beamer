@@ -10,6 +10,10 @@ import {
 import { dirname, join, relative, resolve } from "node:path";
 import { PNG } from "pngjs";
 import { fileURLToPath } from "node:url";
+import {
+  testReferencesDeclarationOrder, testReferencesFinalGeometry,
+  testReferencesDelayedResources, testDistribution,
+} from "./suites/reference-updates.mjs";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runLockFile = join(projectRoot, "tests", ".run-tests.lock");
@@ -121,6 +125,7 @@ import {
   generatedFixtureIgnore,
   launchChrome,
   outputDir,
+  quartoCommand,
   removeTemporaryDirectory,
   renderFixture,
   renderTemplate,
@@ -5154,7 +5159,9 @@ try {
 
   resetDirectory(outputDir);
   resetDirectory(artifactsDir);
+  run("node", ["tests/lib/check-harness.mjs"]);
   run("node", ["--check", "_extensions/beamerslides/beamer.js"]);
+  run(quartoCommand, ["pandoc", "--from=markdown", "--to=plain", "--lua-filter=tests/lib/check-bibliography.lua", "tests/fixtures/refs-empty.qmd"]);
   renderTemplate("template");
   renderTemplate("template-cambridgeus");
   let bogusRefsOverflowStderr = "";
@@ -5168,8 +5175,14 @@ try {
     "menu-chrome",
     "refs-pagination",
     "refs-multifile",
+    "refs-order",
+    "refs-order-all",
+    "refs-order-compensated",
+    "refs-order-fallback",
     "refs-surplus",
     "refs-auto",
+    "refs-long-title",
+    "refs-long-section",
     "refs-empty",
     "refs-adjacent",
     "refs-continuation",
@@ -5184,6 +5197,14 @@ try {
   ]) {
     renderFixture(fixture);
   }
+  renderFixture("refs-long-title-cambridgeus", {source:"refs-long-title",metadata:{"beamer-variant":"cambridgeus"}});
+  renderFixture("refs-long-title-progress", {source:"refs-long-title",metadata:{progress:"true"}});
+  renderFixture("refs-long-title-tall", {source:"refs-long-title",metadata:{"refs-title":"References and detailed bibliography ".repeat(24)}});
+  renderFixture("refs-order-citation", {
+    source: "refs-order", metadata: { "refs-order": "citation" },
+  });
+  assert.match(renderFixture("refs-order-duplicate"), /Duplicate bibliography key 'zulu'/);
+  assert.match(renderFixture("refs-order-unsupported"), /Declaration order requires a BibTeX or BibLaTeX file/);
   // `refs-overflow: scroll` keeps the bibliography on one page; reused sources keep the
   // fixtures to a minimum, and one of them declares `item` so the ignored-breaks warning is
   // covered too.
@@ -5275,6 +5296,10 @@ try {
   await testBlockTitles(chrome.connection, local.origin);
   await testReferencesPagination(chrome.connection, local.origin);
   await testReferencesMultifile(chrome.connection, local.origin);
+  await testReferencesDeclarationOrder(chrome.connection, local.origin);
+  await testReferencesFinalGeometry(chrome.connection, local.origin);
+  await testReferencesDelayedResources(chrome.connection);
+  await testDistribution(chrome.connection);
   await testReferencesAutoPages(chrome.connection, local.origin);
   await testReferencesAdjacentItems(chrome.connection, local.origin);
   await testReferencesContinuation(chrome.connection, local.origin);

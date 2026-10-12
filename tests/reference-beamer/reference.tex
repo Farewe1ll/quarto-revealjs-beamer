@@ -1,0 +1,44 @@
+% Same comparison content as reference.qmd. Variant wrappers select the theme.
+\listfiles
+\usepackage[T1]{fontenc}
+\title[Reference comparison]{A reproducible theme comparison}
+\subtitle{Madrid and CambridgeUS}
+\author[Example Author]{Example Author}
+\institute[Example Institute]{Example Institute}
+\date[2026]{2026}
+\begin{document}
+\begin{frame}
+  \titlepage
+\end{frame}
+\section{Comparison}
+\subsection{Content}
+\begin{frame}{Frame title and information bars}
+  A short paragraph with \alert{inline emphasis}.
+  \begin{itemize}
+    \item First unordered item
+    \item Second unordered item
+  \end{itemize}
+  \begin{enumerate}
+    \item First ordered item
+    \item Second ordered item
+  \end{enumerate}
+\end{frame}
+\begin{frame}{Block styles}
+  \begin{block}{Normal block}
+    A short statement in a normal block.
+  \end{block}
+  \begin{alertblock}{Alert block}
+    A short statement in an alert block.
+  \end{alertblock}
+  \begin{exampleblock}{Example block}
+    A short statement in an example block.
+  \end{exampleblock}
+\end{frame}
+\section{Section page}
+\begin{frame}
+  \sectionpage
+\end{frame}
+\begin{frame}{A final frame}
+  The same chrome continues after the section page.
+\end{frame}
+\end{document}

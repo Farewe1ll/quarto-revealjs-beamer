@@ -558,8 +558,7 @@
     return id.startsWith("ref-") ? id.slice(4) : id;
   };
 
-  // Declaration ordering and scan limitations: docs/architecture.md, R3.
-  // The count guard catches scan discrepancies but also rejects citation subsets.
+  // Declaration ordering and fallback policy: docs/architecture.md, R3.
   const reorderReferences = () => {
     const raw = meta("beamer-refs-keys");
     if (!raw) {
@@ -582,20 +581,20 @@
     if (entries.length === 0) {
       return;
     }
-    if (entries.length !== keys.length) {
+    const rank = new Map(keys.map((key, index) => [key, index]));
+    const renderedKeys = entries.map(entryKey);
+    if (rank.size !== keys.length || new Set(renderedKeys).size !== entries.length) {
       console.warn(
-        "[beamerslides] refs-order: declaration is ignored: the bibliography " +
-          `files declare ${keys.length} entries but ${entries.length} were ` +
-          "rendered. Check for an entry the .bib scan cannot read."
+        "[beamerslides] refs-order: declaration is ignored: duplicate " +
+          "declaration or rendered keys make the order ambiguous."
       );
       return;
     }
-
-    const rank = new Map(keys.map((key, index) => [key, index]));
-    if (entries.some((entry) => !rank.has(entryKey(entry)))) {
+    const unmatched = renderedKeys.find((key) => !rank.has(key));
+    if (unmatched !== undefined) {
       console.warn(
-        "[beamerslides] refs-order: declaration is ignored: a declared key has " +
-          "no matching rendered entry."
+        `[beamerslides] refs-order: declaration is ignored: rendered key '${unmatched}' ` +
+          "has no declaration position."
       );
       return;
     }
@@ -729,8 +728,11 @@
     markReferencesUncounted(pages);
   };
 
+  let referencePagination = null;
+  let referenceChromeOptions = null;
+
   const paginateReferences = () => {
-    const pages = refsPages();
+    const pages = referencePagination?.pages || refsPages();
     if (pages.length === 0) {
       return;
     }
@@ -738,11 +740,22 @@
     if (!master) {
       return;
     }
-    const all = Array.from(master.querySelectorAll(".csl-entry"));
+    const all = referencePagination?.entries || Array.from(master.querySelectorAll(".csl-entry"));
     if (all.length === 0) {
       markReferencesUncounted(pages);
       return;
     }
+    if (!referencePagination) {
+      referencePagination = { pages, declared: pages.slice(), entries: all, warning: null };
+    }
+    const scrollPositions = new Map(pages.map((slide) => {
+      const layer = slide.querySelector(":scope > .beamer-scroll");
+      return [slide, {
+        entries: Array.from(slide.querySelectorAll(".csl-entry")),
+        top: layer?.scrollTop || 0,
+        left: layer?.scrollLeft || 0,
+      }];
+    }));
 
     // This synchronous measurement pass temporarily exposes hidden pages.
     // finally restores inline display values before the next paint (R2).
@@ -780,18 +793,8 @@
         (name) =>
           name && name !== "beamer-leaf-slide" && !transientClasses.has(name)
       );
-    pages.forEach((slide) => {
-      layoutClasses.forEach((name) => slide.classList.add(name));
-      // The scroll layer is what makes `layerOverflows` meaningful, and this runs
-      // before the decoration pass that would normally create it, so it is created
-      // here. Without it the overflow check falls back to measuring the slide, which
-      // is 720/720 on every page and therefore never reports an overflow.
-      slide.classList.add("beamer-leaf-slide");
-      renderForMeasurement(slide);
-      wrapScrollableSlide(slide);
-    });
 
-    const declared = pages.map(refsItemCount);
+    const declared = referencePagination.declared.map(refsItemCount);
     // Read both h1 and h2: section-level bibliographies have their own title
     // text as well as a different heading tag.
     const pageHeading = (slide) =>
@@ -834,6 +837,7 @@
       slide.classList.add("beamer-leaf-slide");
       renderForMeasurement(slide);
       wrapScrollableSlide(slide);
+      measureFrameTitle(slide, false);
       pages.push(slide);
       return slide;
     };
@@ -844,13 +848,22 @@
     // the number the author declared has to be recorded first. Measuring the spill as
     // `slices.length - pages.length` after the loop always gives 0, which silently
     // killed the "pages were added" warning below.
-    const declaredCount = pages.length;
+    const declaredCount = referencePagination.declared.length;
     const slices = [];
     // The forced display only has to last as long as the pages are being measured --
     // the fill below moves the real entries and does not measure anything -- and it is
     // restored in a `finally`, because a page left rendered that Reveal believes is
     // hidden would sit on top of the deck.
     try {
+      pages.forEach((slide) => {
+        layoutClasses.forEach((name) => slide.classList.add(name));
+        slide.classList.add("beamer-leaf-slide");
+        renderForMeasurement(slide);
+        wrapScrollableSlide(slide);
+        // Fit the actual heading before measuring the clones, not the base band.
+        // Overflow diagnostics must wait until the real entries have been divided.
+        measureFrameTitle(slide, false);
+      });
       let index = 0;
       let pageIndex = 0;
       while (index < all.length) {
@@ -895,12 +908,35 @@
       restoreDisplay();
     }
 
+    // Move originals before removing obsolete generated pages. Author-declared
+    // pages, including unused pages and their notes, always remain in the deck.
+    pages.forEach((slide, i) => {
+      const slice = slices[i];
+      if (slice) {
+        const list = entryList(slide, master);
+        Array.from(list.querySelectorAll(".csl-entry")).forEach((entry) => entry.remove());
+        slice.forEach((entry) => list.appendChild(entry));
+        const previous = scrollPositions.get(slide);
+        const layer = slide.querySelector(":scope > .beamer-scroll");
+        if (layer && previous?.entries.length === slice.length &&
+            previous.entries.every((entry, index) => entry === slice[index])) {
+          layer.scrollTop = previous.top;
+          layer.scrollLeft = previous.left;
+        }
+      }
+      slide.dataset.visibility = "uncounted";
+    });
+    while (pages.length > Math.max(declaredCount, slices.length)) {
+      pages.pop().remove();
+    }
+
     const added = slices.length - declaredCount;
+    let paginationWarning = null;
     if (added > 0) {
       const firstMoved = slices[declaredCount]
         ? entryKey(slices[declaredCount][0])
         : "";
-      console.warn(
+      paginationWarning = (
         `[beamerslides] the references need ${slices.length} pages but ` +
           `${declaredCount} ${declaredCount === 1 ? "was" : "were"} declared, so ` +
           `${added} ${added === 1 ? "page was" : "pages were"} added` +
@@ -915,7 +951,7 @@
         .slice(slices.length)
         .map((slide) => slide.id || "(unnamed)")
         .join(", ");
-      console.warn(
+      paginationWarning = (
         `[beamerslides] the references fit on ${slices.length} ` +
           `${slices.length === 1 ? "page" : "pages"} but ${declaredCount} were ` +
           `declared; ${unused} ${declaredCount - slices.length === 1 ? "is" : "are"} ` +
@@ -923,22 +959,10 @@
           "over every declared page."
       );
     }
-
-    // Real entries are moved into place; the measuring clones are discarded. Each
-    // page keeps only its own entries, so nothing is duplicated. A page with no slice
-    // is not touched at all -- only marked uncounted -- so a declared page the
-    // bibliography does not need stays exactly as the author wrote it.
-    pages.forEach((slide, i) => {
-      const slice = slices[i];
-      if (slice) {
-        const list = entryList(slide, master);
-        Array.from(list.querySelectorAll(".csl-entry")).forEach((entry) =>
-          entry.remove()
-        );
-        slice.forEach((entry) => list.appendChild(entry));
-      }
-      slide.dataset.visibility = "uncounted";
-    });
+    if (paginationWarning && paginationWarning !== referencePagination.warning) {
+      console.warn(paginationWarning);
+    }
+    referencePagination.warning = paginationWarning;
 
     // Reported to the caller: sections appended after Reveal initialised are not in
     // Reveal's model, and Quarto's `support.js` plugin dereferences
@@ -1032,6 +1056,23 @@
         ];
       })
     );
+  };
+
+  const decorateSlideChrome = (slides, options) => {
+    const info = titleMetadata();
+    const counts = slideCounts(slides);
+    let section = info.title;
+    slides.forEach((slide) => {
+      const h1 = directHeading(slide, "h1");
+      const h2 = directHeading(slide, "h2");
+      // Reveal's earlier top offset is stale once our full-height box owns layout.
+      slide.style.removeProperty("top");
+      if (slide.id !== "title-slide" && h1) section = text(h1) || section;
+      addChrome(slide, {
+        section: slide.dataset.section || section,
+        subsection: slide.dataset.subsection || (h2 ? text(h2) : ""),
+      }, info, counts.get(slide), options);
+    });
   };
 
   const arrangeTitleSlide = () => {
@@ -1316,7 +1357,7 @@
     wrapScrollableSlide(slide);
   };
 
-  const measureFrameTitle = (slide) => {
+  const measureFrameTitle = (slide, diagnose = true) => {
     const heading = directHeading(slide, "h2");
     const minHeight = baseFrameTitleHeight();
     // Both of the scroll layer's inputs are rewritten below -- the reserved frame
@@ -1329,7 +1370,7 @@
     const previousHeight = slide.style.getPropertyValue("--beamer-frame-height");
     if (!heading || heading.getBoundingClientRect().width <= 0) {
       measureSectionBand(slide);
-      reportOverflow(slide);
+      if (diagnose) reportOverflow(slide);
       return;
     }
 
@@ -1365,25 +1406,30 @@
     ) {
       wrapScrollableSlide(slide);
     }
-    reportOverflow(slide);
+    if (diagnose) reportOverflow(slide);
   };
 
   let frameTitleAnimation = 0;
   const fitFrameTitles = (slides) => {
     window.cancelAnimationFrame(frameTitleAnimation);
     frameTitleAnimation = window.requestAnimationFrame(() => {
-      slides.forEach(measureFrameTitle);
+      slides.forEach((slide) => measureFrameTitle(slide));
     });
   };
 
+  let frameTitleObserver = null;
   const watchFrameTitles = (slides) => {
     let resizeTimer = 0;
     const refit = () => {
       window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => fitFrameTitles(slides), 40);
+      resizeTimer = window.setTimeout(() => {
+        refreshReferences();
+        fitFrameTitles(leafSlides());
+      }, 40);
     };
 
     window.addEventListener("resize", refit, { passive: true });
+    window.addEventListener("afterprint", refit);
     if (window.Reveal && typeof window.Reveal.on === "function") {
       window.Reveal.on("resize", refit);
       window.Reveal.on("slidechanged", (event) => {
@@ -1395,9 +1441,16 @@
     }
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(refit);
+      document.fonts.addEventListener?.("loadingdone", refit);
+      document.fonts.addEventListener?.("loadingerror", refit);
     }
+    const referenceImageLoaded = (event) => {
+      if (event.target?.tagName === "IMG" && event.target.closest("#refs, .beamer-refs")) refit();
+    };
+    document.addEventListener("load", referenceImageLoaded, true);
+    document.addEventListener("error", referenceImageLoaded, true);
     if (typeof window.ResizeObserver === "function") {
-      const observer = new window.ResizeObserver((entries) => {
+      frameTitleObserver = new window.ResizeObserver((entries) => {
         const visibleSlides = entries
           .map((entry) => entry.target)
           .filter(
@@ -1406,9 +1459,12 @@
           );
         if (visibleSlides.length > 0) {
           fitFrameTitles(visibleSlides);
+          if (visibleSlides.some((slide) => referencePagination?.pages.includes(slide))) {
+            refit();
+          }
         }
       });
-      slides.forEach((slide) => observer.observe(slide));
+      slides.forEach((slide) => frameTitleObserver.observe(slide));
     }
   };
 
@@ -1571,7 +1627,7 @@
     }
 
     // Structural dependencies: docs/architecture.md, L1 and R2.
-    // This reserves the base title height; dynamic title fitting happens later.
+    // Reference pagination also fits headings synchronously before measuring.
     slides.forEach(applySlideBox);
 
     reorderReferences();
@@ -1582,28 +1638,8 @@
 
     slides = leafSlides();
 
-    const info = titleMetadata();
-    const counts = slideCounts(slides);
-    let section = info.title;
-
-    slides.forEach((slide) => {
-      const h1 = directHeading(slide, "h1");
-      const h2 = directHeading(slide, "h2");
-
-      // Reveal measures the slide before Beamer's full-height layout is added.
-      // Its earlier top offset is stale once flex centering owns the content area.
-      slide.style.removeProperty("top");
-
-      if (slide.id !== "title-slide" && h1) {
-        section = text(h1) || section;
-      }
-
-      const context = {
-        section: slide.dataset.section || section,
-        subsection: slide.dataset.subsection || (h2 ? text(h2) : ""),
-      };
-      addChrome(slide, context, info, counts.get(slide), options);
-    });
+    referenceChromeOptions = options;
+    decorateSlideChrome(slides, options);
 
     replaceOrcidIcons();
     arrangeTitleSlide();
@@ -1611,6 +1647,40 @@
     alignOrderedMarkers();
     centerTitleInk();
     return true;
+  };
+
+  // Resource/viewport events are coalesced by watchFrameTitles. Do not retry a
+  // partially changed bibliography after failure, or redivide it in print layout.
+  const refreshReferences = () => {
+    if (!referencePagination || referencePagination.failed || isPrintLayout()) return;
+    const reveal = window.Reveal;
+    if (!reveal?.isReady?.()) return;
+    const before = referencePagination.pages.slice();
+    const current = reveal.getCurrentSlide();
+    const anchor = current?.querySelector(".csl-entry");
+    try {
+      paginateReferences();
+      const slides = leafSlides();
+      decorateSlideChrome(slides, referenceChromeOptions);
+      alignInlineLabels();
+      const changed = before.length !== referencePagination.pages.length ||
+        before.some((slide, index) => slide !== referencePagination.pages[index]);
+      if (changed) {
+        before.filter((slide) => !slide.isConnected)
+          .forEach((slide) => frameTitleObserver?.unobserve(slide));
+        referencePagination.pages.filter((slide) => !before.includes(slide))
+          .forEach((slide) => frameTitleObserver?.observe(slide));
+        reveal.sync();
+        const target = current?.isConnected ? current : anchor?.closest("section") || referencePagination.declared[0];
+        if (target && reveal.getCurrentSlide() !== target) {
+          const indices = reveal.getIndices(target);
+          reveal.slide(indices.h, indices.v);
+        }
+      }
+    } catch (error) {
+      referencePagination.failed = true;
+      console.error("[beamerslides] Reference layout update failed; further pagination updates are disabled.", error);
+    }
   };
 
   // Reveal can become ready before DOMContentLoaded while deferred resources
@@ -1739,6 +1809,7 @@
       "beamer-progress",
       revealConfig.progress === true
     );
+    referenceChromeOptions.showProgress = showProgress;
 
     if (revealConfig.center === true) {
       slides.forEach((slide) => slide.classList.add("beamer-center-slide"));
@@ -1774,7 +1845,7 @@
     };
     const realignForPrint = () => {
       runRealign();
-      slides.forEach(measureFrameTitle);
+      leafSlides().forEach((slide) => measureFrameTitle(slide));
     };
     // Keep one frame pass and one trailing timeout: the latter catches chrome
     // after title fitting changes it. Both use the latest requested slide.

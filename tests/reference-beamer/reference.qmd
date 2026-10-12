@@ -1,0 +1,42 @@
+---
+title: "A reproducible theme comparison"
+subtitle: "Madrid and CambridgeUS"
+author: "Example Author"
+institute: "Example Institute"
+date: "2026"
+short-title: "Reference comparison"
+short-author: "Example Author"
+short-institute: "Example Institute"
+short-date: "2026"
+format: beamerslides-revealjs
+---
+
+## Frame title and information bars {data-section="Comparison" data-subsection="Content"}
+
+A short paragraph with [inline emphasis]{.alert}.
+
+- First unordered item
+- Second unordered item
+
+1. First ordered item
+2. Second ordered item
+
+## Block styles {data-section="Comparison" data-subsection="Content"}
+
+::: {.block title="Normal block"}
+A short statement in a normal block.
+:::
+
+::: {.alertblock title="Alert block"}
+A short statement in an alert block.
+:::
+
+::: {.exampleblock title="Example block"}
+A short statement in an example block.
+:::
+
+# Section page
+
+## A final frame
+
+The same chrome continues after the section page.

@@ -4,7 +4,7 @@
 
 - `madrid`（默认）：蓝色主题。遵循上游 Madrid 的**无 headline** 布局——`beamerthemeMadrid.sty` 里 `\beamer@secheaderfalse` 是默认值，并据此把 headline 模板换成空模板；把 `beamer-secheader` 设为 `true` 即可恢复信息栏。
 - `cambridgeus`：白底红字、红灰 headline 与三段式 footline。上游把 `titlelike` 的背景设为白色，本主题写作 `transparent`（在浅色页面上等价），所以标题块看起来没有底色。
-- 页眉页脚在 DOM 解析完成后、Reveal.js 首帧之前注入，首帧就是完整的；只有依赖布局的光学对齐放在初始化之后。
+- 页眉页脚在 DOM 解析完成后、Reveal.js 首帧之前注入，首帧就是完整的；文献初始分页同步测量标题与正文，字体、图片和视口变化后的布局更新在 Reveal 就绪后执行。
 - 内容超页会在控制台告警；长 frame title 自动缩小并增高标题带，超过基准高度 2.28 倍时整页转为可滚动。
 - 公式用扩展内置的固定版本 KaTeX，断网可用；拉丁字符用内置的 Libertinus Sans，避免跨系统字体缺失导致的版式漂移。
 
@@ -12,7 +12,9 @@
 
 ## 安装
 
-把 `_extensions/beamerslides` 复制到项目根目录的 `_extensions/` 下即可；扩展发布到 Git 仓库后，也可以在项目根目录执行 `quarto add <仓库地址>`。
+需要 Quarto **1.4.557 或以上**。把 `_extensions/beamerslides` 复制到项目根目录的 `_extensions/` 下即可；扩展发布到 Git 仓库后，也可以在项目根目录执行 `quarto add <仓库地址>`。
+
+`quarto use template <仓库地址>` 会复制两份演示模板、引用的素材与扩展；测试、开发依赖清单和维护文档由 `.quartoignore` 排除。
 
 格式名是 `beamerslides-revealjs`——刻意避开 Quarto 内置 LaTeX Beamer 的 `beamer`。
 
@@ -202,6 +204,8 @@ quarto::quarto_render("slides.qmd")
 
 **图片**沿用 Quarto 原生 figure 语法，主题约束最大尺寸并统一居中图注：
 
+扩展默认设置 `auto-stretch: false`，单图使用作者指定的尺寸和主题最大尺寸。Reveal 的自动拉伸计算与本扩展固定高度的页框不兼容，可能把图片算成 `0×0`；手动启用 `auto-stretch` 或 `.r-stretch` 当前不在支持范围。选项说明见 [Quarto stretch 文档](https://quarto.org/docs/presentations/revealjs/advanced#stretch)。
+
 ```markdown
 ![图注](assets/figure.svg){#fig-example width="90%"}
 ```
@@ -265,9 +269,10 @@ refs-overflow: scroll   # 默认 paginate；scroll = 文献留在 Quarto 生成�
 - **所有参考文献页都标记为 `uncounted`**，页脚总页数**不会因为文献分成几页而变化**。
 - **文献页挂在一级标题下也可以**：把上面的 `##` 全部换成 `#`（`# 参考文献 {item="6"}` + `::: {#refs}`）同样成立，续页也照旧是裸标题。此时每一页用的都是**章节页的外观**（通栏色带），包括自动生成的续页——层级不会中途从 `h1` 变成 `h2`。Quarto 自己会给这一页加 `.smaller .scrollable`，所以这条路径是躲不开的，扩展对它做了与二级标题完全相同的处理（`refs-section-level` fixture 覆盖）。
 - **默认模式下**断页是**量出来**的，所以参考文献页不需要滚动就能看全（Quarto 给文献页带的 `.scrollable` 只是保底）。唯一的例外是**单条文献自己就比整页高**：它独占一页，那一页仍可滚动（兜底规则是「一页至少要放下一条」，否则分页无法推进）。除此之外，任何一页要滚动才能看完都是扩展的 bug。
+- 初始分页先拟合实际标题，字体、文献图片加载与视口变化后会合并更新分页；保留作者声明页，只删除多余的自动生成页。任意作者脚本在没有加载或尺寸事件时改写文献，不保证自动重新分页。
 - 声明页数与实际需要不符时会在控制台告警：**不够**时报出加了几页以及**第一条被移走的条目**（方便你把断点往前挪）；**多声明**时报出哪一页是空的。空页**不会**被自动删除（删掉可能连带删掉你在那页写的内容），只提示你处理。
 - `refs-title` 设置续页的基础标题，不写就取第一页的标题（`#` 与 `##` 都算）；某一页自己写的标题始终优先。
-- `refs-order: declaration` 按 `.bib` 的**声明顺序**排列文献（多个文件按列出顺序拼接）；默认 `citation` 保持 citeproc 的排序，**既有文档不受影响**。citeproc 排完序后 HTML 里没有任何字段记录原始位置，所以扩展直接读 `.bib` 抽 key——这是一次**保守的模式匹配**，读不出或数量对不上时会**告警并退回 citeproc 序**，不会猜。
+- `refs-order: declaration` 按 BibTeX/BibLaTeX 文件的**声明顺序**排列文献（`.bib`、`.bibtex`、`.biblatex`，多个文件按列出顺序拼接）；默认 `citation` 保持 citeproc 的排序。扩展通过 Pandoc 自带读取器取得声明位置，支持跨行 header、多行字段及只引用部分条目。读取、解析、重复 key 或已渲染 key 无法匹配时，会告警并停用 declaration 重排；其他文献源也保持 citeproc 序并告警。文献源本身无效时，仍受 Quarto/Pandoc 的校验。
 - `--beamer-refs-font-size`（默认 `0.9em`）是文献表唯一的字号开关；调小它会装下更多条目，自动断页会跟着适应。
 - `refs-overflow: scroll` 完全不分组：所有条目留在 `::: {#refs}` 那一页，装不下就**页内滚动**，页眉、frame title、页脚仍固定不动。它同样标记 `uncounted`，所以两种模式**不会改变页脚的总页数**。它是 `item` 的对立面，同时声明 `item` 时会告警并**忽略**分页断点。
 
@@ -362,7 +367,7 @@ format:
 
 直接写裸名 `beamer.scss` 会失败——Quarto 把它当作内置主题去 `formats/revealjs/themes/` 查找，报 `readfile '…/themes/beamer.scss.scss'`。`custom-palette.css` 以 `/*-- scss:rules --*/` 开头：`theme:` 里的样式文件需要 SCSS 层标记，这一行对 `css:` 路径无害。三条路径（`css:`、`theme:`、随仓库提供的示例文件）与两种变体都有回归测试覆盖（`palette-css` / `palette-theme` / `palette-example` / `palette-cambridgeus` fixture）。
 
-`color-mix()` 的派生结果与 xcolor 字面量最多相差 **2/255**（xcolor 的 sp 量化取整，加上 Chrome ≥ 118 在 oklab 而非 srgb 里插值 `color-mix()`），回归测试按这个容差断言；需要逐通道完全一致时请直接覆盖字面量。
+主题明确使用 `color-mix(in srgb, ...)`。浏览器派生结果与 xcolor 量化值的回归比较允许逐通道 **2/255** 的差异；这是现有测试容差，不能解释为使用了默认 Oklab 插值，也不保证任意种子色的全局误差上限。需要逐通道完全一致时请直接覆盖字面量。
 
 ### 标题层级用哪个变量
 
@@ -412,7 +417,8 @@ _extensions/beamerslides/
 .github/workflows/test.yml
 AGENTS.md
 docs/
-└── architecture.md    # 跨文件设计约定与验证依据
+├── architecture.md    # 跨文件设计约定与验证依据
+└── implementation-plan.md # 分阶段推进与执行记录
 assets/
 └── normal-density.svg
 examples/
@@ -424,13 +430,15 @@ template-cambridgeus.qmd
 tests/
 ├── baselines/          # 受版本控制的截图基线
 ├── fixtures/           # 渲染用 .qmd 与 .bib
-├── lib/harness.mjs     # Chrome/CDP、渲染器、静态服务器、截图比对
+├── lib/                # harness、分发验证与基础设施检查
+├── reference-beamer/   # 固定上游版本的同内容对照输入
+├── suites/             # 新增文献更新与分发回归场景
 └── run-tests.mjs
 ```
 
 ## 测试
 
-需要 Quarto、Node.js 22+、Chrome/Chromium：
+需要 Quarto、Node.js 22+、Chrome/Chromium；分发集成测试还需要 Git 与 zip。[原版 Beamer 对照样张](tests/reference-beamer/README.md)的编译工具单独说明，不作为日常套件依赖。
 
 ```bash
 npm ci     # 安装锁定的测试依赖
@@ -473,7 +481,7 @@ await withBrowser(async (chrome) => {
 | 变量 | 默认 | 用途 |
 |:---|:---|:---|
 | `BEAMERSLIDES_PAGE_READY_TIMEOUT_MS` | `20000` | 页面就绪等待上限 |
-| `BEAMERSLIDES_PAGE_READY_ATTEMPTS` | `3` | 「页面未就绪即重载」的次数 |
+| `BEAMERSLIDES_PAGE_READY_ATTEMPTS` | `3` | 明确就绪条件超时后的尝试总数；运行时错误不重载 |
 | `BEAMERSLIDES_CDP_TIMEOUT_MS` | `300000` | 单条 Chrome DevTools 命令的上限 |
 | `BEAMERSLIDES_COMMAND_TIMEOUT_MS` | `300000` | 外部命令（如 `quarto render`）的上限 |
 | `BEAMERSLIDES_CHROME_STARTUP_TIMEOUT_MS` | `45000` | 启动 Chrome 的上限 |

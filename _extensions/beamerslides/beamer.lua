@@ -59,22 +59,20 @@ local function include_variant_bootstrap(variant)
 end
 
 -- Declaration-order contract and fallback policy: docs/architecture.md, R3.
--- This line-anchored scan avoids inline @ mentions, but is not a full BibTeX
--- parser: split headers can be missed and multiline fields can contain false
--- headers. Keep those boundaries visible when changing the JS count guard.
-local ignored_entry_types = {
-  ["string"] = true,
-  ["comment"] = true,
-  ["preamble"] = true,
-}
-
-local function bib_entry_keys(text)
+local function bib_entry_keys(text, reader)
+  -- Use the same bibliography readers as Pandoc/citeproc. Their references list
+  -- preserves entry order without treating headers inside fields as declarations.
+  local ok, document = pcall(pandoc.read, text, reader)
+  if not ok then
+    return nil, tostring(document)
+  end
   local keys = pandoc.List()
-  for line in text:gmatch("[^\r\n]+") do
-    local entry_type, key = line:match("^%s*@(%a+)%s*[%{%(]%s*([^,%s{}]+)%s*,")
-    if entry_type ~= nil and not ignored_entry_types[entry_type:lower()] then
-      keys:insert(key)
+  for _, reference in ipairs(document.meta.references or {}) do
+    local key = stringify(reference.id)
+    if key == nil or key == "" or key:find(",", 1, true) then
+      return nil, "an entry has no representable key"
     end
+    keys:insert(key)
   end
   return keys
 end
@@ -131,12 +129,20 @@ local function bibliography_key_list(meta)
   end
 
   local keys = pandoc.List()
+  local seen = {}
   for _, value in ipairs(values) do
     -- `bibliography: ""` and `bibliography: []` pass Quarto's front-matter schema (a
     -- bare `bibliography:` does not -- it is rejected before any filter runs), and
     -- they must not be reported as a file that could not be read.
     local raw = pandoc.utils.stringify(value)
     if raw ~= "" then
+      local suffix = raw:lower():match("%.([^%.]+)$")
+      local reader = suffix == "bibtex" and "bibtex" or "biblatex"
+      if suffix ~= "bib" and suffix ~= "bibtex" and suffix ~= "biblatex" then
+        warning("Declaration order requires a BibTeX or BibLaTeX file; '"
+          .. raw .. "' keeps citeproc's order.")
+        return nil
+      end
       local text = nil
       for _, path in ipairs(candidate_paths(value)) do
         text = read_file(path)
@@ -152,7 +158,19 @@ local function bibliography_key_list(meta)
         )
         return nil
       end
-      for _, key in ipairs(bib_entry_keys(text)) do
+      local file_keys, parse_error = bib_entry_keys(text, reader)
+      if file_keys == nil then
+        warning("Could not parse bibliography '" .. raw .. "': " .. parse_error
+          .. "; references keep citeproc's order.")
+        return nil
+      end
+      for _, key in ipairs(file_keys) do
+        if seen[key] then
+          warning("Duplicate bibliography key '" .. key
+            .. "'; references keep citeproc's order.")
+          return nil
+        end
+        seen[key] = true
         keys:insert(key)
       end
     end

@@ -1,0 +1,5 @@
+# Files for maintainers are not part of a copied presentation template.
+tests/**
+docs/**
+package*.json
+AGENTS.md

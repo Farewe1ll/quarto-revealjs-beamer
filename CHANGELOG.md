@@ -8,6 +8,32 @@ Earlier releases predate this file; their history is in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- Reference pages created after initialization now join size observation, and
+  removed pages release their observation. Readiness retries retain their first
+  failure even when a later reload succeeds or fails differently.
+
+- Disable Quarto's automatic image stretch in the format preset: its remaining
+  height calculation could collapse a single top-level image to zero dimensions
+  in the fixed-height frame. Explicit image sizing remains available; manually
+  enabling `auto-stretch` or `.r-stretch` is currently unsupported.
+
+- Reference pagination fits each page's actual heading before measuring entries,
+  and updates after font/image loading and viewport changes. Original entries and
+  declared pages are retained, excess generated pages are removed and synced with
+  Reveal, and unchanged slices keep their scroll position.
+
+- Render retries now distinguish native crashes from validation errors and retain
+  evidence from every attempt. Browser evaluation errors no longer retry based on
+  null-property messages, and failed page creation closes its target.
+
+- `refs-order: declaration` now supports citation subsets and uses Pandoc's
+  bibliography readers to retain the actual declaration order. Multiline fields
+  containing example headers and split entry headers no longer distort that order.
+  Duplicate keys, unsupported sources and unmatched rendered keys receive explicit
+  diagnostics and leave citeproc's order intact.
+
 ### Breaking
 
 - **A bibliography continuation page must now be a bare heading — `## Title {item="N"}`
@@ -27,6 +53,15 @@ Earlier releases predate this file; their history is in the git log.
     `item`-declared page caps and the .bib declaration order are unaffected.
 
 ### Changed
+
+- The minimum supported Quarto version is now 1.4.557, matching the CI minimum.
+  Template installation excludes development tests, dependency manifests and
+  maintenance documentation via `.quartoignore`. Clean installation and isolated
+  offline delivery are covered by integration tests.
+
+- New reference and distribution regressions are grouped in a suite module under
+  the existing serial runner. Optional same-content Beamer v3.76 sources and
+  capture tools provide an independent visual comparison without changing baselines.
 
 - **Both templates' reference continuation page became a bare heading.** Its
   explanation of the continuation rules moved into a `::: {.notes}` block, because the

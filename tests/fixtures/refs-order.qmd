@@ -1,0 +1,19 @@
+---
+title: "Declaration order boundaries"
+bibliography:
+  - tests/fixtures/refs-order-a.bib
+  - tests/fixtures/refs-order-b.bib
+refs-order: declaration
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+## Citations
+
+Only a subset is cited [@zulu; @alpha].
+
+## References {#references item="1"}
+
+::: {#refs}
+:::

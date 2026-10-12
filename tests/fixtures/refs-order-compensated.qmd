@@ -1,0 +1,17 @@
+---
+title: "Compensating header scan errors"
+bibliography: tests/fixtures/refs-order-compensated.bib
+refs-order: declaration
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+## Citations
+
+All real entries are cited [@zulu; @delta; @alpha].
+
+## References {#references item="1"}
+
+::: {#refs}
+:::

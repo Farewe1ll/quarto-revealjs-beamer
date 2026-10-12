@@ -1,0 +1,30 @@
+@string{venue = "Order Journal"}
+@comment{A fake entry inside a comment:
+@article{commented, title={Not a reference}}
+}
+@preamble{"A preamble is not a reference"}
+
+@article{zulu,
+  author = {Zulu, Author},
+  title = {A multiline field with an example
+@article{alpha, not a real entry}
+  and {nested braces}},
+  year = {2020},
+  journal = venue
+}
+
+@article{delta,
+  author = {Delta, Author},
+  title = "A quoted field with an example
+@article{quoted, not a real entry}",
+  year = {2020},
+  journal = venue
+}
+
+@article
+{alpha,
+  author = {Alpha, Author},
+  title = {Real last entry in the first file},
+  year = {2021},
+  journal = venue
+}

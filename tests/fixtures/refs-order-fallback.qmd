@@ -1,0 +1,25 @@
+---
+title: "Unknown declaration key"
+bibliography: tests/fixtures/refs-order-a.bib
+references:
+  - id: inline
+    type: article-journal
+    title: "Inline metadata has no file declaration position"
+    author:
+      - family: Beta
+    issued:
+      date-parts: [[2024]]
+refs-order: declaration
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+## Citations
+
+Mixed sources [@zulu; @inline].
+
+## References {#references}
+
+::: {#refs}
+:::

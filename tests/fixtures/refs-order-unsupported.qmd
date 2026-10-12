@@ -1,0 +1,17 @@
+---
+title: "Non-BibTeX declaration source"
+bibliography: tests/fixtures/refs-order.json
+refs-order: declaration
+format:
+  beamerslides-revealjs:
+    reference-location: document
+---
+
+## Citations
+
+CSL JSON sources [@zulu; @alpha].
+
+## References {#references}
+
+::: {#refs}
+:::

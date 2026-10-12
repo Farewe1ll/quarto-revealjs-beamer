@@ -1,0 +1,4 @@
+[
+  {"id":"zulu","type":"article-journal","title":"Zulu entry","author":[{"family":"Zulu"}],"issued":{"date-parts":[[2020]]}},
+  {"id":"alpha","type":"article-journal","title":"Alpha entry","author":[{"family":"Alpha"}],"issued":{"date-parts":[[2021]]}}
+]
