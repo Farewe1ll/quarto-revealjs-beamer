@@ -1,14 +1,5 @@
-/* Regression guard for the palette contract:
-   - `:root` overrides must win (the base palette used to be re-declared on
-     `.reveal.beamer-madrid`, which shadowed document-level overrides);
-   - `.reveal.beamer-*` overrides must win as well;
-   - `--beamer-primary` (the variant accent) and `--beamer-structure` (the
-     colour bullets and block titles derive from) are separate roles and must
-     both be overridable. The stock values differ per variant: Madrid keeps
-     Beamer's blendedblue, CambridgeUS uses its own darkred;
-   - values that DERIVE from another variable must follow a `.reveal`-level
-     override too, which is why the badge and the minimal section title are
-     asserted as well: they are the surfaces that used to resolve on <html>. */
+/* Fixtures for docs/architecture.md, C1-C3: exercise root and reveal overrides,
+   independent colour roles, and the badge/minimal derived surfaces. */
 :root {
   --beamer-footline-author-bg: #123456;
 }

@@ -1,32 +1,15 @@
 /*-- scss:rules --*/
 
 /* Single-seed palette for the Madrid variant.
- *
- * Copy this file, change `--beamer-seed`, and reference it from the document:
- *
- *   format:
- *     beamerslides-revealjs:
- *       theme: [default, _extensions/beamerslides/beamer.scss, custom-palette.css]
- *
- * or, keeping the extension's own theme list untouched:
+ * Copy this file, change --beamer-seed, and reference it from the document:
  *
  *   format:
  *     beamerslides-revealjs:
  *       css: custom-palette.css
  *
- * The literal palette in _palette.scss is kept as exact Beamer colour algebra
- * (structure / structure!75!black / structure!50!black). This example derives
- * the same relationships from one seed with `color-mix()`, which can differ from
- * the xcolor literals by up to two 8-bit steps -- xcolor's sp-quantised rounding,
- * plus Chrome >= 118 interpolating `color-mix()` in oklab rather than srgb. That is
- * the tolerance the regression suite asserts. Use the literals if you need
- * byte-exact colours.
- *
- * The selectors are `:root.beamer-madrid`. `.reveal.beamer-madrid` works too --
- * the theme resolves everything that derives from another variable at its point
- * of use, so a `.reveal`-level seed reaches the badge fill and the
- * `.section-minimal` title as well -- and `:root` is used here only because the
- * palette it replaces is written there, so the two read as the same layer.
+ * For theme: use [default, _extensions/beamerslides/beamer.scss, custom-palette.css].
+ * The colour-role/override contract is in docs/architecture.md, C1-C3.
+ * This example computes from a seed; exact stock literals stay in _palette.scss.
  */
 
 :root.beamer-madrid {
@@ -55,9 +38,7 @@
     --beamer-headline-section-bg: color-mix(in srgb, var(--beamer-seed) 50%, black);
     --beamer-footline-author-bg: color-mix(in srgb, var(--beamer-seed) 50%, black);
 
-    /* The block bodies are NOT set here: beamer.scss derives each kind's body
-       from its own title band (`block title bg!10!bg`), so seeding the three
-       band colours above is enough. */
+    /* beamer.scss derives each body's tint from its own title band (C2). */
 
     /* Theme-only surfaces. */
     --beamer-soft: color-mix(in srgb, var(--beamer-seed) 8%, white);

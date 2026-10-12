@@ -33,16 +33,8 @@ const rootDir = resolve(testsDir, "..");
 const outputDir = join(testsDir, "_output");
 const artifactsDir = join(testsDir, "_artifacts");
 const baselinesDir = join(testsDir, "baselines");
-// Created by `launchChrome`, NOT here, and cleared again by `shutdownChrome`. A
-// module-level `mkdtempSync` allocated a Chrome profile directory for every import of
-// this module, including one that never launched a browser at all -- and the only
-// thing that removes it is `removeTemporaryDirectory`, which a caller that throws on
-// the way there never reaches. Measured: a throwaway probe that imported this module
-// and hit an assertion left a profile directory behind on every run.
-//
-// A `let` rather than a `const`, because the path only exists once a browser does; the
-// signal handler below and the suite's teardown both read it late, and ESM exports are
-// live bindings, so importers see whatever `launchChrome` assigned.
+// Allocate the profile at launch, not import. This live ESM binding lets the
+// suite teardown and signal handler see the directory created by launchChrome.
 let chromeTemporaryDir = null;
 const temporaryInputs = [];
 
@@ -88,18 +80,8 @@ const pageReadyTimeout =
   Number.isFinite(requestedPageReadyTimeout) && requestedPageReadyTimeout > 0
     ? requestedPageReadyTimeout
     : 20_000;
-// A CDP reply can simply never arrive: a renderer wedged mid-`Runtime.evaluate`,
-// or a `Page.printToPDF` that never finishes. Without a bound the awaiting
-// promise stays pending forever, so the run hangs with no witness and the next
-// attempt has to delete a stale run lock by hand. Override with
-// BEAMERSLIDES_CDP_TIMEOUT_MS.
-//
-// The default matches `BEAMERSLIDES_COMMAND_TIMEOUT_MS` below rather than being
-// tighter: the hazard is the same one, and the commands that go through here
-// (`printToPDF`, `captureScreenshot`) are the slowest ones in the suite, run on
-// the same shared CI runners. A bound that is too generous only makes a real hang
-// take longer to report; a bound that is too tight turns a slow runner into a
-// failure, which is the worse of the two.
+// CDP waits are bounded; configuration and rationale are documented in
+// docs/architecture.md, '验证与变更流程', and README's environment reference.
 const requestedCdpTimeout = Number.parseInt(
   process.env.BEAMERSLIDES_CDP_TIMEOUT_MS || "",
   10
@@ -117,24 +99,9 @@ const debugCleanup = (...values) => {
 const delay = (milliseconds) =>
   new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 
-// Chrome forks a tree of helper processes (renderers, GPU, network). Killing
-// only the parent -- or letting the parent die from SIGTERM -- leaves that tree
-// reparented to init and running until the machine is rebooted. Measured after
-// a batch of interrupted runs: five orphaned headless browsers holding ~2.9 GB.
-//
-// Two guards, because no graceful path can cover a signal: the child is spawned
-// `detached`, which makes it a process-group leader, and this handler kills that
-// whole group. Signal handlers must be synchronous -- an `async` teardown never
-// gets to run before the process dies.
-//
-// The group kill runs on the ordinary teardown path too, not only here -- see
-// `signalChild` below, which `stopChildProcess` uses. The machinery was built for
-// the signal path and the ordinary path kept signalling the parent pid alone, so
-// the group the spawn site creates was never used for the case it documents.
-// Measured, that gap did NOT leak on its own: with the browser process wedged with
-// SIGSTOP and then killed parent-only, all ten Chrome processes still exited by
-// themselves. This is consistency with the documented intent, not a demonstrated
-// leak fix.
+// Chrome is spawned detached so teardown can signal its whole helper group.
+// Signal cleanup must be synchronous: async teardown cannot finish on exit.
+// The ordinary path uses the same group-aware signalChild helper.
 const childProcessGroups = new Set();
 
 const terminateChildProcessGroups = () => {
@@ -292,8 +259,7 @@ const resetDirectory = (target) => {
   mkdirSync(target, { recursive: true });
 };
 
-// A render that never returns would hang the whole suite with no diagnostics,
-// so external commands are bounded. Override with BEAMERSLIDES_COMMAND_TIMEOUT_MS.
+// External-command bounds follow the same configuration contract as CDP waits.
 const commandTimeout = Number.parseInt(
   process.env.BEAMERSLIDES_COMMAND_TIMEOUT_MS || "",
   10
@@ -345,19 +311,12 @@ const runCapture = (command, args) => {
 const run = (command, args) => runCapture(command, args).stdout;
 
 
-// Quarto's Deno runtime occasionally dies with SIGSEGV part-way through a
-// render. It is not caused by the document -- the same input renders fine on
-// the next attempt, and the crash happens before any of this project's code
-// runs -- but it fails the suite hard, so renders are retried. A render that
-// fails for a real reason still fails, just after the retries.
+// Render retry scope and limits: docs/architecture.md, '验证与变更流程'.
+// Current retries are broader than identified Deno crashes.
 const renderAttempts = 3;
 
-// The retry wraps the THUNK, not the argument list: `renderFixture` deletes its
-// temporary input in a `finally`, so retrying a bare command list would re-run
-// Quarto against a file that no longer exists. That mistake made the suite worse
-// rather than better -- the retries burned all three attempts on "No valid input
-// files passed to render" and turned an intermittent crash into a guaranteed
-// failure.
+// Retry the full operation: renderFixture removes its temporary input in finally,
+// so retrying the old command arguments would target a deleted file.
 const withRenderRetries = (operation) => {
   let lastError = null;
   for (let attempt = 1; attempt <= renderAttempts; attempt += 1) {
@@ -906,29 +865,14 @@ const shutdownChrome = async ({ connection, processHandle }) => {
   }
   await stopChildProcess(processHandle);
 
-  // The profile directory belongs to the browser that just stopped, and nothing wants
-  // it afterwards. Removing it HERE, rather than trusting every caller to pair
-  // `shutdownChrome` with a separate `removeTemporaryDirectory`, is what makes a bare
-  // launch/shutdown pair leak-free: measured, nine throwaway probe runs that shut the
-  // browser down correctly still left nine profile directories behind, because
-  // stopping the process is the obvious half and deleting the directory is not.
-  // `removeTemporaryDirectory` already retries, which is what covers a helper that is
-  // still letting go of the profile as this runs.
+  // Profile ownership ends with shutdownChrome. Removal retries allow time for
+  // Chrome helpers still releasing files after the process stops.
   await removeTemporaryDirectory(chromeTemporaryDir);
   chromeTemporaryDir = null;
 };
 
-// Own the browser's whole lifetime, so a caller cannot leak it.
-//
-// `launchChrome` + `BrowserPage.create` are only safe when EVERY failure path reaches
-// `shutdownChrome`; the suite enforces that with its `teardownStep` blocks, but a
-// throwaway probe usually does not, and the failure mode is invisible -- the script
-// exits, the browser does not. Measured: a probe that threw inside a page evaluation
-// left 18 Chrome processes (two browsers, each with its helper tree) and two profile
-// directories behind, and nothing on screen said so.
-//
-// `run` receives the launched handle and returns whatever it likes; the shutdown and
-// the profile removal happen even when it throws, which is the entire point.
+// Finally closes Chrome and removes its profile, including callback failures.
+// Callback-created servers and page sessions remain caller-owned; see AGENTS.md.
 const withBrowser = async (run) => {
   const chrome = await launchChrome();
   try {
@@ -982,11 +926,8 @@ class BrowserPage {
   }
 
   async evaluate(expression) {
-    // A probe that dereferences an element the page has not created yet throws a
-    // null-property TypeError. That is a race, not a finding: the page is laid
-    // out a moment later and the identical probe succeeds. Only those specific
-    // messages are retried, so a probe that genuinely observes a missing element
-    // still fails -- through its own assertion, on its own text.
+    // Retry the specific null/undefined-property message pattern only.
+    // Matching it is a readiness heuristic, not proof that the cause is a race.
     const transientNullProperty =
       /Cannot read properties of (?:null|undefined) \(reading '[^']+'\)/;
     for (let attempt = 1; attempt <= evaluateAttempts; attempt += 1) {
@@ -1323,9 +1264,8 @@ const printLayoutMeasurementSource = `(() => {
           (footerRect?.top ?? slideRect.bottom)) /
         2
       : null;
-    // A \section page renders its title through the frametitle template: a band
-    // pinned directly under the headline, spanning \textwidth. It is not
-    // vertically centred, so that is what print layout must preserve.
+    // Preserve this extension's band/minimal positioning in print layout (G1).
+    // A centred section badge follows its separate layout branch.
     const sectionBand = slide.classList.contains("beamer-section-slide")
       ? slide.querySelector(":scope > h1")
       : null;
@@ -1366,14 +1306,9 @@ const printLayoutMeasurementSource = `(() => {
   });
 })()`;
 
-// Leaf sections, derived from Reveal's own DOM shape rather than from the theme's
-// class: a section that holds no nested sections is a slide the theme is expected
-// to decorate. Counting this independently is what makes the canary in
-// `assertPrintLayout` able to fail.
-//
-// The filter mirrors `leafSlides()` in `beamer.js`, deliberately. If that rule ever
-// changes, this one has to change with it -- otherwise the canary starts reporting
-// a mismatch between two definitions of "leaf slide" instead of a missing class.
+// Count leaf sections independently of the decoration class, so a missing
+// class cannot make all print assertions pass on an empty set. Keep this DOM
+// definition aligned with leafSlides; the canary deliberately checks membership.
 const leafSectionCountSource = `(() => {
   return Array.from(document.querySelectorAll(".reveal .slides section")).filter(
     (slide) => {

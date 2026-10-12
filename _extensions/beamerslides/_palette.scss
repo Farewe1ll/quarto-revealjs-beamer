@@ -1,49 +1,14 @@
-/* The base palette (Madrid) is declared on `:root` only. Declaring the same
-   variables on `.reveal.beamer-madrid` used to shadow document-level
-   overrides, so `:root { --beamer-primary: ... }` silently did nothing.
-   Custom properties inherit, so every element still sees them.
-
-   EVERY VALUE HERE IS A LITERAL, and that is a rule rather than a style: a
-   declaration whose value contains `var()` is substituted on the element it is
-   written on, and `<html>` is the one element no document-level override sits
-   below. `--beamer-section-badge-bg: var(--beamer-section-title-bg)` written
-   here, for instance, froze at the stock title colour, so overriding
-   `--beamer-section-title-bg` on `.reveal` -- which the README documents as
-   supported -- recoloured the section bands and left the badge behind. Values
-   that DERIVE from another variable therefore live at their point of use, in
-   `beamer.scss`, where the substitution happens against whatever the element
-   actually inherited. See `--beamer-section-fill` and the block title colours
-   there.
-
-   Colour roles follow Beamer's own colour algebra rather than taste. Madrid
-   loads `whale` + `orchid` + `beamerouterthemeinfolines`, whose values are all
-   derived from `structure` (= `beamer@blendedblue` = rgb(0.2,0.2,0.7)).
-   xcolor's `A!p!B` means p% of A mixed with (100-p)% of B per channel:
-
-     structure              = rgb(0.2,0.2,0.7)      = #3333b2  (178/255)
-     structure!75!black     =                        #262686
-     structure!50!black     =                        #1a1a59
-     block title  bg        = structure!75!black     = #262686        (orchid)
-     block body   bg        = block title bg!10!bg   = #e9e9f3
-     block title alerted bg = red!75!black           = #bf0000        (orchid)
-     block title example bg = (green!50!black)!75!black = #006000     (orchid)
-
-   The last three are the algebra the literals below were EVALUATED from; they
-   are not live relationships (see the `--beamer-alert` note in the :root block).
-
-   The body tint is not a fixed value: it is derived per block kind from that
-   kind's own title band, so beamer.scss computes it rather than reading it
-   from here. `--beamer-soft` below is a separate theme surface, not the block
-   body.
-*/
+/* Literal palette and override contract: docs/architecture.md, C1-C3.
+   Madrid's defaults are evaluated from xcolor relations:
+     structure                         = #3333b2
+     structure!75!black                = #262686
+     structure!50!black                = #1a1a59
+     block title bg                    = structure!75!black
+     block title alerted bg            = red!75!black = #bf0000
+     block title example bg            = (green!50!black)!75!black = #006000
+   Body tint is derived in beamer.scss, not stored as a palette literal. */
 :root {
-  /* `structure` is the colour Beamer derives bullets, block titles and other
-     structural furniture from. It is NOT the same thing as the variant's
-     headline/frametitle text colour, which is what `--beamer-primary`
-     carries. Upstream CambridgeUS keeps `structure` at beamer@blendedblue while
-     its frametitle goes dark red; this theme deliberately re-points `structure`
-     at the variant's own darkred instead (see the CambridgeUS block below), so
-     the two roles coincide there by choice rather than by accident. */
+  /* Colour-role consumers and deliberate deviations: C2. */
   --beamer-structure: #3333b2;
   --beamer-structure-2: #262686;
   --beamer-structure-3: #1a1a59;
@@ -56,35 +21,18 @@
   --beamer-frame-fg: #ffffff;
   --beamer-soft: #eaeaf4;
   --beamer-line: #b8b8d8;
-  /* colorthemedefault: alert = red, example = green!50!black. xcolor's
-     `green` is rgb(0,1,0), so the halved green is (0,0.5,0) = #008000.
-     These are Beamer's BASE colours, and they drive inline emphasis
-     (`--beamer-alert` for `[text]{.alert}`) and CambridgeUS's example block
-     TITLE TEXT -- nothing else. They are NOT the inputs of the three
-     `--beamer-block-*-title-bg` values further down: orchid derives those from
-     the bases at !75!black, but this palette freezes the results as literals so
-     the stock colours are byte-exact (color-mix() drifts up to 2/255 from
-     xcolor). Overriding `--beamer-alert` therefore does NOT move the alert
-     band -- measured. What IS derived is the block BODY tint, which
-     `beamer.scss` computes from each kind's own title band (`bg!10!bg`); so to
-     recolour a block, override its title band and the body follows. */
+  /* colorthemedefault: alert = red; example = green!50!black = #008000.
+     Block title backgrounds below store separate, evaluated orchid literals (C2). */
   --beamer-alert: #ff0000;
   --beamer-example: #008000;
   --beamer-ink: #202124;
   --beamer-muted: #5f6670;
-
-  /* Madrid already fills its bands, so the badge keeps the section fill --
-     derived in `beamer.scss` from `--beamer-section-title-bg` / `-fg`. */
 
   --beamer-title-bg: #3333b2;
   --beamer-title-fg: #ffffff;
   --beamer-title-subtitle-fg: rgba(255, 255, 255, 0.9);
   --beamer-section-title-bg: #3333b2;
   --beamer-section-title-fg: #ffffff;
-  /* The minimal look drops the band's fill, so it cannot keep the band's
-     white text -- on a light page that is white on white. It uses the accent
-     instead, which also makes it read consistently in both variants. Derived
-     from `--beamer-structure` at the point of use, in `beamer.scss`. */
 
   /* Reference lists are the one place where a document can put an unbounded
      amount of text on a slide, so they get their own size knob. Lowering it lets
@@ -116,49 +64,16 @@
   --beamer-block-alert-title-stroke: 0;
 
   --beamer-headline-height: 32px;
-  /* `--beamer-active-headline-height` is derived from it in `beamer.scss`, on
-     `.reveal`, so that overriding `--beamer-headline-height` there moves the
-     layout as well as the headline itself. */
-  /* The logo's top edge (`max(active headline, frame title) + 7px`) is the other
-     derivation that moved to `beamer.scss`: the headline collapses to 0px when
-     it is off and the frame title then moves up to `top: 0` -- it is pinned at
-     `--beamer-active-headline-height` -- so the logo has to clear the FRAME BAND
-     instead of the headline. Reading the headline alone put the logo at y=24..52
-     inside the band's y=0..58 (measured, Madrid with the headline off). It has to
-     be computed at the logo, because the variable it reads is declared on
-     `.reveal`. */
   --beamer-frame-height: 58px;
   --beamer-footline-height: 30px;
   --beamer-logo-reserve: 225px;
 }
 
-/* CambridgeUS overrides the same variables. The variant class is added to
-   <html> by the in-header bootstrap script, so this needs no JavaScript.
-   `:where()` keeps the specificity at `:root` level, so a document-level
-   `:root { --beamer-... }` override still wins for this variant too.
-
-   CambridgeUS loads `beaver`, which does NOT redefine `structure` and does not
-   touch `block title*` at all. Only Madrid pulls in `orchid`, and orchid is
-   what gives blocks their filled title band. Under CambridgeUS the block title
-   consequently keeps its default `parent=structure` and an EMPTY background,
-   so `beamerinnerthemedefault`'s `\ifbeamercolorempty[bg]{block title}` branch
-   renders the title as coloured text with no fill -- which is why the three
-   `--beamer-block-*-title-bg` values below are `transparent`. */
+/* The bootstrap puts the variant on html. :where() keeps this at root
+   specificity for document overrides; see docs/architecture.md, C1. */
 :where(:root).beamer-cambridgeus {
-  /* DELIBERATE DEVIATION FROM BEAMER.
-     beaver never defines `structure`, so upstream CambridgeUS keeps
-     beamer@blendedblue and paints bullets and block titles blue -- correct for
-     the theme as written, but a blue accent reads as a stray colour inside an
-     otherwise red-and-grey deck. We re-point `structure` at the variant's own
-     darkred and step it down with the same algebra whale/orchid use
-     (`structure!75!black`, `structure!50!black`), so the accent stays
-     internally consistent:
-       darkred            = #cc0000
-       darkred!75!black   = #990000
-       darkred!50!black   = #660000
-     This drives the list markers (unordered and numbered) and nothing else:
-     the block titles are set separately below, precisely so the plain block
-     does not inherit this red. */
+  /* darkred!75!black = #990000; darkred!50!black = #660000.
+     This red structure choice is recorded in docs/architecture.md, C2. */
   --beamer-structure: #cc0000;
   --beamer-structure-2: #990000;
   --beamer-structure-3: #660000;
@@ -169,17 +84,8 @@
   --beamer-frame-fg: #cc0000;
   --beamer-soft: #f8f2f2;
   --beamer-line: #d7b9bc;
-  /* Upstream beaver sets alerted text = darkred!80!gray
-     (0.8*(0.8,0,0) + 0.2*(0.5,0.5,0.5) = (0.74,0.1,0.1) -> #bd1a1a). We use
-     the undiluted darkred instead so the alert signal is the same red as the
-     list markers and the highest-chroma warm colour on the slide; mixing in
-     grey was the one thing making the alert read *quieter* than the plain
-     block. This value drives the alert block title and `.alert` inline
-     emphasis; `h4` used to take it too and now takes `--beamer-structure`.
-     `example text` is NOT derived from `structure` -- beamercolorthemedefault
-     pins it to green!50!black, and neither beaver nor orchid redefines it -- so
-     it keeps the same value here as in Madrid even though `structure` moved to
-     darkred. */
+  /* Inline alert uses undiluted darkred, independently of the yellow block title.
+     Example retains colorthemedefault's green!50!black. Design basis: C2. */
   --beamer-alert: #cc0000;
   --beamer-example: #008000;
 
@@ -202,45 +108,19 @@
   --beamer-footline-date-fg: #7a0000;
   --beamer-progress: #cc0000;
 
-  /* Block titles. All three are unfilled and coloured by text alone, as
-     upstream; the alert kind additionally carries a stroke and a heavier
-     weight -- see below.
-
-       plain    #cc0000  red             `structure`, same as the list markers
-       example  #008000  green           `example text`, pinned by beamer
-       alert    #ffcd00  yellow + black  stroke, weight 700 */
-  /* CambridgeUS gives the section band no fill, so a shadow would outline an
-     invisible box. The centred badge needs one to be visible at all, and takes
-     the variant accent through `--beamer-section-fill` in `beamer.scss`. Only
-     the foreground is pinned here, because the accent would leave the badge's
-     own text red on red. */
+  /* Pin white text only; the accent-derived badge fill lives in beamer.scss. */
   --beamer-section-badge-fg: #ffffff;
 
   --beamer-block-title-bg: transparent;
-  /* The title's text colour is `--beamer-structure` for this variant, derived at
-     the point of use in `beamer.scss`. */
+  /* Title foregrounds are derived in beamer.scss, not pinned here (C1). */
   --beamer-block-example-title-bg: transparent;
-  /* Its text colour is `--beamer-example`, likewise derived at the point of use. */
 
-  /* Alert title: yellow text on the slide background, unfilled, as requested.
-     NOTE ON CONTRAST: this yellow measures 1.48:1 against the light slide
-     background, against the 4.5:1 that body-size text needs -- it reads as a
-     washed-out gold rather than a warning red. Kept because it is the explicit
-     design decision; `--beamer-alert` below stays red on purpose so `.alert`
-     inline emphasis stays legible on the light page. */
   --beamer-block-alert-title-bg: transparent;
   --beamer-block-alert-title-fg: #ffcd00;
   --beamer-block-alert-title-weight: 700;
-  /* Yellow text on a light slide is 1.48:1, which on its own is barely
-     legible. A dark stroke puts a 20.7:1 edge around every glyph, so the
-     letterforms read against the background while the fill stays the yellow
-     that was asked for. `paint-order: stroke fill` in beamer.scss keeps the
-     stroke behind the fill, so the yellow body is not eaten away.
-     Width chosen by rendering a sweep at presentation size (2/3/4/5px) and
-     looking at them side by side in the deck: 2px reads as a timid hairline
-     next to the plain block and 5px starts to read as a black bar that thins
-     the yellow, leaving 3-4px as the usable range. 3px keeps a clearly bolder
-     outline than the neighbouring titles while leaving the most yellow. */
+  /* Yellow fill alone measures 1.48:1 on the light slide; a black edge is 20.7:1.
+     A 2/3/4/5px render sweep chose 3px: 2px was weak and 5px ate the yellow.
+     paint-order in beamer.scss keeps the stroke behind the fill. */
   --beamer-block-alert-title-stroke: 3px;
   --beamer-block-alert-title-stroke-color: #000000;
 }

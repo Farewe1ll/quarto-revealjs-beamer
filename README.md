@@ -8,6 +8,8 @@
 - 内容超页会在控制台告警；长 frame title 自动缩小并增高标题带，超过基准高度 2.28 倍时整页转为可滚动。
 - 公式用扩展内置的固定版本 KaTeX，断网可用；拉丁字符用内置的 Libertinus Sans，避免跨系统字体缺失导致的版式漂移。
 
+维护和开发从[项目设计约定](docs/architecture.md)开始；编码代理的工作入口是根目录 [AGENTS.md](AGENTS.md)。本页保留安装、写作和定制说明，跨文件的设计规则在设计文档中集中维护。
+
 ## 安装
 
 把 `_extensions/beamerslides` 复制到项目根目录的 `_extensions/` 下即可；扩展发布到 Git 仓库后，也可以在项目根目录执行 `quarto add <仓库地址>`。
@@ -91,7 +93,7 @@ beamer-variant: madrid
 # 纯文字 {.section-minimal}      只有文字、无底色，居中，字号 1.4em
 ```
 
-- **默认是通栏色带**，与 frame title 同构：文字左边缘与 frame title、正文严格对齐（都在 `x=58`）。这是 Beamer 的行为——`\section` 页复用 frametitle 模板。色带**在文档流中**，高度由标题自身撑开，因此标题折行到几行，正文都从色带下方开始。
+- **默认是通栏色带**，与 frame title 同构：文字左边缘与 frame title、正文严格对齐（都在 `x=58`）。这是本扩展对 Reveal.js 章节页的适配设计；上游 Beamer 的 `section page` 有独立模板。色带**在文档流中**，高度由标题自身撑开，因此标题折行到几行，正文都从色带下方开始。
 - **`.section-badge`** 是装饰性选择：居中、圆角、带阴影，**标题与正文作为一个整体居中**，正文宽度与徽标对齐。它是三种外观里唯一有填充的——CambridgeUS 的章节底色本身透明，badge 若也透明，阴影就会画在一个看不见的方块上、只剩文字下方一条多余的横线；该变体因此改用 `--beamer-primary`（酒红）填充，可用 `--beamer-section-badge-bg` / `--beamer-section-badge-fg` 覆盖。
 - **`.section-minimal`** 用于弱化章节页，或在底色与背景冲突时使用。它没有底色，所以标题用变体强调色（`--beamer-section-minimal-fg`）而不是色带的白字——那在浅色页面上就是白底白字。它没有色带要填，所以不保留色带的高度：标题上下各留 `--beamer-section-minimal-gap`（默认 18px）的空白，正文紧跟其后。
 
@@ -220,7 +222,16 @@ link-citations: true
 :::
 ```
 
-**公式**默认行内放大 `2%`、行间放大 `6%`。内置 KaTeX 及其字体不依赖 CDN，断网可用，但**不是单文件自包含的**：Quarto 把 `html-math-method.url` 编译成一段运行时脚本，由它按相对路径 `_extensions/beamerslides/katex/…` 动态插入 `<link>` 与 `<script>`，因此 `embed-resources: true` 看不到、也不会内联它们。实测：把 HTML 与 `_extensions/beamerslides/` 一起搬走可正常渲染（KaTeX 返回 200）；只搬 HTML 则两个文件都 404，而渲染器的 `throwOnError: false` 会让它**静默降级**成原始 `$…$`。所以要让 `_extensions/beamerslides/` 与 HTML 同行，或自己把 KaTeX 的 CSS/JS 内联进去。若文档依赖 KaTeX 不支持的 MathJax 专用语法，可以覆盖回去（此时是否离线取决于你的 Quarto 配置）：
+**公式**默认行内放大 `2%`、行间放大 `6%`。内置 KaTeX 及其字体不依赖 CDN，断网可用。普通 HTML 输出应与引用的 `_extensions/beamerslides/` 资源一起交付；单文件模式同时设置以下两个选项，并在所用 Quarto 版本上验证：
+
+```yaml
+format:
+  beamerslides-revealjs:
+    embed-resources: true
+    self-contained-math: true
+```
+
+仅设置 `embed-resources` 不足以保证本地数学加载脚本被内联。单文件模式的已验证版本和交付边界见[设计约定](docs/architecture.md#分发与兼容性)。若文档依赖 KaTeX 不支持的 MathJax 专用语法，可以覆盖回去（此时是否离线取决于你的 Quarto 配置）：
 
 ```yaml
 format:
@@ -306,7 +317,7 @@ structure!50!black = darkred!50!black = #660000
 
 ### 变量参考
 
-下表覆盖 `_palette.scss` 里的全部 45 个字面量，外加四个**在使用处派生**、因而同样可以直接覆盖的变量：`--beamer-section-minimal-fg`（兜底 `--beamer-structure`）、`--beamer-section-badge-bg`（兜底 `--beamer-section-title-bg`，CambridgeUS 兜底 `--beamer-primary`）、`--beamer-section-badge-fg`（兜底 `--beamer-section-title-fg`，CambridgeUS 为字面量 `#ffffff`）、`--beamer-logo-top`（兜底 `max(页眉, frame 标题) + 7px`，`beamer.js` 就绪后按实测覆写）。`-fg` 是同一行的前景变量，`/ -2` 是它的暗阶，`--beamer-block-alert-title-stroke` 一行的三项分别对应宽度、颜色与字重。CambridgeUS 覆盖其中 35 个（其中 `--beamer-section-badge-fg`、`--beamer-block-alert-title-stroke-color` 只有它有），未标注“同左”或另列的取值与 Madrid 相同。`--beamer-active-headline-height` 由样式表在 `.reveal` 上从 `--beamer-headline-height` 派生、由 `.beamer-no-headline` 在关闭页眉时折叠为 `0px`。`--beamer-primary` 只有 `-2` 这一个暗阶：它没有第三阶的用处，样式表从不读取，因此不再列出（`--beamer-structure` 的 `-3` 是列表三级符号的边框色，仍然使用）。
+下表列出基础字面量、派生值和静态兜底。`-fg` 是同一行的前景变量，`/ -2`、`/ -3` 是暗阶；未另列的 CambridgeUS 取值与 Madrid 相同。章节变量通过使用处的兜底关系派生，有效 headline 高度在关闭页眉时归零。几何变量仍是定制接口，但 JS 会在 slide 上写入实测 `--beamer-frame-height`，在 `.reveal` 上写入 `--beamer-logo-top` 与 `--beamer-logo-reserve`；基准输入、静态兜底和持续覆盖的区别见[设计约定 C3](docs/architecture.md#c3覆盖位置与所有权明确)。
 
 | 用途 | 变量 | Madrid | CambridgeUS |
 |:---|:---|:---|:---|
@@ -329,9 +340,9 @@ structure!50!black = darkred!50!black = #660000
 
 ### 覆盖方式
 
-两个变体的调色板都按 `:root` 级选择器声明（CambridgeUS 用 `:where(:root).beamer-cambridgeus` 保持同等特异性），所以写在 `.reveal`、`.reveal.beamer-*` 或直接写在 `:root` 上都能生效——文档级 `:root` 覆盖对两种变体都有效。
+两个变体的基础字面量都按 `:root` 级选择器声明（CambridgeUS 用 `:where(:root).beamer-cambridgeus` 保持同等特异性）。后加载的文档级 `:root` 覆盖对两种变体都有效，也可在 `.reveal` 或组件层覆盖继承值；局部声明的派生变量和运行时写入的几何变量另按其声明位置处理。
 
-**派生值也是同样规则，这不是巧合。** 自定义属性的 `var()` 替换发生在**声明它的那个元素**上，所以凡是"由另一个变量算出来"的东西，都写在 `beamer.scss` 的使用处、而不是 `_palette.scss`（那里只放字面量）：`--beamer-active-headline-height`（← `--beamer-headline-height`）、`--beamer-logo-top` 的兜底（← `--beamer-active-headline-height` / `--beamer-frame-height`）、`--beamer-section-fill`（← `--beamer-section-badge-bg`，再兜底 `--beamer-section-title-bg`；CambridgeUS 兜底 `--beamer-primary`）、`.section-minimal` 的标题色（← `--beamer-structure`）、CambridgeUS 的 block 标题色（← `--beamer-structure` / `--beamer-example`）。因此改上游（`--beamer-structure`、`--beamer-primary`、`--beamer-headline-height`……）时，写在 `.reveal` 上一样会连带改到这些派生面——这一条有回归测试守着（`palette-css` / `palette-theme` / `palette-example` / `palette-cambridgeus` 断言徽标、minimal 标题与 block 标题三条派生面）。
+修改结构色、强调色或页眉高度时，相关派生面也会跟随；直接覆盖派生变量时还需考虑声明位置。例如 CambridgeUS 的 block 标题文字色在 `.reveal.beamer-cambridgeus` 上声明，应在该层或组件层覆盖。变量作用域、派生规则和验证依据见[项目设计约定](docs/architecture.md)。
 
 最省事的做法是复制 `examples/custom-palette.css`，只改一个种子色，其余由 `color-mix()` 按 Beamer 的关系派生：
 
@@ -373,17 +384,17 @@ format:
 
 页脚第三格按 infolines 的 `\hfill 日期 \hfill 页码` 排布：日期在整格内居中（不受页码挤压），页码贴右。
 
-**标题文字的光学居中**由 `beamer.js` 在渲染后校正：`align-items: center` 居中的是行盒而不是字形墨迹，而中文标题没有降部、墨迹几乎全在基线上方，视觉上偏高（实测 58px 色带内约 5px）；英文因有降部则相反，偏低约 7px。两者偏移方向相反，只能逐个量出真实墨迹边界后微调——这是 CSS 单独做不到的。实现上把标题文字包一层 `span`，位移加在它身上，所以**色块本身不会跟着移动**。有序列表编号、`.bg` 与 `.button` 也会在字体加载、窗口缩放和切换幻灯片后按当前字体的可见字形重新校正基线，因此离线 HTML 与 HTTP 预览使用同一套对齐逻辑。
+标题文字、有序列表编号、`.bg` 与 `.button` 会按实际字体校正光学对齐，并在字体加载、窗口缩放和切页后更新；色块自身的位置保持不变。实现分工与布局约束见[项目设计约定](docs/architecture.md)。
 
-**内容超页**会在浏览器控制台输出一条包含 frame id 与实际溢出像素的告警（`.scrollable`、`.smaller` 或超长标题导致的滚动页除外），避免内容被静默裁切。给 frame 加 `.scrollable`（或 `.smaller`、由超长标题触发的 `beamer-long-frame-title`）后，**正文在 frame 内部滚动，而页眉、frame title 与页脚固定不动**：`beamer.js` 把正文搬进一个 `.beamer-scroll` 内层，它内缩到 frame 的 padding box，所以正文位置与不滚动时完全一致。Quarto 的文档级脚注页与参考文献页默认就带 `.smaller .scrollable`，同样适用。
+**内容超页**会在浏览器控制台输出一条包含 frame id 与实际溢出像素的告警（`.scrollable`、`.smaller` 或超长标题导致的滚动页除外）。给 frame 加 `.scrollable`（或 `.smaller`、由超长标题触发的 `beamer-long-frame-title`）后，正文在 frame 内部滚动，页眉、frame title 与页脚固定不动，首行位置与普通页面一致。Quarto 的文档级脚注页与参考文献页同样适用。
 
-**章节页同样可以 `.scrollable`**，正文在色带下方滚动、色带与页眉页脚不动，第一行与不加 `.scrollable` 时**位置完全相同**（这是量出来的：章节页的色带在文档流里，自身高度不写进 padding，所以内层的内缩要实测色带底边 + 它的下外边距，而不是读 `padding-top`）。
+**章节页同样可以 `.scrollable`**，正文在色带下方滚动，色带与页眉页脚固定，首行位置与普通章节页一致。
 
 **`.section-badge` 例外，且是明确不支持的组合。** 该外观把标题与正文作为**一个整体居中**，而滚动内层是从页顶内缩的一条绝对定位区域——两者无法同时成立。因此 badge 页上的 `.scrollable`（以及 `.smaller`）**不生效**：页面按普通 badge 页渲染，超出的内容会被裁掉。页面带 `.scrollable` 时，控制台会给出**一次**告警说明这件事；只带 `.smaller`（Quarto 给文献页加的文本缩小标记）不告警——但 Quarto 给文献页加的是两个一起，所以 badge 外观的参考文献页也会收到这条提醒，而它确实是最容易溢出的那一页。badge 页应当只承载标题与一两行说明；需要长内容请把正文移到下一页，或改用默认色带 / `.section-minimal` 外观。
 
 **长 frame title** 会自动缩小（两档：超过基准 1.59 倍、2.03 倍时各降一档）并增高标题带，不会被固定高度裁切；高度超过基准的 2.28 倍时整页转为可滚动。
 
-**Logo 独占一行**，压在标题色带下方而不是色带里面——frame title 与章节页色带都算。横向预留由 `--beamer-logo-reserve`（按实测 logo 宽度写入）给到 frame title，以及章节页的色带与 `.section-minimal` 两种左对齐外观（`.section-badge` 不需要：它纵向居中，与顶部角落的 logo 不会同处一行，加内缩只会把自己的标题推离徽标中心）；纵向这一行由 `positionLogo` 量出当前这页 chrome 的底边（frame title → 章节页色带 → headline，依次回退）写入 `--beamer-logo-top`；样式表里的 `max(headline 高度, frame 高度) + 7px` 只是没有 JavaScript 时的兜底。配色见 `变量参考`。
+**Logo 独占一行**，位于 frame title 或章节标题区下方。位置与预留空间按当前页标题区和实际 logo 尺寸更新；可定制变量见「变量参考」。
 
 ## 文件结构
 
@@ -399,6 +410,9 @@ _extensions/beamerslides/
 ├── katex/
 └── THIRD_PARTY.md
 .github/workflows/test.yml
+AGENTS.md
+docs/
+└── architecture.md    # 跨文件设计约定与验证依据
 assets/
 └── normal-density.svg
 examples/
@@ -423,18 +437,21 @@ npm ci     # 安装锁定的测试依赖
 npm test
 ```
 
-写一次性探针（排查某个页面的几何）时，用 `tests/lib/harness.mjs` 导出的 `withBrowser` 而不是自己调 `launchChrome`：
+一次性探针可使用 `tests/lib/harness.mjs` 导出的 `withBrowser`：
 
 ```js
 import { withBrowser, BrowserPage } from "./tests/lib/harness.mjs";
 await withBrowser(async (chrome) => {
   const page = await BrowserPage.create(chrome.connection, url, { width: 1280, height: 720 });
-  console.log(await page.evaluate("document.title"));
-  await page.close();
+  try {
+    console.log(await page.evaluate("document.title"));
+  } finally {
+    await page.close();
+  }
 });
 ```
 
-`launchChrome` + `BrowserPage.create` 只有在**每一条失败路径**都走到 `shutdownChrome` 时才是安全的；`withBrowser` 用 `finally` 保证这一点，并顺带删掉它建的 Chrome profile 目录。不这么写的话失败是无声的：脚本退出了，浏览器没有——实测一次抛在 `page.evaluate` 里的探针留下了 18 个 Chrome 进程和两个 profile 目录。套件自身不用它，因为它需要跨多个测试复用同一个浏览器。
+`withBrowser` 关闭浏览器并删除 profile；自行启动的本地服务器仍需另行关闭。探针和清理的操作要求见 [AGENTS.md](AGENTS.md)，资源所有权见[设计约定](docs/architecture.md#验证与变更流程)。
 
 测试渲染两个变体、显式选项与自包含离线示例，覆盖：
 
@@ -447,9 +464,7 @@ await withBrowser(async (chrome) => {
 
 截图与 `tests/baselines/` 中受版本控制的基线比较（容差 1.5% 像素）；实际截图、差异图与 PDF 写入 `tests/_artifacts/`，该目录不进版本控制。
 
-**行内代码的两条像素断言刻意不走基线**：CI 的 ubuntu runner 不装任何中日韩字体（镜像里只有 `fonts-noto-color-emoji`），含汉字的基线与本机渲染必然有差异，所以它们直接从 CDP 取图，比较**同一次截图内部**的两段墨迹（代码 vs 汉字）和**同一页面的两种状态**（当前 padding vs 旧对称 padding、上移 vs 不上移）；断言的是**方向**（修正后是否更平衡、上移是否真的拉近了重心），绝对量值则写在文档里。之所以非用像素不可：用 canvas 推算基线在这一页会差 1.4px，而那个差值指标会把这误差放大一倍，恰好足以放过要抓的那个下沉。
-
-`testPaletteAlgebra` 从**上游主题源码**推导期望色值再与浏览器实测比对——只靠截图做不到这一点，因为基线由本实现自身生成，发现不了自洽的错误。
+配色模型、字形像素检查和截图基线分别提供不同证据；设计依据与覆盖边界见[设计约定](docs/architecture.md#验证与变更流程)，局部容差留在相应测试旁。
 
 ### 环境变量
 
@@ -470,27 +485,9 @@ await withBrowser(async (chrome) => {
 | `SKIP_VISUAL_REGRESSION` | 未设 | 设为 `1` 时只写截图、不比对基线 |
 | `UPDATE_VISUAL_BASELINES` | 未设 | 设为 `1` 时把当前截图写成新基线 |
 
-CDP 与外部命令的上限都取 300 秒：危险是同一个，而走这条通道的 `Page.printToPDF` / `Page.captureScreenshot` 恰恰是整套里最慢的命令，又跑在同样拥挤的共享 CI runner 上。上限过宽只是让真正的挂死晚一点报出来；过窄会把「runner 慢」变成失败，后者更糟。没有它的话，一条永不到达回包的 `Runtime.evaluate` 会让套件**永久挂起**，并留下需要手工删除的陈旧锁。
-
 ### 重试与并发
 
-测试对**实测统计出来的、与扩展代码无关的抖动**做了重试：
-
-- `quarto render` 偶发 `SIGSEGV`（Quarto 的 Deno 运行时崩溃，同一输入下次即成功）；
-- Reveal 偶尔不发布 `window.Reveal`（页面与字体都已就绪，就是没初始化）→ 页面重载；
-- `Page.printToPDF` 偶发返回近乎空的文档（实测有一次只产出 1,148 字节，同一页面正常约 100 KB）。
-
-渲染重试**包裹的是整个操作而不是命令参数**——`renderFixture` 在 `finally` 里删除临时输入，若只重试命令就会对着已删除的文件反复重试，把偶发崩溃变成必然失败（这个错误在本仓库真实发生过，已修）。重试只挽救「未完成／明显无效」的产物，真正的失败依然会失败；命令根本没启动起来（`ENOENT`/`EACCES`）时立即放弃，不会白等两次。`quarto render` 与 `Page.printToPDF` 的次数目前是代码里的固定值（各 3 次），只有页面重载次数可用上表的变量覆盖。
-
-探针若读到**尚未生成**的元素会抛 `Cannot read properties of null`。这是竞态而非结论——页面稍后就绪、同一探针即通过——因此只对这类消息重试；真正「元素缺失」的探针仍会在自己的断言上失败。
-
-**不要并发运行本套件。** 它会在仓库根目录写固定名字的临时文件、并共用同一个 `tests/_output`，两个进程会互相删输入、互相覆盖产物，表现为「某个探针读到 null」这类无关报错。套件启动时（在任何破坏性操作之前）会检查 `tests/.run-tests.lock`，若已有运行中的进程会直接报错并给出 pid。
-
-只有确认视觉变化符合预期后，才应更新基线：
-
-```bash
-npm run test:update-visuals
-```
+串行运行与视觉基线更新的操作要求见 [AGENTS.md](AGENTS.md#验证与交付)。当前重试范围、等待上限和改进缺口见[设计约定](docs/architecture.md#验证与变更流程)；不能仅凭重试成功就认定首次失败与扩展代码无关。
 
 ## 致谢
 

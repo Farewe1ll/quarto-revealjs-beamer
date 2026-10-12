@@ -110,14 +110,8 @@
     };
   };
 
-  // Quarto ships the ORCID mark as a 16x16 PNG data URI, which blurs at the size
-  // the title page gives it, so it is replaced with this vector. The class is a
-  // deliberate public hook -- it is what a document targets to restyle, replace or
-  // append to the mark after an author's name (`#title-slide .beamer-orcid-icon`) --
-  // and nothing in the theme styles it, so it must NOT be deleted as an unused
-  // class: the stylesheet reaches the mark through
-  // `#title-slide .quarto-title-author-orcid svg`, which would keep working while
-  // silently removing the hook.
+  // Replace the small raster ORCID mark with a vector at presentation size.
+  // Public hook ownership: docs/architecture.md, '公共接口与内部状态'.
   const createOrcidIcon = () => {
     const svgNamespace = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgNamespace, "svg");
@@ -151,18 +145,8 @@
   };
 
   // ---- Shared glyph metrics -------------------------------------------------
-  //
-  // Three passes below ask the same two questions of a computed style: which font
-  // shorthand does it describe, and how far does that font reach above and below the
-  // baseline. Each used to carry its own copy of both, and two of them allocated a
-  // canvas per call -- so one optical realign (a resize, a font load, every slide
-  // change) built two canvases it never reused.
-  //
-  // One context is shared and cached. `willReadFrequently` is set for `drawnInk`,
-  // the only caller that reads pixels back; it costs the plain `measureText` callers
-  // nothing. Resizing a canvas resets its context state, so `drawnInk` sets the font
-  // again after resizing -- `measureFont` never caches across calls, because all
-  // three users share this one context.
+  // Reuse one canvas context for metrics and pixel reads. Resizing clears context
+  // state, so drawnInk restores the font and measureFont sets it on each call.
   let metricsContext = null;
   const glyphContext = () => {
     if (!metricsContext) {
@@ -176,18 +160,9 @@
   const fontShorthand = (style, size) =>
     [style.fontStyle, style.fontWeight, size, style.fontFamily].join(" ");
 
-  // One `measureText`, with the box fallback applied: `fontBoundingBox*` is the
-  // font's own box and `actualBoundingBox*` is the drawn ink, and browsers disagree
-  // about which they report. `null` when the box cannot be resolved at all -- the
-  // callers treat that as "leave this one alone".
-  //
-  // The two `actual*` numbers are returned unfiltered on purpose: `alignInlineLabels`
-  // and `alignOrderedMarkers` centre on them and must refuse a NaN, while `drawnInk`
-  // below measures the painted pixels instead and has no use for them. The two
-  // `font*` numbers are already known finite -- that is this function's own `null`
-  // condition -- so the callers re-check ONLY the `actual*` pair. Those two shorter
-  // guards are not an oversight; re-adding `fontAscent`/`fontDescent` to them changes
-  // nothing.
+  // Return null when the font box is unavailable, so callers leave it unchanged.
+  // Keep actualBoundingBox* unfiltered: marker/label callers validate that pair,
+  // while drawnInk measures pixels and only needs the already-finite font box.
   const measureFont = (context, style, text) => {
     context.font = fontShorthand(style, style.fontSize);
     const measured = context.measureText(text);
@@ -205,10 +180,8 @@
     return { measured, actualAscent, actualDescent, fontAscent, fontDescent };
   };
 
-  // A bounding-box measurement is not enough for a TITLE: the ink there is measured
-  // from the DRAWN pixels instead, because `actualBoundingBoxAscent/Descent` report
-  // the font's own box, which for the CJK fallback runs about twice as tall as the
-  // glyphs actually painted -- using them over-corrected by roughly 2x.
+  // Fallback-font bounds can be much larger than the painted glyphs; title
+  // correction reads drawn pixels rather than trusting those bounds.
   const drawnInk = (context, style, text, font, lineHeight) => {
     const canvas = context.canvas;
     const width = Math.ceil(font.measured.width) + 8;
@@ -358,15 +331,8 @@
     return drawnInk(context, style, text, font, lineHeight);
   };
 
-  // `align-items: center` centres the LINE BOX, not the ink. A CJK title has no
-  // descenders, so its ink sits entirely above the baseline and the band reads
-  // as top-heavy; Latin text pulls the other way. Both are corrected here so
-  // the optical centre matches the geometric centre of the band. The two shifts
-  // run in opposite directions, which is why CSS alone cannot fix both.
-  //
-  // The nudge has to move the TEXT, not the band: transforming the heading
-  // moves its coloured band along with it and drags the bar off the headline.
-  // So the text is wrapped once and the wrapper carries the transform.
+  // The line box and painted glyphs have different centres. Only the text
+  // wrapper is transformed; band geometry follows docs/architecture.md, G2.
   const titleTextWrapper = (title) => {
     let wrapper = title.querySelector(":scope > .beamer-title-ink");
     if (!wrapper) {
@@ -380,15 +346,9 @@
     return wrapper;
   };
 
-  // The badge look centres its title together with its body. That is pure CSS
-  // -- the title joins the flow for that look and the section uses
-  // `justify-content: center` -- so nothing is measured here. An earlier
-  // attempt solved for the offset in script, but the body's top padding was
-  // derived from the block height, so every measurement fed the solution back
-  // into its own input and the result drifted between passes. Letting flex own
-  // it removes that loop entirely. The band and minimal looks are deliberately
-  // left alone: they pin the title under the headline, which is what Beamer's
-  // own section page does, so body text simply flows after it.
+  // CSS centres a badge's title/body group; this pass only aligns title ink.
+  // Computing the group's offset here would feed measured height back into
+  // its own padding. Band/minimal positioning is the extension's design (G1).
   const centerTitleInk = () => {
     const titles = document.querySelectorAll(
       ".reveal .slides section.beamer-section-slide > h1:first-of-type, " +
@@ -401,8 +361,8 @@
       }
       const wrapper = titleTextWrapper(title);
       wrapper.style.removeProperty("transform");
-      // getBoundingClientRect is in device pixels, so undo Reveal's scale before
-      // comparing the text height against the CSS line height.
+      // Viewport rects include Reveal's transform scale; undo it before
+      // comparing the text height against the unscaled CSS line height.
       const revealScale =
         window.Reveal && typeof window.Reveal.getScale === "function"
           ? window.Reveal.getScale()
@@ -598,13 +558,8 @@
     return id.startsWith("ref-") ? id.slice(4) : id;
   };
 
-  // `refs-order: declaration` ships the .bib entry keys in declaration order (see
-  // beamer.lua), because citeproc sorts the rendered list by author and nothing in
-  // the HTML records where an entry sat in the file.
-  //
-  // The count check is the safety net: a key the Lua scan failed to match would
-  // otherwise silently produce a wrong order, so a mismatch between the shipped
-  // keys and the rendered entries falls back to citeproc's order and says so.
+  // Declaration ordering and scan limitations: docs/architecture.md, R3.
+  // The count guard catches scan discrepancies but also rejects citation subsets.
   const reorderReferences = () => {
     const raw = meta("beamer-refs-keys");
     if (!raw) {
@@ -645,13 +600,8 @@
       return;
     }
 
-    // Each container is sorted among its own entries instead of all of them being
-    // filled from one shared key list. Filling from a shared list is only correct
-    // while a single `#refs` container exists: with one container per reference page
-    // it appends every key into the first list, empties the rest and leaves the whole
-    // bibliography on page one -- measured as `13 / 0 / 0` on a three-page fixture.
-    // Sorting in place makes re-running this a no-op; that it *runs first* is what
-    // makes the page breaks follow the declared order (see the caller).
+    // Sort within each existing container. Filling from a shared entry list
+    // would move an already-paginated bibliography back onto its first page.
     containers.forEach((container) => {
       const list = container.querySelector(".csl-entry")?.parentElement;
       if (!list) {
@@ -664,86 +614,9 @@
   };
 
   // ---- Reference pagination -------------------------------------------------
-  //
-  // A bibliography has no upper bound, so the references frame is the one slide that
-  // routinely overflows in practice. The author declares page breaks with
-  // `item="N"` on the heading (`## References {item="6"}`); page 1 also carries the
-  // `::: {#refs}` div, and continuation pages carry nothing and are filled in here.
-  //
-  // `item` is a *density*: how many entries the author expects per page. The real
-  // break is decided by the browser -- entries are appended one at a time and the
-  // page is closed as soon as its scroll layer would overflow. Capacity was computed
-  // from a measured entry height first, and that was wrong four times over (29, 12,
-  // 11 where the page fitted 5-10): the entries sit in an inner list, their height
-  // depends on which page's font size they currently inherit, and the gap between
-  // them is not part of any single box. `scrollHeight > clientHeight` is the browser
-  // answering the question directly.
-  //
-  // Surplus entries go to generated pages, which are made uncounted so the
-  // footline's page count does not move.
-  //
-  // Which pages belong to the bibliography: the one holding `::: {#refs}`, plus the
-  // `item`-declared pages that follow it with no gap AND that carry no content of their
-  // own. Taking every `item` page in the deck instead would hand the bibliography to an
-  // unrelated `## Frame {item="3"}` anywhere else -- either by making that frame the
-  // master (no `#refs`, so nothing paginates at all) or, when it comes after, by moving
-  // entries into it.
-  //
-  // `item` alone cannot tell a continuation page from an unrelated frame, because `item`
-  // is a general density hint an author may put on any frame. The authored body is what
-  // separates them: a continuation page is a bare `## Title {item="N"}`, while a real
-  // frame has prose under its title. Measured on the case the adjacency test used to
-  // swallow -- `## References {item="5"}` then `## Unrelated {item="3"}` with a
-  // paragraph -- the unrelated page was marked `uncounted` (losing its page number) and
-  // had reference entries prepended above the author's own paragraph.
-  //
-  // The body is read from the section's OWN children, one level through a scroll layer
-  // when the page has one. The two callers of `refsPages` reach this at different points:
-  // `prepareScrollableReferences` runs before `applySlideBox`, so no page has a layer yet,
-  // while `paginateReferences` runs after it, so every page that scrolls has had its body
-  // moved into `:scope > .beamer-scroll`. Reading only the direct children therefore saw
-  // the LAYER as the body of a scrolling continuation page, and a page carrying a speaker
-  // note (which is enough to build a layer) stopped being recognised as a continuation
-  // page at all -- it rendered empty, stayed in the page count, and the bibliography
-  // spilled onto generated pages instead. Looking through the layer is what makes the
-  // predicate mean the same thing at both call sites, and it is why `aside.notes` has to
-  // be excluded here rather than by the layer's absence.
-  //
-  // Measured with the layout this produces: the authored frame is `H2,P` and the
-  // continuation page is `H2` alone, whether or not either has a scroll layer.
-  //
-  // Excluded from "content": the frame title (`H1`/`H2`), the injected chrome, an
-  // `#refs` container, and speaker notes. Everything else counts. It is an exclusion list
-  // rather than "does it render text" on purpose: a frame's content can produce no text at
-  // all. A bare `![](figure.png)` is the measured case -- 1.10 wraps it in a `<p>` and 1.4
-  // puts the `<img>` straight into the `<section>`, and either way its `textContent` is
-  // empty -- and the safe direction for this decision is to NOT absorb a page. A page
-  // wrongly treated as a real frame spills the bibliography onto a generated page
-  // instead, which is visible; a page wrongly absorbed loses the author's numbering
-  // silently.
-  //
-  // The notes exclusion is load-bearing. Quarto compiles `::: {.notes}` to
-  // `<aside class="notes">`, which stays a DIRECT child of the `<section>` -- Reveal reads
-  // notes from there -- so without this exclusion a continuation page carrying a speaker
-  // note counts as having a body. Both shipped templates keep their continuation page's
-  // explanation in exactly such a note, and a version of this check that did not exclude
-  // it silently stopped absorbing them: measured, the author's
-  // `## Continuation {item="5"}` page received NO entries and the deck came out as
-  // `refs-one` / `refs-one-2` / `refs-one-2-3`, all generated, with the author's own page
-  // left empty.
-  //
-  // A DOCUMENT footnote is the other `<aside>` a slide can carry, and it is NOT excluded
-  // here. Quarto wraps the footnote list in a bare `<aside>` that is a direct child of the
-  // `<section>` and is itself empty -- `<aside><ol class="aside-footnotes">...</ol></aside>`
-  // in both 1.4 and 1.10, verified on `spacing-endnotes-madrid.html`'s `#footnote` page
-  // and on a minimal 1.10 fixture -- so the class lives on the `<ol>`, not on the
-  // `<aside>`, and an `aside.notes` exclusion does not describe it. That aside is empty, so
-  // this predicate does not see it as content anyway; a footnote page that carried nothing
-  // else would be read as a continuation page, which is unreachable in practice because
-  // every footnote has an anchor in the author's own prose.
-  //
-  // A page's authored content, with a scroll layer replaced by its own children: the layer
-  // is furniture this script builds, not something the author wrote.
+  // Cross-file contract: docs/architecture.md, R1-R3.
+  // refsPages is called before and after applySlideBox builds scroll layers.
+  // Read through that wrapper so it is not mistaken for authored content.
   const authoredChildren = (slide) =>
     Array.from(slide.children).flatMap((child) =>
       child.matches(".beamer-scroll") ? Array.from(child.children) : [child]
@@ -754,12 +627,7 @@
       (child) =>
         !/^H[12]$/.test(child.tagName) &&
         !child.matches(
-          // `.beamer-refs` as well as `#refs`, because only the author's own
-          // container carries the id now. Today this is belt and braces -- both
-          // callers of `refsPages` run before any container is created -- but this
-          // predicate IS the contract for "a refs container is not authored body",
-          // and leaving half of it out is how a later reordering starts absorbing a
-          // continuation page whose bibliography has already been filled in.
+          // Generated containers use the class; only the author's keeps #refs.
           "#refs, .beamer-refs, .beamer-headline, .beamer-footline, aside.notes"
         )
     );
@@ -804,30 +672,12 @@
     return copy;
   };
 
-  // The container a page's entries live in, whichever kind of page it is.
-  //
-  // The author's own `::: {#refs}` keeps its id. Every container this pass creates --
-  // for a declared continuation page, or for a page the bibliography needed and did
-  // not get -- carries the CLASS instead and no id at all. It used to copy the id, so
-  // a three-page bibliography shipped three elements with `id="refs"`: invalid HTML,
-  // and ambiguous for `:target` and for assistive technology. Every lookup in this
-  // file is scoped to one slide, so the class is all the code needs; `#refs` stays in
-  // the stylesheet alongside it, because that is the hook a document's own CSS
-  // already targets.
+  // Container identity and public CSS hooks: docs/architecture.md, R1.
   const refsContainer = (slide) => slide.querySelector("#refs, .beamer-refs");
 
-  // The list that holds the entries, creating it when the page does not have one yet.
-  // A continuation page declared with `item` but without `::: {#refs}` starts empty,
-  // and the fill loop needs somewhere to put its entries.
-  //
-  // A page that already scrolls gets the container INSIDE its layer, not beside it.
-  // `layerOverflows` asks the layer, so a list parked next to an empty layer made the
-  // overflow test read zero for every entry: the page then took as many entries as
-  // `item` allowed no matter how few fitted, and the surplus was never spilled. Measured
-  // on a continuation page carrying a speaker note -- the note is enough to build the
-  // layer -- with `item="50"`: 11 of 13 entries landed on one page and it overflowed by
-  // 63px, with no warning and no page added; the same deck without the note spilled at
-  // the measured limit instead.
+  // A continuation starts without a list. Put its new list inside an existing
+  // scroll layer: layerOverflows measures that layer, so a sibling list would
+  // leave the measured box empty regardless of how many entries it holds.
   const entryList = (slide, master) => {
     let container = refsContainer(slide);
     if (!container) {
@@ -849,18 +699,10 @@
     return container.querySelector(".csl-entry")?.parentElement || container;
   };
 
-  // `refs-overflow: scroll` keeps the bibliography on the one page Quarto produces and lets
-  // it scroll, instead of measuring page breaks. Nothing is split and nothing is generated:
-  // the page keeps every entry, the scroll layer (which keeps the chrome still) comes from
-  // the usual pass, and the page is marked uncounted like the paginated ones so switching
-  // modes does not move the footline's page count.
+  // Single-page bibliography mode: docs/architecture.md, R1.
   const refsOverflowScroll = () => meta("beamer-refs-overflow") === "scroll";
 
-  // The rule both modes share, and the reason switching modes cannot move the footline's
-  // page count: a references page never takes part in it. It has to be applied even when the
-  // bibliography is empty -- `::: {#refs}` with nothing cited is a references page too, and
-  // marking it only on the paginated path made the two modes disagree (measured 5/5 against
-  // 4/4 on the same deck).
+  // Shared page-count rule, including empty bibliographies: R1.
   const markReferencesUncounted = (pages) => {
     pages.forEach((slide) => {
       slide.dataset.visibility = "uncounted";
@@ -902,23 +744,12 @@
       return;
     }
 
-    // A hidden box has no geometry, and Reveal hides every slide but the current one
-    // (`display: none`). A deck being read from the start therefore has its references
-    // slide hidden while the theme decorates it, and `layerOverflows` -- which asks the
-    // browser `scrollHeight > clientHeight` -- answers "no" for every entry: a 26-entry
-    // bibliography stayed on one page (measured 0/0 on the layer, 909px of content in a
-    // 592px box once its page was shown). So the pages are rendered for the duration of
-    // this pass and put back afterwards. The pass is synchronous, so nothing can paint in
-    // between; the inline value is restored, leaving Reveal's class-driven display in
-    // charge.
+    // This synchronous measurement pass temporarily exposes hidden pages.
+    // finally restores inline display values before the next paint (R2).
     const previousDisplay = new Map();
     const renderForMeasurement = (slide) => {
-      // The whole ancestor chain, not just the page. Reveal writes `display` inline on the
-      // stack that holds a slide as well, and it only renders the top-level sections within
-      // `viewDistance` (3 by default) of the current one -- so the references slide at the
-      // end of a deck sits inside a hidden stack, and forcing the page alone still measures
-      // 0x0. Measured on a real deck: layer 0/0 with only the page forced, 560px of room and
-      // 799px of content with its stack forced too.
+      // Reveal may hide the ancestor stack too; exposing only its child page
+      // still gives zero geometry.
       for (
         let node = slide;
         node && node.tagName === "SECTION";
@@ -938,21 +769,9 @@
       previousDisplay.clear();
     };
 
-    // Quarto gives `.smaller .scrollable` only to the page that actually contains
-    // `::: {#refs}`; a declared continuation page is left bare. Left alone the same
-    // entry is 49px on one page and 105px on the next (measured), and the generated
-    // pages get no scroll layer at all. Every page takes page 1's layout classes, so
-    // the author declares the look once.
-    //
-    // Merged, not assigned. `slide.className = ...` looked equivalent but replaced the
-    // whole list, so a continuation page lost whatever the author had put on it -- a
-    // `{.center}` stopped centring, and a document's own hook class (measured with
-    // `{.center .my-refs-page}`) was gone from the rendered deck. Reveal's own state
-    // classes are excluded for the same reason they must not be copied: they describe
-    // which slide is current, not how a page looks.
-    // `.beamer-leaf-slide` is added later in the decoration pass, so it is not in the
-    // class list read here -- assigning `className` outright would strip it from any
-    // page that already had it and leave that page without its scroll layer.
+    // Quarto gives layout classes only to the page holding #refs.
+    // Merge those classes onto continuations without replacing author classes;
+    // Reveal's current/past/future state is not part of that layout (R1).
     const transientClasses = new Set(["present", "past", "future"]);
     const layoutClasses = master
       .closest("section")
@@ -973,12 +792,8 @@
     });
 
     const declared = pages.map(refsItemCount);
-    // The heading a bibliography page carries, whichever level it is written at: the
-    // README documents `# References` + `::: {#refs}` and `## References` + `::: {#refs}`
-    // as equivalent, so the text and the tag have to be read the same way. Reading only
-    // `h2` here left a level-1 bibliography's generated pages titled with the English
-    // fallback while their tag was correctly `h1` -- measured `references-2` and its
-    // successors reading "References" under a `# 参考文献` page.
+    // Read both h1 and h2: section-level bibliographies have their own title
+    // text as well as a different heading tag.
     const pageHeading = (slide) =>
       directHeading(slide, "h1") || directHeading(slide, "h2");
     const baseTitle =
@@ -1003,13 +818,7 @@
         .join(" ");
       slide.id = `${template.id || "references"}-${index + 1}`;
       if (baseTitle) {
-        // The template's own level, not a fixed `h2`. The band a title gets is
-        // decided by its TAG (`section > h2:first-of-type` is the absolutely
-        // positioned frame band; a section page's `h1` is the in-flow colour
-        // band), so a generated page under an `h1` bibliography used to switch
-        // kinds mid-list: measured on a level-1 references page, pages 1-2 showed
-        // a section band and page 3 a frame band, whose `z-index: 2` then painted
-        // over the first entry it was supposed to sit above.
+        // Preserve the tag: CSS lays out h1 in flow and h2 as a frame band.
         const tag = directHeading(template, "h1") ? "h1" : "h2";
         const heading = document.createElement(tag);
         heading.textContent = baseTitle;
@@ -1253,16 +1062,7 @@
     slide.classList.contains("smaller") ||
     slide.classList.contains("beamer-long-frame-title");
 
-  // `.section-badge` cannot scroll, so every scrolling class is inert on it.
-  //
-  // The look centres its title and its body as ONE block; the scroll layer is an
-  // absolutely positioned strip inset from the top of the slide. The two cannot both
-  // hold. Half-applying it is what the theme used to do, and the result was measured
-  // at 324px: the badge sat at y=308..384 while its body was painted at y=60..99,
-  // above it. So a badge page is now left exactly as a plain badge page -- the class
-  // does nothing -- and `reportOverflow` says so once and then judges the page as the
-  // plain one it renders as, which also means an overfull badge page finally reports
-  // instead of being silently exempt for carrying `.scrollable`.
+  // Current badge/scroll limitation: docs/architecture.md, G1.
   const badgeCannotScroll = (slide) =>
     slide.classList.contains("beamer-section-slide") &&
     slide.classList.contains("section-badge");
@@ -1271,37 +1071,17 @@
   const isChrome = (node) =>
     node.classList.contains("beamer-headline") ||
     node.classList.contains("beamer-footline");
-  // The slide's fixed title: the frame title on a frame, the section band on a
-  // section page. Both are pinned by CSS that only matches a DIRECT child of the
-  // `<section>` -- `section > h2:first-of-type` for a frame, and
-  // `section.beamer-section-slide > h1:first-of-type` for a section page -- so
-  // either one left in the scroll layer silently loses its positioning and its
-  // fill. A section page's title is an `h1` and was not matched here, so
-  // `# Title {.scrollable}` moved the band into the layer: measured with no fill,
-  // `position: static`, and the frame's 32.4px title promoted to 52.5px by
-  // Quarto's `.reveal[data-navigation-mode=linear] .title-slide h1` rule once the
-  // theme's own (more specific) rule stopped matching.
+  // Both heading selectors require a direct child of the slide. Moving h1 or
+  // h2 into the layer would lose the matching band style and title measurement.
   const isSlideTitle = (slide, node) =>
     node.tagName === "H2" ||
     (node.tagName === "H1" &&
       slide.classList.contains("beamer-section-slide"));
 
-  // Where a section page's body starts, in the slide's own pixels: below the band
-  // it keeps IN THE FLOW, plus that band's own bottom margin, so a scrolling
-  // section page puts its first line exactly where a plain one does. Measured on
-  // the matched pair `testScrollLayers` now carries -- one short section page with
-  // `.scrollable` and one without: both read band 0..58 with the body at 94, so
-  // this resolves to the same 80px the plain page's own flow produces.
-  //
-  // `null` means "no measured answer", and the caller falls back to
-  // `padding-top`:
-  //   * not a section page -- a frame's title IS reserved in that padding;
-  //   * the badge look, whose band is centred rather than pinned to the top, so
-  //     "below the title" is not the line its body takes;
-  //   * a slide with no layout. A hidden slide has no geometry (Reveal
-  //     `display: none`s every slide but the current one) and a zero-height band
-  //     would otherwise resolve to an inset of 0. The pass that measures titles
-  //     re-wraps the layer once the page is laid out -- see `measureSectionBand`.
+  // Section bands stay in flow: the body starts after their bottom and margin.
+  // null asks the caller to use padding-top for frames, centred badges, or
+  // hidden sections with no measurable band. measureSectionBand revisits the
+  // latter once layout is available.
   const sectionBodyTop = (slide) => {
     if (!slide.classList.contains("beamer-section-slide")) {
       return null;
@@ -1333,43 +1113,10 @@
     return top;
   };
 
-  // A scrollable slide used to scroll itself (`overflow: auto` on the <section>),
-  // and because the headline/footline are its absolutely-positioned children they
-  // scrolled away with the content -- measured at top:690 before scrolling and
-  // top:490 at the bottom, where the footline sat in the middle of the viewport
-  // and permanently covered the last line. Scrolled fully it reached -201, off the
-  // top of the slide altogether.
-  //
-  // Pinning the chrome with `position: fixed` also fixes the screen, but it needs a
-  // `position: absolute` reset in print/PDF layout -- the print-layout assertion
-  // caught that as `footerContained: false` -- and it only lines up while the
-  // viewport box and the slide box coincide, which holds because `.reveal` is
-  // `width/height: 100%` today, not by contract.
-  //
-  // So the body moves into an inner scroll layer, inset to the section's padding
-  // box so it lands exactly where the body used to be and sits clear of the
-  // chrome. The inset must be explicit: for an absolutely positioned box,
-  // `top: 0` resolves to the *padding box's outer edge*, which with no border is
-  // the border box -- measured as `0,0` on a section with `padding: 80px 58px`,
-  // not the expected `58,80`.
-  //
-  // The slide title must stay ON the slide, never in the layer: it is fixed UI
-  // like the chrome, and both `section > h2:first-of-type` (the band's full-bleed
-  // width and 58px min-height) and the frame-title measurement read it as a
-  // direct child. That applies to a section page's `h1` band as much as to a
-  // frame's `h2` -- see `isSlideTitle`.
-  //
-  // Where the layer's inset comes from is the other half of that, and it differs
-  // by slide kind. A frame reserves its title's height in the section's own
-  // padding (`.beamer-frame-slide`'s `padding-top` is
-  // `headline + frame-height + 22px`), so `padding-top` IS the body's start line.
-  // A section page deliberately does the opposite -- its band is IN THE FLOW, so
-  // its height is reserved by nothing and the padding only carries the headline
-  // (0px on Madrid's headline-less default). Reading `padding-top` there put the
-  // layer level with the band's own top: measured on the shipped `scroll-layers`
-  // fixture, band 0..95 against a layer at 0, i.e. the first paragraph painted
-  // 81px inside the band. So a section page's inset is measured instead -- see
-  // `sectionBodyTop`.
+  // Scroll-layer contract: docs/architecture.md, G1.
+  // Absolute offsets start at the padding box's outer edge, so an inset of zero
+  // ignores reserved chrome. Frames use padding; sectionBodyTop measures the
+  // section's in-flow band instead.
   const wrapScrollableSlide = (slide) => {
     if (!slideScrolls(slide) || badgeCannotScroll(slide)) {
       // A frame can stop scrolling again -- `beamer-long-frame-title` is toggled on
@@ -1454,12 +1201,8 @@
     }
   };
 
-  // The classes that decide a slide's box, plus the scroll layer that is inset from
-  // them. This runs over every slide *before* the reference pagination measures anything:
-  // pagination asks the browser how many entries fit, so the pages have to be laid out
-  // the way they will end up. It is not run again afterwards -- the pages pagination
-  // generates copy the classes of the page they are modelled on, and `ensurePage` wraps
-  // them.
+  // Initial box preparation used before pagination (docs/architecture.md, L1).
+  // Generated pages copy those classes and get wrapped by ensurePage.
   const applySlideBox = (slide) => {
     slide.classList.add("beamer-leaf-slide");
     slide.classList.toggle(
@@ -1553,20 +1296,10 @@
     );
   };
 
-  // A section page's `h1` band is in the flow, so nothing reserves its height and
-  // the layer's inset can only be measured. This runs from the pass that already
-  // measures frame titles -- on every resize, every slide change, and after the
-  // fonts settle -- and it is also what gives some section pages their layer at
-  // all: `applySlideBox` runs before the references are filled in, so a
-  // continuation page the author declared is still empty at that point,
-  // `wrapScrollableSlide` finds nothing to move, and the later pass that re-wraps a
-  // frame (because its measured title height changed) never ran for it, because
-  // `measureFrameTitle` looks for an `h2`. Measured on a level-1 bibliography: the
-  // declared continuation page had no layer at all, while the level-2 one did.
-  //
-  // The 0.5px tolerance is what keeps this from thrashing: Reveal scales the whole
-  // deck, so a resize re-rounds the band's device-pixel box and the inset can move
-  // by a hundredth of a pixel without anything having actually changed.
+  // An in-flow h1 needs a measured inset, unlike the padding reserved for h2.
+  // Revisit empty continuation pages after entries arrive: the initial wrapper
+  // pass may have found no body to move. A 0.5px tolerance avoids rebuilding
+  // the layer for scale-rounding jitter and losing its scroll position.
   const measureSectionBand = (slide) => {
     if (!slide.classList.contains("beamer-section-slide")) {
       return;
@@ -1679,23 +1412,9 @@
     }
   };
 
-  // The bottom edge of the slide's fixed chrome, in viewport pixels, or `null` when
-  // the slide has none of the three kinds.
-  //
-  // A frame's title is its `h2`; a section page's is its in-flow `h1` band, which
-  // sits BELOW the headline when there is one; the headline is the last resort.
-  // Reading only the frame title and the headline -- the two kinds a slide was
-  // assumed to have -- was wrong for exactly the slide that has neither: Madrid runs
-  // with the headline off, so a section page fell through to the slide's own top and
-  // `positionLogo` put the logo at y=25..53 INSIDE the band's y=0..58, while the
-  // frame in the same deck kept it clear at y=83..111.
-  //
-  // The badge look is excluded on purpose, and for the reason `sectionBodyTop`
-  // excludes it too: its band is CENTRED, not pinned to the top, so it does not
-  // occupy the corner the logo is placed in. Counting it would push the logo to the
-  // slide's middle -- measured at y=409 under a badge at 308..384 -- and make it
-  // jump there from y=83 on the neighbouring frames, for a collision that does not
-  // exist (the badge's own box is nowhere near the top edge).
+  // Fixed chrome bottom in viewport pixels; null means no measurable box.
+  // Include the section h1 as well as frame h2/headline. A centred badge is
+  // excluded because it does not occupy the logo's top corner.
   const fixedChromeBottom = (slide) => {
     const candidates = [
       directHeading(slide, "h2"),
@@ -1717,21 +1436,9 @@
     return null;
   };
 
-  // The logo's line. Quarto positions the logo itself, and the stylesheet cannot
-  // know how tall a frame title band will be, so the line is measured here and
-  // written back as `--beamer-logo-top`.
-  //
-  // Measured evidence for the rule: with the headline off (Madrid's default)
-  // `--beamer-active-headline-height` is 0, so a CSS-only top put the logo at
-  // y=24..52 inside the band's y=0..58; with the headline on (CambridgeUS) it put
-  // the logo at y=82..110 inside the band's y=32..90. Both were painted over by
-  // the band, even though the band already reserves the logo's WIDTH through
-  // `--beamer-logo-reserve` -- the two halves of the same reservation were
-  // implemented in different places. This is the vertical half.
-  //
-  // The band is only a slide's own box when the slide HAS a frame title. A
-  // generated reference page can be titleless, so the fallback chain ends at the
-  // slide's top rather than at a stale title from another slide.
+  // Write the logo's measured line to --beamer-logo-top (ownership: C3).
+  // Titleless generated pages fall back to this slide's top, never another
+  // slide's title. Horizontal reserve is updated by positionNativeUi.
   const positionLogo = (reveal, slide) => {
     const logo = reveal.querySelector(".slide-logo");
     if (!logo) {
@@ -1803,8 +1510,7 @@
       `${Math.max(spacing, window.innerWidth - slideRect.right + spacing)}px`
     );
     if (logoRect && logoRect.width > 0 && logoRect.height > 0) {
-      // Reserve exactly as much title padding as the rendered logo needs,
-      // measured in canvas pixels rather than a fixed guess.
+      // Convert the logo's viewport width and right gap to unscaled slide units.
       const logoRightGap = Math.max(0, slideRect.right - logoRect.right);
       reveal.style.setProperty(
         "--beamer-logo-reserve",
@@ -1819,9 +1525,7 @@
     }
   };
 
-  // Phase 1: chrome injection. This only needs the parsed slide markup, so it
-  // runs as soon as that markup is final - before Reveal paints - so the Beamer
-  // headline/footline never flash in after the slides are already visible.
+  // Phase 1: parsed-DOM decoration. Lifecycle contract: docs/architecture.md, L1.
   let chromePollHandle = 0;
   let chromeAttempts = 0;
   let chromeObserver = null;
@@ -1842,9 +1546,6 @@
       return false;
     }
 
-    // The slide markup is final by the time this runs (see `chromeIsSettled`),
-    // so injecting here keeps the chrome ahead of Reveal's first paint and no
-    // frame renders without its Beamer headline/footline.
     reveal.dataset.beamerChrome = "true";
 
     const variant = meta("beamer-variant") || "madrid";
@@ -1857,12 +1558,7 @@
       showProgress: metaBoolean("beamer-progress", false),
     };
 
-    // The variant class belongs on the element that owns the palette. The
-    // in-header bootstrap in beamer.lua already puts it on <html> before the
-    // first paint; adding it to <body> as well gave nothing a second hook.
-    // `beamer-no-headline` is the only headline state the stylesheet reads --
-    // it collapses `--beamer-active-headline-height`; the positive case is just
-    // the default, so it needs no class.
+    // Only beamer-no-headline has a stylesheet rule; headline-on needs no class.
     document.documentElement.classList.add(`beamer-${variant}`);
     reveal.classList.add(`beamer-${variant}`);
     reveal.classList.toggle("beamer-no-headline", !showHeadline);
@@ -1874,36 +1570,16 @@
       prepareScrollableReferences();
     }
 
-    // Every slide gets its box before anything measures one. `beamer-frame-slide` is
-    // what reserves the frame title's height in the slide's padding -- 58px + 22px
-    // against the base 34px -- and this used to be applied in the decoration loop below,
-    // after the references had already been measured. The first reference page was
-    // therefore measured against 46px of room it does not have: it was cut one entry too
-    // late and came back with 37px of overflow, a scrollbar on a page that was supposed
-    // to fit. `wrapScrollableSlide` belongs here too, because the layer's inset is read
-    // from that same padding.
+    // Structural dependencies: docs/architecture.md, L1 and R2.
+    // This reserves the base title height; dynamic title fitting happens later.
     slides.forEach(applySlideBox);
 
-    // Ordering runs before pagination, and it has to: pagination decides the page
-    // breaks by walking the entries in DOM order, so reordering afterwards reorders
-    // entries inside pages that were already cut in citeproc's order -- measured on
-    // the pagination fixture as `ref13..ref9 / ref8..ref4 / ref3..ref1` where
-    // `refs-order: declaration` had been asked for `ref1..ref5 / ref6..ref10 /
-    // ref11..ref13`.
     reorderReferences();
 
-    // Pagination runs before anything counts, numbers or measures the slides: it
-    // creates sections, and those pages are marked uncounted before `slideCounts`
-    // reads `data-visibility`, so the footline's total never moves.
     if (!scrollReferences) {
       generatedRefsPages = paginateReferences() || 0;
     }
 
-    // ...but those sections are appended, so the slide list has to be re-read before
-    // they can be counted or decorated. A generated page is a slide like any other: left
-    // out of this list it received no chrome at all -- measured as `hasFootline: false`
-    // on both generated pages of a three-page bibliography, while every other slide had
-    // one.
     slides = leafSlides();
 
     const info = titleMetadata();
@@ -1937,13 +1613,9 @@
     return true;
   };
 
-  // The slide markup is only final once the parser has passed it. Waiting for
-  // DOMContentLoaded is not enough: Reveal adds its `.ready` class from a timer
-  // that fires as soon as its bundle is parsed, which can happen while the
-  // document is still loading (deferred scripts are still being fetched), and
-  // the deck then paints a chrome-less frame. `.reveal.ready` therefore also
-  // proves the markup is settled - Reveal can only be ready after it has read
-  // the slides - so the chrome is injected the moment that class shows up.
+  // Reveal can become ready before DOMContentLoaded while deferred resources
+  // are still loading. Its ready class proves it has read the slide markup;
+  // chromeIsSettled accepts that earlier point as well as parser completion.
   const chromeIsSettled = () =>
     document.readyState !== "loading" ||
     Boolean(document.querySelector(".reveal.ready"));
@@ -1967,11 +1639,7 @@
     try {
       decorated = decorateChrome();
     } catch (error) {
-      // `decorateChrome` marks the deck decorated before it starts, on purpose:
-      // this pass appends reference pages and rewrites slide structure, so a
-      // half-finished run is not safe to repeat. That makes it fail-stop -- but
-      // fail-stop must not also be silent, or the deck ships with frames that have
-      // no headline, footline or numbering and nobody is told.
+      // Partly rewritten DOM is unsafe to retry; report the fail-stop (L2).
       console.error(
         "[beamerslides] The slide decoration pass failed part-way, so this deck " +
           "is only partly decorated: frames after the failure point have no " +
@@ -2056,15 +1724,8 @@
     }
     reveal.dataset.beamerDecorated = "true";
 
-    // The sections the pagination appended are not in Reveal's model: it builds that when
-    // it initialises, and `paginateReferences` runs earlier than that -- the chrome
-    // injection it belongs to deliberately beats Reveal's first paint. A slide Reveal does
-    // not know has no background, so Quarto's own `support.js` plugin threw on every
-    // `slidechanged` into one of these pages:
-    // `TypeError: Cannot read properties of undefined (reading 'classList')` from
-    // `quarto-support/support.js`, i.e. navigating to a generated reference page logged an
-    // exception and aborted Quarto's footer handling. `Reveal.sync()` re-reads the DOM and
-    // registers them.
+    // Register appended sections before navigation: Quarto's support plugin
+    // reads each slide's Reveal background, which otherwise does not exist (L1).
     if (generatedRefsPages > 0 && typeof window.Reveal.sync === "function") {
       window.Reveal.sync();
     }
@@ -2093,15 +1754,8 @@
     watchFrameTitles(slides);
     positionNativeUi(reveal);
 
-    // One pass per frame, however many events ask for one. Each call used to
-    // schedule its own three rAF callbacks, and a single real resize produces
-    // several calls -- measured 2 native `resize` events plus 1 re-emission from
-    // Reveal, i.e. 3 passes per resize, and a window drag multiplies that by the
-    // event rate. Each pass reads `getComputedStyle` per list item and one
-    // `getImageData` per title (see `fontMetrics`), so the cost is real, not
-    // theoretical. The work is unchanged; only the number of times it runs per
-    // frame is. `realignForPrint` stays synchronous: `beforeprint` has no frame
-    // to wait for.
+    // Coalesce costly font/pixel measurements into one pass per frame (L2).
+    // beforeprint has no frame to wait for, so realignForPrint runs synchronously.
     const runRealign = () => {
       alignInlineLabels();
       alignOrderedMarkers();
@@ -2122,14 +1776,8 @@
       runRealign();
       slides.forEach(measureFrameTitle);
     };
-    // The same coalescing the optical pass above already had, for the logo/menu line:
-    // it scheduled a `requestAnimationFrame` AND an 80ms timeout on every event,
-    // neither cancelled, so a native resize plus Reveal's re-emission plus the event
-    // rate of a window drag multiplied both. The PAIR is kept, because the two do
-    // different jobs -- the frame follows the drag, the later timeout is what catches
-    // the line after the deck's own title measurement has moved the chrome it is
-    // measured from -- but a burst of events now collapses into one of each, and the
-    // trailing pass runs against the latest slide rather than the first one's.
+    // Keep one frame pass and one trailing timeout: the latter catches chrome
+    // after title fitting changes it. Both use the latest requested slide.
     let repositionFrame = 0;
     let repositionTimer = 0;
     let repositionSlide = null;

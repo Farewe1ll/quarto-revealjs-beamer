@@ -58,31 +58,10 @@ local function include_variant_bootstrap(variant)
   )
 end
 
--- Entry keys of the bibliography files, in the order they are declared. citeproc
--- sorts the rendered list by the CSL style's own rules (author order for the
--- styles Quarto ships), so the declaration order is not recoverable from the HTML
--- -- and citeproc's own API cannot hand it over either: `pandoc.utils.citeproc`
--- rejects a path, an inlines value and a list, and `pandoc.read(..., "bibtex")`
--- parses entries but leaves `meta.bibliography` nil. The keys are therefore read
--- straight out of the files.
---
--- This is a deliberately conservative scan. It is anchored to the START of a line
--- and the pattern only matches text that looks exactly like an entry header there
--- (`@type{key,` or `@type(key,`), so a key mentioned inside a field value cannot
--- contribute a phantom entry: the previous, unanchored pattern did exactly that --
--- `title = {A paper that cites @smith2020, in its title}` was measured to add a
--- bogus `2020` -- and because the caller compares the extracted count with the
--- number of rendered entries, ONE such mention was enough to discard the whole
--- declaration order rather than a single key.
---
--- What is left uncovered is narrower and is what the caller's count check is for: a
--- field value that spans lines and whose continuation line itself reads as
--- `@type{key,`, and an entry header split across lines. Both make the counts
--- disagree, and the caller falls back to citeproc's order and says so rather than
--- guessing.
---
--- `@string`, `@comment` and `@preamble` declare nothing citable and are skipped by
--- name.
+-- Declaration-order contract and fallback policy: docs/architecture.md, R3.
+-- This line-anchored scan avoids inline @ mentions, but is not a full BibTeX
+-- parser: split headers can be missed and multiline fields can contain false
+-- headers. Keep those boundaries visible when changing the JS count guard.
 local ignored_entry_types = {
   ["string"] = true,
   ["comment"] = true,
@@ -115,11 +94,8 @@ end
 local function candidate_paths(value)
   local paths = pandoc.List()
   local raw = pandoc.utils.stringify(value)
-  -- `quarto.project` only exists from Quarto 1.5, so the older releases fall back
-  -- to the resource path. That fallback used to skip "." -- which is exactly what
-  -- pandoc reports for a project rendered from its own directory -- and the only
-  -- candidate left was the bare relative path, resolved against whatever the Lua
-  -- process happens to have as its working directory. "." is now expanded first.
+  -- Older supported Quarto releases lack quarto.project. Expand "." in the
+  -- resource path explicitly instead of resolving it against the Lua process cwd.
   local project = quarto and quarto.project and quarto.project.directory
   if project and project ~= "" then
     paths:insert(project .. "/" .. raw)
@@ -188,9 +164,6 @@ local function bibliography_key_list(meta)
   return keys
 end
 
--- `refs-order: declaration` reorders the reference list into the order the keys
--- appear in the .bib file(s). The default (`citation`) leaves citeproc's order
--- alone, so existing documents do not change.
 local function declaration_order_enabled(meta)
   local raw = stringify(meta["refs-order"])
   if raw == nil or raw == "" then
@@ -206,8 +179,6 @@ local function declaration_order_enabled(meta)
   return false
 end
 
--- `refs-overflow: scroll` keeps the bibliography on the one page Quarto produces and lets
--- it scroll instead of paginating. The default (`paginate`) is unchanged.
 local function resolved_refs_overflow(meta)
   local raw = stringify(meta["refs-overflow"])
   if raw == nil or raw == "" then
@@ -303,10 +274,8 @@ function Meta(meta)
   return meta
 end
 
--- Block titles are attribute values, so they stay literal text: no markdown
--- parsing, which would silently turn `a_b_c` into emphasis. Split on ASCII
--- whitespace only - a locale-aware `%s` can match bytes inside multi-byte UTF-8
--- characters and corrupt CJK titles.
+-- Split on ASCII whitespace: locale-aware %s can match bytes inside UTF-8
+-- words and corrupt CJK titles. Literal-title semantics are documented in G3.
 local function title_inlines(value)
   local inlines = pandoc.List()
   for word in value:gmatch("[^ \t\r\n]+") do
@@ -356,10 +325,7 @@ function Div(div)
   local title = div.attributes.title
   if title and title ~= "" then
     div.attributes.title = nil
-    -- Emit the title as real text so it stays selectable, searchable, and
-    -- exposed to assistive technology. A CSS pseudo-element cannot do any of
-    -- that. Hand-written `data-title` markup keeps working through the
-    -- `[data-title]::before` fallback in beamer.scss.
+    -- Real title nodes and legacy data-title compatibility: G3.
     div.content:insert(
       1,
       pandoc.Div(

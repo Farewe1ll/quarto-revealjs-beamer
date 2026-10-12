@@ -15,12 +15,12 @@ format: beamerslides-revealjs
 
 # 默认章节页 {#sec-default}
 
-一级标题默认生成**通栏标题区**，紧贴页眉下方——这是 Beamer 上游的做法（`\section` 页复用 frametitle 模板）。CambridgeUS 的章节底色是透明的，所以这里看到的是深红标题文字直接排在页面上，而不是一条实色带；它的文字左边缘仍与 frame title、正文严格对齐。
+一级标题默认生成**通栏标题区**，紧贴页眉下方——这是本扩展的章节页设计，与 frame title、正文保持对齐。CambridgeUS 的章节底色是透明的，所以这里看到的是深红标题文字直接排在页面上，而不是一条实色带。
 
 ::: {.notes}
 这是 CambridgeUS 变体的**功能总览模板**，与 `template.qmd`（Madrid）逐页对应，便于对照两种外观的差异。正文即说明，复制本文件、替换标题与内容即可开始。
 
-与 Madrid 的主要差别：上游 CambridgeUS 只加载 `beaver`（不加载 `orchid`），所以章节标题区与标题块**没有填充**，三种 block 也靠标题文字颜色区分而不是靠色条；页眉（headline）默认开启，而不像 Madrid 那样默认关闭。
+与 Madrid 的主要差别：上游 CambridgeUS 使用 `beaver` 配色（不加载 `orchid`），block 默认**没有填充**；本扩展的章节标题区与标题页块也采用透明底色，三种 block 靠标题文字颜色区分。页眉（headline）默认开启，而 Madrid 默认关闭。
 
 front matter 只留文档本身的信息——标题、作者、日期、文献库、语言，加上 `beamer-variant`；主题的可选开关全部留默认值，集中列在文末「可选开关」一页。演讲者备注本身也是一个被主题支持的 Quarto 特性，就是你现在读到的这一段。
 :::

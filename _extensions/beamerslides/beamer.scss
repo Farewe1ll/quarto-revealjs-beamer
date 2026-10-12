@@ -54,12 +54,7 @@ $border-radius: 4px !default;
 .reveal {
   color: var(--beamer-ink);
   font-synthesis: none;
-  /* Derived here rather than in `_palette.scss`, and that placement is the point:
-     `var()` is substituted where a custom property is DECLARED, so a palette-level
-     `--beamer-active-headline-height: var(--beamer-headline-height)` froze at the
-     value `<html>` carried and left a `.reveal`-level `--beamer-headline-height`
-     override with no effect on the layout. Collapsed by `.beamer-no-headline`
-     below, which is the only other value it takes. */
+  /* Variable declaration/override contract: docs/architecture.md, C1-C3. */
   --beamer-active-headline-height: var(--beamer-headline-height);
 }
 
@@ -89,21 +84,10 @@ $border-radius: 4px !default;
   display: flex !important;
 }
 
-/* A scrollable frame must not scroll its own chrome -- see `wrapScrollableSlide`
-   in beamer.js. Making the section itself the scroll container carried the
-   absolutely-positioned headline/footline along with the content: scrolled to the
-   end the footline went from top:690 to -201, permanently covering the last line.
-   The section clips instead and the body scrolls in an inner layer.
-
-   Do NOT delete this as redundant against the rule above. It is inert against the
-   shipped stylesheets -- the base `overflow: hidden` below already outranks
-   Quarto's own `.reveal .slide.scrollable { overflow-y: auto }` (0,3,1 against
-   0,3,0), and deleting this rule was measured to change nothing at all. What it
-   buys is specificity (0,4,1), and that is exactly what a *document's* stylesheet
-   needs defeated: a user writing the natural
-   `.reveal .slides section.scrollable { overflow-y: auto }` ties the base rule at
-   (0,3,1), wins on source order, and re-enables section scrolling -- measured:
-   hidden with this rule present, `auto` without it. */
+/* Scroll-layer contract: docs/architecture.md, G1.
+   This selector also outranks a document's later
+   `.reveal .slides section.scrollable { overflow-y: auto }`: the base rule
+   would tie it at (0,3,1), while this rule has specificity (0,4,1). */
 .reveal .slides section.beamer-leaf-slide.scrollable,
 .reveal .slides section.beamer-leaf-slide.smaller,
 .reveal .slides section.beamer-leaf-slide.beamer-long-frame-title {
@@ -280,9 +264,7 @@ $border-radius: 4px !default;
 
 /* Frame and section titles */
 
-/* beamer.js wraps each band's text so it can nudge the text's optical centre
-   without moving the band itself. Inline-block keeps the wrapper hugging the
-   line box; the transform does the rest. */
+/* Inline-block hugs the text's line box; JS transforms this wrapper (G2). */
 .reveal .slides section > h2:first-of-type > .beamer-title-ink,
 .reveal .slides section.beamer-section-slide > h1:first-of-type > .beamer-title-ink {
   display: inline-block;
@@ -326,13 +308,8 @@ $border-radius: 4px !default;
   line-height: 1.1;
 }
 
-/* Descendant selectors on purpose: subheadings inside .columns, blocks, and
-   callouts must keep the theme's structure colours, not the reveal fallback.
-   It reads `--beamer-structure`, not `--beamer-primary`. The two are equal in
-   both stock variants so the difference is invisible there, but `structure` is
-   the role h4-h6 and the list markers use and the one the README tells authors
-   to override to recolour the theme's furniture -- reading `primary` here meant
-   that documented override silently skipped h3. */
+/* Descendant selectors also reach headings inside columns, blocks and callouts.
+   Heading colour roles and hierarchy: docs/architecture.md, C2 and G3. */
 .reveal .slides section h3 {
   margin: 0.1em 0 0.55em;
   color: var(--beamer-structure);
@@ -341,13 +318,6 @@ $border-radius: 4px !default;
   letter-spacing: 0;
 }
 
-/* h4 takes the variant's structural accent, alongside h3 and the list markers.
-   It used to take `--beamer-alert`, which made it the brightest red in the deck
-   under Madrid (`#ff0000`, 3.93:1 on the light slide -- below the 4.5:1 that
-   body-size text needs) and tied the colour of a heading to the colour of
-   `[text]{.alert}`. Beamer itself defines no h4: it has no heading-level colours
-   at all, so this is a web-side choice, and `structure` is the accent the rest
-   of the theme's furniture already uses. */
 .reveal .slides section h4 {
   margin: 0.8em 0 0.25em;
   color: var(--beamer-structure);
@@ -356,17 +326,7 @@ $border-radius: 4px !default;
   letter-spacing: 0;
 }
 
-/* h5 and h6 complete the ladder. Until now the theme defined only h3 and h4
-   and left the deeper two to Reveal's own `.reveal h1..h6` rule, which sets a
-   SINGLE `--r-heading-font-size` for every level. That inverted the hierarchy:
-   h5/h6 rendered at the full 30px, larger than h3 (27.3px) and h4 (23.4px), so
-   a fifth-level heading looked more important than a third-level one. They also
-   inherited `--r-heading-color` (Quarto's `$presentation-heading-color`,
-   `#1b3761`), which does not follow the variant palette at all. Both now take
-   the same structural accent as h3/h4 and step down by the same ratio.
-   Beamer has no notion of h5/h6 either, so this is a web-side choice; the
-   reference `quarto-revealjs-clean` theme stops at h4 as well, which leaves the
-   same inversion there. */
+/* Explicit deeper levels avoid falling back to Reveal's common heading size. */
 .reveal .slides section h5 {
   margin: 0.72em 0 0.22em;
   color: var(--beamer-structure);
@@ -383,57 +343,26 @@ $border-radius: 4px !default;
   letter-spacing: 0;
 }
 
-/* Section pages come in three looks, chosen per heading with an attribute on
-   the `#` line -- Quarto copies heading classes onto the <section>, so nothing
-   has to be rewritten in the AST:
-
-     # Title                    full-bleed band under the headline (default)
-     # Title {.section-badge}   centred rounded badge
-     # Title {.section-minimal} plain text, no fill
-
-   The default band is what Beamer itself draws: it renders a \section page
-   through the same frametitle template as an ordinary frame, so the section
-   title is a full-text-width band pinned under the headline -- not a centred
-   badge floating in the middle of the slide.
-
-   The look is expressed in custom properties, and the geometry is declarative:
-   the band is in the flow (see the `h1` rule below), so nothing has to tell the
-   stylesheet how tall a section title is. beamer.js only adds the
-   `beamer-section-slide` class. */
+/* Section looks: docs/architecture.md, G1; author syntax stays in README.
+   Quarto copies heading classes onto section, so no AST rewrite is needed.
+   The h1 stays in flow and reserves its own band height. */
 .reveal .slides section.beamer-section-slide {
   --beamer-section-radius: 0;
   --beamer-section-shadow: none;
   --beamer-section-align: left;
   --beamer-section-size: 1.08em;
   flex-direction: column;
-  /* `justify-content: flex-start` is load-bearing, not decoration: Quarto marks
-     level-1 sections `center`, which `applySlideBox` turns into
-     `beamer-center-slide` (`justify-content: center`), and a centred flex column
-     would centre the band into the middle of the page. A band is a frametitle and
-     belongs flush under the headline. The badge look opts back into centring for
-     its title+body block, at a higher specificity.
-     The top padding reserves only the headline, because the band reserves its own
-     height from the flow. It used to reserve
-     `headline + var(--beamer-frame-height) + 22px` -- a fixed 58px that nothing
-     ever measured for a section page, since `measureFrameTitle` requires a direct
-     `h2`. Measured against that rule: a two-line title (band 95.2px) reached
-     15.2px into the body's box, and a three-line one (band 132.7px) buried the
-     first line, whose top sat at 90.9px. */
+  /* Quarto's level-1 center class is mapped to beamer-center-slide.
+     flex-start keeps band/minimal under the headline; badge opts into centring.
+     Reserve only the headline here: the in-flow h1 reserves its own height. */
   padding: var(--beamer-active-headline-height) 58px
     calc(var(--beamer-footline-height) + 22px);
   justify-content: flex-start;
 }
 
 .reveal .slides section.beamer-section-slide.section-badge {
-  /* A badge centres the title AND its body as one block. Rather than measure
-     offsets in script, the title joins the normal flow for this look and
-     `justify-content` centres the two together -- which is what flex is for.
-     The padding is deliberately symmetric: flex centres within the content box,
-     and the box runs from the headline down to the slide's bottom edge (the
-     footline overlaps it, as it does for the band). That leaves the block a few
-     pixels above the slide's exact middle, which is not perceptible. */
-  /* The same reservation as the band look, so the centred block lands on the
-     slide's optical middle rather than on the middle of the content box. */
+  /* Flex centres the in-flow title/body pair within the content box.
+     Top and bottom padding reserve the headline and footline respectively. */
   padding: calc(var(--beamer-active-headline-height) + 24px) 12%
     calc(var(--beamer-footline-height) + 22px);
   justify-content: center;
@@ -441,39 +370,18 @@ $border-radius: 4px !default;
   --beamer-section-shadow: 0 3px 0 rgba(0, 0, 0, 0.12);
   --beamer-section-align: center;
   --beamer-section-size: 1.62em;
-  /* A badge has to be a solid object: it is the only section look whose whole
-     point is the rounded box, and a shadow drawn around a transparent one
-     reads as a stray rule under the text. Variants that leave the section band
-     transparent supply their own fill through these two properties.
-     The fallbacks are the band's own colours, which is what Madrid's badge has
-     always used; CambridgeUS overrides the fill below, because its band is
-     transparent and a transparent badge would vanish. */
-  /* Derived at the point of use, so a document overriding the section colours
-     (or the accent) on `.reveal` reaches the badge too. A palette-level
-     `--beamer-section-badge-bg: var(--beamer-section-title-bg)` resolved on
-     `<html>` and left the badge on the stock fill -- measured before this moved:
-     the bands turned green and the badge stayed #3333b2. CambridgeUS, whose band
-     is transparent, supplies its own fill through the variant rule below. */
+  /* Visible badge fill and variant fallbacks: docs/architecture.md, C2. */
   --beamer-section-fill: var(--beamer-section-badge-bg, var(--beamer-section-title-bg));
   --beamer-section-fg: var(--beamer-section-badge-fg, var(--beamer-section-title-fg));
 }
 
-/* CambridgeUS leaves the block title unfilled and colours it with `structure`
-   (and its example titles with `example text`). Both roles have to be re-pointed
-   for this variant, because the palette's stock values for them are Madrid's
-   literals, which `:root` hands to both variants. Written HERE rather than in
-   `_palette.scss`: a value containing `var()` is substituted on the element it is
-   declared on, so the palette's own CambridgeUS block resolved both against
-   `<html>` and a `.reveal`-level `--beamer-structure` never reached the block
-   titles. Declared on `.reveal.beamer-cambridgeus`, the substitution happens
-   below any document override, and this rule still outranks `:root`. */
+/* Derived foreground ownership and direct-override scope: C1-C3. */
 .reveal.beamer-cambridgeus {
   --beamer-block-title-fg: var(--beamer-structure);
   --beamer-block-example-title-fg: var(--beamer-example);
 }
 
-/* CambridgeUS fills the section band with nothing, so the badge would inherit a
-   transparent "fill" and vanish. The variant accent is the documented fallback. */
+/* The accent supplies a visible badge on this variant's transparent band. */
 .reveal.beamer-cambridgeus
   .slides
   section.beamer-section-slide.section-badge {
@@ -747,10 +655,7 @@ $border-radius: 4px !default;
   width: 0.34em;
   height: 0.34em;
   transform: translateY(-50%);
-  /* Beamer paints itemize projectors with `structure`. Upstream CambridgeUS
-     leaves it at `beamer@blendedblue` while the frametitle goes dark red, but
-     this theme deliberately re-points `structure` at the variant's darkred (see
-     `_palette.scss`), so the projectors track the accent instead of clashing. */
+  /* Structural marker colour role: docs/architecture.md, C2. */
   background: var(--beamer-structure);
   border-radius: 1px;
 }
@@ -803,8 +708,6 @@ $border-radius: 4px !default;
   height: 1.35em;
   padding: 0 0 var(--beamer-marker-padding-bottom, 0.1em);
   color: #fff;
-  /* Numbered markers have no Beamer counterpart, so they track `structure`
-     alongside the itemize bullets rather than the variant accent. */
   background: var(--beamer-structure);
   border-radius: 2px;
   font-size: 0.7em;
@@ -862,19 +765,8 @@ $border-radius: 4px !default;
   bottom: calc(var(--beamer-footline-height) + 8px);
 }
 
-/* Beamer blocks and callouts.
-
-   Whether a block has a fill is a property of the loaded colour theme, not a
-   styling choice: `beamercolorthemedefault` sets `block title{parent=structure}`
-   with an EMPTY background, and only `orchid` gives it a background. Madrid
-   loads orchid, CambridgeUS does not, so under CambridgeUS Beamer renders all
-   three block kinds with the title as coloured text and no band. The palette
-   expresses that by leaving the three `--beamer-block-*-title-bg` values
-   `transparent` for CambridgeUS.
-
-   `--beamer-block-title-band` re-points at the current kind's band so that the
-   single `color-mix()` below can derive that kind's body tint the way orchid
-   does (`block title bg!10!bg`). */
+/* Block palette contract: docs/architecture.md, C2.
+   The per-kind --beamer-block-title-band alias lets one mix derive each body tint. */
 
 .beamer-block {
   --beamer-block-title-band: var(--beamer-block-title-bg);
@@ -901,22 +793,17 @@ $border-radius: 4px !default;
   --beamer-block-title-band: var(--beamer-block-alert-title-bg);
 }
 
-/* CambridgeUS loads no colour theme that fills `block title`, so Beamer leaves
-   the whole block unfilled -- the derived tint would be a groundless wash. */
+/* Unfilled CambridgeUS block behaviour: C2. */
 .reveal.beamer-cambridgeus .beamer-block {
   background: transparent;
 }
 
-/* The block title is real text: it stays selectable, searchable, and exposed
-   to assistive technology. The `[data-title]` rule below is a fallback for
-   hand-written HTML that predates the markup change. */
+/* Real title nodes and legacy data-title compatibility: G3. */
 .beamer-block > .beamer-block-title,
 .beamer-block[data-title]::before {
   display: block;
   margin: -0.62em -0.76em 0.5em;
   padding: 0.36em 0.76em 0.24em;
-  /* Derived at the point of use: CambridgeUS reads `--beamer-structure` here, which a
-     palette-level declaration would have frozen on `<html>`. Madrid pins the literal. */
   color: var(--beamer-block-title-fg, var(--beamer-structure));
   background: var(--beamer-block-title-band);
   font-size: 0.82em;
@@ -928,9 +815,6 @@ $border-radius: 4px !default;
   content: attr(data-title);
 }
 
-/* Beamer keeps a separate colour for each block kind. When the theme fills
-   the band (Madrid) that only changes the background; when it does not
-   (CambridgeUS) the difference shows up as the title text colour instead. */
 .beamer-block.beamer-example > .beamer-block-title,
 .beamer-block.beamer-example[data-title]::before {
   color: var(--beamer-block-example-title-fg, var(--beamer-example));
@@ -945,14 +829,9 @@ $border-radius: 4px !default;
      this 700 against ~600 for the other titles, so the alert outranks them by
      weight as well as by fill; the bundled Libertinus has no step above 700. */
   font-weight: var(--beamer-block-alert-title-weight, 650);
-  /* Outline for low-contrast fills. CambridgeUS paints this title yellow on a
-     light slide (1.48:1), which is hard to read on its own; the stroke puts a
-     high-contrast edge around each glyph without changing the fill colour.
-     `paint-order` is what keeps the stroke *behind* the fill -- without it the
-     stroke is centred on the glyph outline and eats into the letterform.
-     Both are progressive: a browser without them simply gets the plain fill,
-     which is the previous behaviour. Defaults to no stroke so only the variant
-     that needs it opts in. */
+  /* paint-order keeps the stroke behind the fill, preserving the letterform.
+     Unsupported stroke/paint-order leaves the plain fill; only CambridgeUS
+     opts into this progressive enhancement. Visual choice and limits: C2/G3. */
   -webkit-text-stroke-width: var(--beamer-block-alert-title-stroke, 0);
   -webkit-text-stroke-color: var(--beamer-block-alert-title-stroke-color, currentColor);
   paint-order: stroke fill;
@@ -1325,13 +1204,8 @@ $border-radius: 4px !default;
 }
 
 .reveal .slide-logo {
-  /* The fallback is the palette's documented `max(active headline, frame title) +
-     7px`, computed HERE rather than in `_palette.scss`: it reads
-     `--beamer-active-headline-height`, which is declared on `.reveal`, and a
-     palette-level copy would have resolved on `<html>` where that variable is not
-     in scope -- measured, the palette entry then computed to nothing and this rule
-     fell through to a flat 39px, 26px above the value it documents. `beamer.js`
-     overwrites the variable with the measured chrome bottom once Reveal is ready. */
+  /* Compute the fallback here, below .reveal's active-headline declaration.
+     JS replaces it with measured chrome once Reveal is ready; ownership: C3. */
   top: var(
     --beamer-logo-top,
     calc(max(var(--beamer-active-headline-height), var(--beamer-frame-height)) + 7px)
@@ -1350,20 +1224,9 @@ $border-radius: 4px !default;
   padding-right: var(--beamer-logo-reserve, 225px);
 }
 
-/* A section page's band is that page's fixed chrome, so it has to reserve the
-   logo's width exactly as a frame title does. Without this the band kept its flat
-   58px gutter while `beamer.js` went on measuring and writing
-   `--beamer-logo-reserve`, so any logo wider than about 110px overlapped a long
-   section title -- measured with a 140px logo: title ink running to x=1133 against
-   a logo starting at x=1118. `max()` keeps the base gutter when there is no logo
-   or the logo is narrow, and the centred minimal look takes the same padding on
-   the left so its text stays centred rather than drifting.
-
-   `.section-badge` is excluded, and must stay excluded: its title is centred
-   inside a box that is itself inset, so a one-sided padding moves the text off the
-   centre of its own badge -- measured with a 140px logo, by 56px. It needs no
-   reservation at all, because the badge is vertically centred and the logo sits in
-   the top corner; the 2-D audit in the suite confirms the two boxes never meet. */
+/* max() retains the base gutter when no logo is present or it is narrow.
+   The minimal look mirrors the reserve on both sides to keep its text centred.
+   Badge needs no corner reservation; one-sided padding would unbalance it. */
 .reveal.has-logo
   .slides
   section.beamer-section-slide:not(.section-badge)
@@ -1377,11 +1240,6 @@ $border-radius: 4px !default;
   > h1:first-of-type {
   padding-left: max(58px, var(--beamer-logo-reserve, 225px));
 }
-
-/* The badge look is deliberately absent here: its band is CENTRED rather than
-   pinned to the top, so `fixedChromeBottom` leaves the logo in the top corner,
-   which the centred badge never reaches. Reserving the width on the section as well
-   only narrowed the badge for no visible benefit. */
 
 .reveal .slide-number {
   /* The Beamer footline owns slide numbering to avoid duplicate counters. */
@@ -1449,9 +1307,7 @@ html.print-pdf .reveal .slides section.beamer-center-slide {
 
 html.reveal-print .reveal .slides section.beamer-section-slide,
 html.print-pdf .reveal .slides section.beamer-section-slide {
-  /* 22px, matching the screen rule: this used to reserve 34px while the screen
-     reserved 22px, which was the only page kind whose print and screen boxes
-     disagreed (the leaf, frame and title pages all carry the same value in both). */
+  /* Matches the section-page screen padding (G2). */
   padding: var(--beamer-active-headline-height) 58px calc(var(--beamer-footline-height) + 22px) !important;
 }
 
