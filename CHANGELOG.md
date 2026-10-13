@@ -10,6 +10,15 @@ Earlier releases predate this file; their history is in the git log.
 
 ### Fixed
 
+- PDF reference pagination now uses the screen slide dimensions and updates after
+  fonts/images load and Reveal creates its print pages. Generated PDF wrappers
+  are added and removed with their reference slides; fitting pages avoid scroll
+  clipping caused by the PDF height offset. Regressions compare per-page entries
+  with screen layout and exercise delayed resources, growth and contraction,
+  nonzero margins, percentage slide heights and 4:3 dimensions. Paper geometry
+  retains Reveal's margin calculation and percentage sizes use viewport dimensions
+  to prevent feedback from the expanded PDF document.
+
 - Reference pages created after initialization now join size observation, and
   removed pages release their observation. Readiness retries retain their first
   failure even when a later reload succeeds or fails differently.

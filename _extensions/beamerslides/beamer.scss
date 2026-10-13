@@ -1285,6 +1285,13 @@ $border-radius: 4px !default;
   }
 }
 
+/* Pagination uses the screen box, while Reveal's PDF page offset can remove
+   a pixel. Fitting entries may use that rounding margin without a scrollbar. */
+html.reveal-print .reveal .slides section.beamer-refs-fit > .beamer-scroll,
+html.print-pdf .reveal .slides section.beamer-refs-fit > .beamer-scroll {
+  overflow: visible;
+}
+
 html.reveal-print .reveal .slides section.beamer-leaf-slide,
 html.print-pdf .reveal .slides section.beamer-leaf-slide {
   top: 0 !important;

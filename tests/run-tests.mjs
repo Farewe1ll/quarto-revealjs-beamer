@@ -14,6 +14,7 @@ import {
   testReferencesDeclarationOrder, testReferencesFinalGeometry,
   testReferencesDelayedResources, testDistribution,
 } from "./suites/reference-updates.mjs";
+import { testReferencesPrintParity, testReferencesPrintResources } from "./suites/reference-print.mjs";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runLockFile = join(projectRoot, "tests", ".run-tests.lock");
@@ -5198,6 +5199,10 @@ try {
     renderFixture(fixture);
   }
   renderFixture("refs-long-title-cambridgeus", {source:"refs-long-title",metadata:{"beamer-variant":"cambridgeus"}});
+  renderFixture("refs-print", {source:"refs-auto",metadata:{"beamer-variant":"cambridgeus",lang:"zh","embed-resources":"true"}});
+  renderFixture("refs-print-margin", {source:"refs-auto",metadata:{margin:"0.1"}});
+  renderFixture("refs-print-percentage", {source:"refs-auto",metadata:{height:"100%"}});
+  renderFixture("refs-print-four-three", {source:"refs-auto",metadata:{width:"960",height:"720"}});
   renderFixture("refs-long-title-progress", {source:"refs-long-title",metadata:{progress:"true"}});
   renderFixture("refs-long-title-tall", {source:"refs-long-title",metadata:{"refs-title":"References and detailed bibliography ".repeat(24)}});
   renderFixture("refs-order-citation", {
@@ -5299,6 +5304,8 @@ try {
   await testReferencesDeclarationOrder(chrome.connection, local.origin);
   await testReferencesFinalGeometry(chrome.connection, local.origin);
   await testReferencesDelayedResources(chrome.connection);
+  await testReferencesPrintParity(chrome.connection, local.origin);
+  await testReferencesPrintResources(chrome.connection);
   await testDistribution(chrome.connection);
   await testReferencesAutoPages(chrome.connection, local.origin);
   await testReferencesAdjacentItems(chrome.connection, local.origin);

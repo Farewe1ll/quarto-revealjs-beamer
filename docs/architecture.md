@@ -190,7 +190,9 @@ Lua 生成的 block 标题保持字面文本，输出真实文本节点以便搜
 
 **当前实现：** 测量逐条加入 clone，通过浏览器的 `scrollHeight` / `clientHeight` 判断容纳能力，最后移动真实条目。每页布局类、实际标题高度及滚动层在填入测量条目前确定，包括生成页与隐藏祖先。测量期间不报告尚未断页的正文溢出；所有临时显示状态在 `finally` 恢复。
 
-初始化保存已排序的真实条目、作者声明页及生成页。字体 ready/loadingdone/loadingerror、文献图片 load/error、resize、afterprint 和可见文献页的尺寸变化按尾沿合并后重新分页；打印布局不触发重分页。条目顺序、作者声明页与 notes 保留，多余生成页在移动真实条目后删除；新增页补齐 chrome 并加入尺寸观察，删除页解除观察，页集合变化时 `Reveal.sync()` 并保持当前页仍可导航。条目归属未变时恢复正文滚动位置，重复相同分页告警不重复输出。更新失败记录错误并停止后续重分页。
+初始化保存已排序的真实条目、作者声明页及生成页。字体 ready/loadingdone/loadingerror、文献图片 load/error、resize、afterprint 和可见文献页的尺寸变化按尾沿合并后重新分页；打印布局等 Reveal 建立 PDF 包装层后更新，`pdf-ready` 与 `beforeprint` 同步校正。条目顺序、作者声明页与 notes 保留，多余生成页在移动真实条目后删除；新增页补齐 chrome 并加入尺寸观察，删除页解除观察。屏幕页集合变化时 `Reveal.sync()` 并保持当前页仍可导航；打印页集合变化时直接增减对应 `.pdf-page` 包装与背景，避免重新同步破坏已建立的打印布局。条目归属未变时恢复正文滚动位置，重复相同分页告警不重复输出。更新失败记录错误并停止后续重分页。
+
+屏幕与 PDF 使用相同的逻辑幻灯片尺寸测量文献，不使用 PDF 包装层经 `pdfPageHeightOffset` 缩短后的高度决定断页；百分比尺寸以视口显式计算，避免打印文档总高度反馈成单页高度。临时尺寸及显示状态均在 `finally` 中恢复。打印更新须等所有文献页的包装层连接到文档；更新后每个分页文献页对应一张纸，校正 Reveal 可能按旧高度预留的多张纸，并保留 `margin` 对纸张尺寸的影响。每轮测量先清除上一轮的 `beamer-refs-fit` 标记，测量完成后重新设置。打印样式只对已确认可容纳的文献页释放内层 overflow，避免包装层的像素取整产生滚动裁切；超高单条及 `refs-overflow: scroll` 保持滚动兜底。标准打印导出应在字体与文献图片加载完成后进行。
 
 延迟字体与图片、标题阈值两侧、h1/h2、4:3、重复事件和超高单条均有专项场景；任意作者脚本在不触发上述事件时修改文献，不属于自动重新分页保证。慢字体样例没有额外溢出，延迟图片样例在旧实现上产生 148px 溢出，更新后消除。首帧仍采用同步初始分页，不等待资源无限加载。
 
@@ -231,7 +233,7 @@ Lua 在不支持的文件类型、读取/解析失败或重复 key 时告警并�
 | G1：滚动、章节外观和还原 | `testScrollLayers`、`testSectionStyles`、`testBadgeScrollIsInert` |
 | G2：对齐、logo、菜单、打印 | `testMadrid`、`testCambridgeUs`、`testCjkChipAlignment`、`testLogoPlacement`、`testMenuClearsChrome`、`testPrintMatchesScreenPadding` |
 | G2–G3：内容间距、列表和可访问标题 | `testSpacing`、`testDocumentFootnotes`、`testBlockTitles`、`testBehavior` |
-| R1–R3：文献页 | `testReferencesPagination`、`testReferencesMultifile`、`testReferencesDeclarationOrder`、`testReferencesFinalGeometry`、`testReferencesDelayedResources` 及其余 `testReferences*`；解析/读取失败另由 `tests/lib/check-bibliography.lua` 覆盖 |
+| R1–R3：文献页 | `testReferencesPagination`、`testReferencesMultifile`、`testReferencesDeclarationOrder`、`testReferencesFinalGeometry`、`testReferencesDelayedResources`、[打印分页与资源更新](../tests/suites/reference-print.mjs)及其余 `testReferences*`；解析/读取失败另由 `tests/lib/check-bibliography.lua` 覆盖 |
 | 离线、分发与视口 | `testOffline`、`testDistribution`、`testFourThreeViewport`；分发归档与仓库外安装由 `tests/lib/distribution.mjs` 管理 |
 
 测试名定位现有覆盖，每个名称并不代表相关约定已被穷尽验证。修复缺陷时增加能在旧实现上失败的场景；跨变量派生、初始化顺序与文献分页修改应运行完整套件。

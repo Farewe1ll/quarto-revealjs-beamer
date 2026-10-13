@@ -760,7 +760,29 @@
     // This synchronous measurement pass temporarily exposes hidden pages.
     // finally restores inline display values before the next paint (R2).
     const previousDisplay = new Map();
+    const previousSize = new Map();
+    const previousFit = new Map();
+    // Reveal's PDF wrapper is shorter by pdfPageHeightOffset. Use the same
+    // logical slide box as screen pagination, then restore the print geometry.
+    // Calling getComputedSlideSize() without viewport arguments in print view
+    // uses the already-expanded PDF document height. Percentage slide sizes then
+    // feed that height back into the next pagination pass. Reveal resolves the
+    // logical percentage size against the viewport, so pass it explicitly.
+    const printSize = isPrintLayout()
+      ? window.Reveal?.getComputedSlideSize?.(window.innerWidth, window.innerHeight)
+      : null;
     const renderForMeasurement = (slide) => {
+      if (!previousFit.has(slide)) {
+        previousFit.set(slide, slide.classList.contains("beamer-refs-fit"));
+        slide.classList.remove("beamer-refs-fit");
+      }
+      if (printSize && !previousSize.has(slide)) {
+        previousSize.set(slide, ["width", "height", "min-height"].map((name) =>
+          [name, slide.style.getPropertyValue(name), slide.style.getPropertyPriority(name)]));
+        slide.style.setProperty("width", `${printSize.width}px`, "important");
+        slide.style.setProperty("height", `${printSize.height}px`, "important");
+        slide.style.setProperty("min-height", `${printSize.height}px`, "important");
+      }
       // Reveal may hide the ancestor stack too; exposing only its child page
       // still gives zero geometry.
       for (
@@ -780,12 +802,19 @@
         slide.style.display = value;
       });
       previousDisplay.clear();
+      previousSize.forEach((properties, slide) => properties.forEach(([name, value, priority]) => {
+        if (value) slide.style.setProperty(name, value, priority);
+        else slide.style.removeProperty(name);
+      }));
+      previousSize.clear();
+      previousFit.forEach((fits, slide) => slide.classList.toggle("beamer-refs-fit", fits));
+      previousFit.clear();
     };
 
     // Quarto gives layout classes only to the page holding #refs.
     // Merge those classes onto continuations without replacing author classes;
     // Reveal's current/past/future state is not part of that layout (R1).
-    const transientClasses = new Set(["present", "past", "future"]);
+    const transientClasses = new Set(["present", "past", "future", "beamer-refs-fit"]);
     const layoutClasses = master
       .closest("section")
       .className.split(/\s+/)
@@ -833,7 +862,25 @@
         .join(" ");
       container.setAttribute("role", master.getAttribute("role") || "list");
       slide.appendChild(container);
-      template.parentElement.insertBefore(slide, template.nextElementSibling);
+      const printPage = template.parentElement;
+      if (printPage.classList.contains("pdf-page")) {
+        // Reveal has already wrapped the deck. sync() does not rebuild PDF
+        // pages; a new bibliography page needs its own matching wrapper.
+        const wrapper = document.createElement("div");
+        wrapper.className = "pdf-page";
+        wrapper.style.cssText = printPage.style.cssText;
+        ["width", "left", "top"].forEach((name) =>
+          slide.style.setProperty(name, template.style.getPropertyValue(name)));
+        const background = template.slideBackgroundElement?.cloneNode(true);
+        if (background) {
+          wrapper.appendChild(background);
+          slide.slideBackgroundElement = background;
+        }
+        wrapper.appendChild(slide);
+        printPage.after(wrapper);
+      } else {
+        template.after(slide);
+      }
       slide.classList.add("beamer-leaf-slide");
       renderForMeasurement(slide);
       wrapScrollableSlide(slide);
@@ -850,6 +897,7 @@
     // killed the "pages were added" warning below.
     const declaredCount = referencePagination.declared.length;
     const slices = [];
+    const fits = [];
     // The forced display only has to last as long as the pages are being measured --
     // the fill below moves the real entries and does not measure anything -- and it is
     // restored in a `finally`, because a page left rendered that Reveal believes is
@@ -901,6 +949,7 @@
           slice.push(all[index]);
         }
         slices.push(slice);
+        fits.push(!layerOverflows(slide));
         index += slice.length;
         pageIndex += 1;
       }
@@ -925,9 +974,25 @@
         }
       }
       slide.dataset.visibility = "uncounted";
+      slide.classList.toggle("beamer-refs-fit", fits[i] === true);
+      const wrapper = slide.parentElement;
+      if (printSize && wrapper.classList.contains("pdf-page")) {
+        // Reveal may have allocated several sheets from the stale, pre-font
+        // content height. Each paginated reference slide owns one sheet.
+        const config = window.Reveal.getConfig();
+        const margin = Number(config.margin) || 0;
+        const pageHeight = Math.floor(printSize.height * (1 + margin));
+        const offset = Number(config.pdfPageHeightOffset ?? -1);
+        wrapper.style.height = `${Math.max(1, pageHeight + offset)}px`;
+      }
     });
     while (pages.length > Math.max(declaredCount, slices.length)) {
-      pages.pop().remove();
+      const slide = pages.pop();
+      const wrapper = slide.parentElement;
+      slide.remove();
+      if (wrapper.classList.contains("pdf-page") && !wrapper.querySelector("section")) {
+        wrapper.remove();
+      }
     }
 
     const added = slices.length - declaredCount;
@@ -1265,6 +1330,8 @@
   // longer describes the space its content has. Measuring there reports phantom
   // overflows, so the check is screen-only.
   const isPrintLayout = () =>
+    window.Reveal?.isPrintView?.() ||
+    window.Reveal?.isPrintingPDF?.() ||
     document.documentElement.classList.contains("reveal-print") ||
     document.documentElement.classList.contains("print-pdf") ||
     (typeof window.matchMedia === "function" &&
@@ -1432,6 +1499,10 @@
     window.addEventListener("afterprint", refit);
     if (window.Reveal && typeof window.Reveal.on === "function") {
       window.Reveal.on("resize", refit);
+      window.Reveal.on("pdf-ready", () => {
+        refreshReferences();
+        fitFrameTitles(leafSlides());
+      });
       window.Reveal.on("slidechanged", (event) => {
         const currentSlide = event?.currentSlide || window.Reveal.getCurrentSlide();
         if (currentSlide) {
@@ -1650,9 +1721,12 @@
   };
 
   // Resource/viewport events are coalesced by watchFrameTitles. Do not retry a
-  // partially changed bibliography after failure, or redivide it in print layout.
+  // partially changed bibliography after failure. Print updates wait until
+  // Reveal finishes creating its page wrappers (docs/architecture.md, R2).
   const refreshReferences = () => {
-    if (!referencePagination || referencePagination.failed || isPrintLayout()) return;
+    if (!referencePagination || referencePagination.failed) return;
+    if (isPrintLayout() && referencePagination.pages.some((slide) =>
+      !slide.isConnected || !slide.parentElement?.classList.contains("pdf-page"))) return;
     const reveal = window.Reveal;
     if (!reveal?.isReady?.()) return;
     const before = referencePagination.pages.slice();
@@ -1670,6 +1744,7 @@
           .forEach((slide) => frameTitleObserver?.unobserve(slide));
         referencePagination.pages.filter((slide) => !before.includes(slide))
           .forEach((slide) => frameTitleObserver?.observe(slide));
+        if (isPrintLayout()) return;
         reveal.sync();
         const target = current?.isConnected ? current : anchor?.closest("section") || referencePagination.declared[0];
         if (target && reveal.getCurrentSlide() !== target) {
@@ -1844,6 +1919,7 @@
       });
     };
     const realignForPrint = () => {
+      refreshReferences();
       runRealign();
       leafSlides().forEach((slide) => measureFrameTitle(slide));
     };
